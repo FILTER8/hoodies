@@ -443,248 +443,229 @@ export default function HoodieCam() {
   }, []);
 
   return (
-    <main
-      className="fixed inset-0 overflow-hidden bg-[#ccff00] text-black select-none"
-      style={{
-        paddingTop: "env(safe-area-inset-top)",
-        paddingBottom: "env(safe-area-inset-bottom)",
-        paddingLeft: "env(safe-area-inset-left)",
-        paddingRight: "env(safe-area-inset-right)",
-      }}
-    >
-      <style jsx global>{`
-        html,
-        body {
-          margin: 0;
-          padding: 0;
-          width: 100%;
-          height: 100%;
-          overflow: hidden;
-          overscroll-behavior: none;
-          background: #ccff00;
-          touch-action: none;
-        }
+  <main
+    className="fixed inset-0 overflow-hidden bg-[#ccff00] text-black select-none"
+    style={{
+      paddingTop: "env(safe-area-inset-top)",
+      paddingBottom: "env(safe-area-inset-bottom)",
+      paddingLeft: "env(safe-area-inset-left)",
+      paddingRight: "env(safe-area-inset-right)",
+    }}
+  >
+    <style jsx global>{`
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        overscroll-behavior: none;
+        background: #ccff00;
+        touch-action: none;
+      }
 
-        body {
-          position: fixed;
-          inset: 0;
-        }
+      body {
+        position: fixed;
+        inset: 0;
+      }
 
-        * {
-          box-sizing: border-box;
-        }
+      * {
+        box-sizing: border-box;
+      }
 
-        .pixel-slider {
-          accent-color: #000000;
-          touch-action: pan-x;
-        }
+      .pixel-slider {
+        accent-color: #000000;
+        touch-action: pan-x;
+      }
 
-        .pixel-button {
-          background: #ccff00;
-          border: 4px solid #000000;
-          box-shadow: 5px 5px 0 #000000;
-          color: #000000;
-          text-transform: uppercase;
-          letter-spacing: 0.12em;
-          font-weight: 900;
-        }
+      .pixel-button {
+        background: #ccff00;
+        border: 4px solid #000000;
+        box-shadow: 5px 5px 0 #000000;
+        color: #000000;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-weight: 900;
+      }
 
-        .pixel-button:active,
-        .pixel-button.active {
-          background: #000000;
-          color: #ccff00;
-          box-shadow: none;
-          transform: translate(5px, 5px);
-        }
+      .pixel-button:active,
+      .pixel-button.active {
+        background: #000000;
+        color: #ccff00;
+        box-shadow: none;
+        transform: translate(5px, 5px);
+      }
 
-        .pixel-label {
-          text-transform: uppercase;
-          letter-spacing: 0.16em;
-          font-size: 10px;
-          font-weight: 900;
-        }
-      `}</style>
+      .pixel-label {
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font-size: 10px;
+        font-weight: 900;
+      }
+    `}</style>
 
-      <video ref={videoRef} className="hidden" playsInline muted autoPlay />
+    <video ref={videoRef} className="hidden" playsInline muted autoPlay />
 
-      <div className="flex h-full w-full flex-col items-center justify-between px-4 py-4">
-        <header className="flex w-full max-w-[560px] items-center justify-between">
+    <div className="flex h-full w-full flex-col items-center px-4 py-4">
+      <header className="w-full max-w-[560px]">
+        <div className="flex items-center justify-between">
           <div className="text-sm tracking-[0.28em]">HOODIE CAM</div>
+
           <div className="text-xs tracking-[0.18em]">
             {cameraReady ? "READY" : "OFF"}
           </div>
-        </header>
-
-        <section className="w-full max-w-[560px]">
-          <div className="mb-3 grid grid-cols-3 gap-3">
-            <ControlSlider
-              label="Light"
-              value={exposure}
-              min={0.45}
-              max={2}
-              step={0.01}
-              onChange={updateExposure}
-            />
-
-            <ControlSlider
-              label="Dither"
-              value={ditherStrength}
-              min={0.35}
-              max={2}
-              step={0.01}
-              onChange={updateDitherStrength}
-            />
-
-            <ControlSlider
-              label="Pixel"
-              value={pixelSize}
-              min={2}
-              max={20}
-              step={1}
-              onChange={updatePixelSize}
-            />
-          </div>
-
-          <div className="relative aspect-square w-full border-[6px] border-black bg-black p-2 shadow-[10px_10px_0_#000]">
-            <canvas
-              ref={canvasRef}
-              width={WIDTH}
-              height={HEIGHT}
-              className="image-render-pixel h-full w-full bg-[#ccff00]"
-            />
-
-            {!cameraReady && (
-              <button
-                onClick={(event) => {
-                  event.stopPropagation();
-                  startCamera();
-                }}
-                className="pixel-button absolute left-1/2 top-1/2 z-40 -translate-x-1/2 -translate-y-1/2 px-6 py-4 text-sm"
-              >
-                Start Cam
-              </button>
-            )}
-
-            {(recording || recordingGif) && (
-              <div className="absolute right-4 top-4 h-5 w-5 animate-pulse bg-[#ccff00]" />
-            )}
-          </div>
-        </section>
-
-        <section
-          onPointerDown={stopTouch}
-          onPointerUp={stopTouch}
-          className="grid w-full max-w-[560px] grid-cols-3 gap-3 pb-2"
-        >
-          <button
-            onClick={toggleGif}
-            className={`pixel-button px-3 py-4 text-xs ${
-              recordingGif ? "active" : ""
-            }`}
-          >
-            {recordingGif ? "Stop GIF" : "GIF"}
-          </button>
-
-          <button onClick={takePhoto} className="pixel-button px-3 py-4 text-xs">
-            Image
-          </button>
-
-          <button
-            onClick={toggleVideo}
-            className={`pixel-button px-3 py-4 text-xs ${
-              recording ? "active" : ""
-            }`}
-          >
-            {recording ? "Stop Vid" : "Vid"}
-          </button>
-
-          <button
-            onClick={switchCamera}
-            className="pixel-button px-3 py-4 text-xs"
-          >
-            {facingMode === "environment" ? "Back" : "Front"}
-          </button>
-
-          <button
-            onClick={toggleSwapColors}
-            className={`pixel-button px-3 py-4 text-xs ${
-              swapped ? "active" : ""
-            }`}
-          >
-            Swap
-          </button>
-
-<Link href="/" className="pixel-button px-3 py-4 text-center text-xs">
-  Home
-</Link>
-        </section>
-      </div>
-
-      {pendingBlob && (
-        <div
-          onPointerDown={stopTouch}
-          onPointerUp={stopTouch}
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 px-6"
-        >
-          <div className="w-full max-w-sm border-[6px] border-[#ccff00] bg-black p-5 text-center text-[#ccff00]">
-            <p className="mb-5 text-sm uppercase tracking-[0.18em]">
-              File ready
-            </p>
-
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={savePendingBlob}
-                className="border-4 border-[#ccff00] px-4 py-3 text-xs uppercase tracking-[0.16em]"
-              >
-                Save
-              </button>
-
-              <button
-                onClick={cancelPendingSave}
-                className="border-4 border-[#ccff00] px-4 py-3 text-xs uppercase tracking-[0.16em]"
-              >
-                Clear
-              </button>
-            </div>
-
-            <p className="mt-4 break-all text-[10px] opacity-70">
-              {pendingFilename}
-            </p>
-          </div>
         </div>
-      )}
-    </main>
-  );
-}
 
-function ControlSlider({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="pixel-label">{label}</span>
+        <p className="mt-2 text-[11px] uppercase tracking-[0.18em] opacity-70">
+          What's up in your hood?
+        </p>
+      </header>
 
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="pixel-slider w-full"
-      />
-    </label>
-  );
+      <section className="mt-6 w-full max-w-[560px]">
+        <div className="mb-3 grid grid-cols-3 gap-3">
+          <ControlSlider
+            label="Light"
+            value={exposure}
+            min={0.45}
+            max={2}
+            step={0.01}
+            onChange={updateExposure}
+          />
+
+          <ControlSlider
+            label="Dither"
+            value={ditherStrength}
+            min={0.35}
+            max={2}
+            step={0.01}
+            onChange={updateDitherStrength}
+          />
+
+          <ControlSlider
+            label="Pixel"
+            value={pixelSize}
+            min={2}
+            max={20}
+            step={1}
+            onChange={updatePixelSize}
+          />
+        </div>
+
+        <div className="relative aspect-square w-full border-[6px] border-black bg-black p-2 shadow-[10px_10px_0_#000]">
+          <canvas
+            ref={canvasRef}
+            width={WIDTH}
+            height={HEIGHT}
+            className="image-render-pixel h-full w-full bg-[#ccff00]"
+          />
+
+          {!cameraReady && (
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                startCamera();
+              }}
+              className="pixel-button absolute left-1/2 top-1/2 z-40 -translate-x-1/2 -translate-y-1/2 px-6 py-4 text-sm"
+            >
+              Start Cam
+            </button>
+          )}
+
+          {(recording || recordingGif) && (
+            <div className="absolute right-4 top-4 h-5 w-5 animate-pulse bg-[#ccff00]" />
+          )}
+        </div>
+      </section>
+
+      <section
+        onPointerDown={stopTouch}
+        onPointerUp={stopTouch}
+        className="mt-6 grid w-full max-w-[560px] grid-cols-3 gap-3"
+      >
+        <button
+          onClick={toggleGif}
+          className={`pixel-button px-3 py-4 text-xs ${
+            recordingGif ? "active" : ""
+          }`}
+        >
+          {recordingGif ? "Stop GIF" : "GIF"}
+        </button>
+
+        <button
+          onClick={takePhoto}
+          className="pixel-button px-3 py-4 text-xs"
+        >
+          Image
+        </button>
+
+        <button
+          onClick={toggleVideo}
+          className={`pixel-button px-3 py-4 text-xs ${
+            recording ? "active" : ""
+          }`}
+        >
+          {recording ? "Stop Vid" : "Vid"}
+        </button>
+
+        <button
+          onClick={switchCamera}
+          className="pixel-button px-3 py-4 text-xs"
+        >
+          {facingMode === "environment" ? "Back" : "Front"}
+        </button>
+
+        <button
+          onClick={toggleSwapColors}
+          className={`pixel-button px-3 py-4 text-xs ${
+            swapped ? "active" : ""
+          }`}
+        >
+          Swap
+        </button>
+
+        <Link
+          href="/"
+          className="flex items-center justify-center border-4 border-black bg-black px-3 py-4 text-center text-xs uppercase tracking-[0.12em] text-[#ccff00] shadow-[5px_5px_0_#000] transition-all hover:bg-[#ccff00] hover:text-black"
+        >
+          Home
+        </Link>
+      </section>
+    </div>
+
+    {pendingBlob && (
+      <div
+        onPointerDown={stopTouch}
+        onPointerUp={stopTouch}
+        className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 px-6"
+      >
+        <div className="w-full max-w-sm border-[6px] border-[#ccff00] bg-black p-5 text-center text-[#ccff00]">
+          <p className="mb-5 text-sm uppercase tracking-[0.18em]">
+            File ready
+          </p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={savePendingBlob}
+              className="border-4 border-[#ccff00] px-4 py-3 text-xs uppercase tracking-[0.16em]"
+            >
+              Save
+            </button>
+
+            <button
+              onClick={cancelPendingSave}
+              className="border-4 border-[#ccff00] px-4 py-3 text-xs uppercase tracking-[0.16em]"
+            >
+              Clear
+            </button>
+          </div>
+
+          <p className="mt-4 break-all text-[10px] opacity-70">
+            {pendingFilename}
+          </p>
+        </div>
+      </div>
+    )}
+  </main>
+);
 }
