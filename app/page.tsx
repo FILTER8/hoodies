@@ -12,7 +12,7 @@ const characters = [
 
 const hoodGallery = [
   { name: "Hood 01", image: "/hood-1.png" },
-  { name: "Hood 02", image: "/hood-2.gif" },
+  { name: "Hood 02", image: "/hood-2.GIF" },
   { name: "Hood 03", image: "/hood-3.png" },
 ];
 
