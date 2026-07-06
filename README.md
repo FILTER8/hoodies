@@ -1,36 +1,100 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HOODIES
 
-## Getting Started
+**A fully on-chain neighborhood celebrating the people of Web3.**
 
-First, run the development server:
+OnChainHoodies is a collection of hand-drawn 1-bit characters inspired by the builders, collectors, flippers and HODLers that make up our on-chain neighborhood.
+
+Built for Robinhood Chain.
+
+---
+
+## Fully On-Chain
+
+Every Hoodie is generated fully on-chain.
+
+- SVG rendered on-chain
+- Metadata on-chain
+- Traits on-chain
+- No IPFS
+- No external image hosting
+
+---
+
+## CC0
+
+Everything in this repository is released under **CC0 1.0 Universal**.
+
+That includes:
+
+- source code
+- smart contracts
+- website
+- artwork
+- metadata
+- collection assets
+
+Use it.
+Study it.
+Fork it.
+Build on it.
+
+No permission required.
+
+---
+
+## Hoodie Cam
+
+The repository also includes **Hoodie Cam**, a retro-inspired 1-bit camera for capturing your neighborhood in black and green.
+
+**What's up in your hood?**
+
+Capture it.
+
+---
+
+## Website
+
+https://onchainhoodies.xyz
+
+---
+
+## X
+
+https://x.com/OnChainHoodies
+
+---
+
+## Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## Philosophy
 
-To learn more about Next.js, take a look at the following resources:
+We believe fully on-chain art should be:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Open
+- Composable
+- Permanent
+- Machine-readable
+- Free to build upon
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+CC0 allows the neighborhood to grow beyond its original creator.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## License
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This project is dedicated to the public domain under the **Creative Commons CC0 1.0 Universal** license.
+
+https://creativecommons.org/publicdomain/zero/1.0/

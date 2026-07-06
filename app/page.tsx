@@ -1,3 +1,8 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+
 const characters = [
   { name: "Collector", image: "/collector.png" },
   { name: "Flipper", image: "/flipper.png" },
@@ -5,7 +10,28 @@ const characters = [
   { name: "Builder", image: "/builder.png" },
 ];
 
+const hoodGallery = [
+  { name: "Hood 01", image: "/hood-1.png" },
+  { name: "Hood 02", image: "/hood-2.gif" },
+  { name: "Hood 03", image: "/hood-3.png" },
+];
+
 export default function Home() {
+  const [activeHood, setActiveHood] = useState(0);
+  const currentHood = hoodGallery[activeHood];
+
+  function previousHood() {
+    setActiveHood((current) =>
+      current === 0 ? hoodGallery.length - 1 : current - 1
+    );
+  }
+
+  function nextHood() {
+    setActiveHood((current) =>
+      current === hoodGallery.length - 1 ? 0 : current + 1
+    );
+  }
+
   return (
     <main className="bg-[#ccff00] text-black">
       <header className="fixed left-6 right-6 top-6 z-50 flex justify-between text-xs md:text-sm">
@@ -108,7 +134,7 @@ export default function Home() {
           in your hood?
         </h2>
 
-        <p className="mb-14 max-w-3xl text-lg leading-relaxed md:text-2xl">
+        <p className="mb-12 max-w-3xl text-lg leading-relaxed md:text-2xl">
           Capture your neighborhood in Hoodie style.
           <br />
           Turn your world into 1-bit black & green.
@@ -116,38 +142,53 @@ export default function Home() {
           Share what&apos;s happening in your hood.
         </p>
 
-        <div className="mb-14 grid w-full max-w-6xl gap-5 md:grid-cols-3">
-          <div className="aspect-square overflow-hidden border-2 border-black bg-black">
-            <img
-              src="/hood-1.png"
-              alt="Neighborhood inspiration 1"
-              className="image-render-pixel h-full w-full object-cover"
-            />
-          </div>
+        <div className="mb-10 flex w-full max-w-4xl items-center justify-center gap-3 md:gap-6">
+          <button
+            onClick={previousHood}
+            aria-label="Previous hood image"
+            className="border-2 border-black bg-[#ccff00] px-3 py-4 text-2xl text-black transition-colors duration-200 hover:bg-black hover:text-[#ccff00] md:px-5 md:py-6 md:text-4xl"
+          >
+            ←
+          </button>
 
-          <div className="aspect-square overflow-hidden border-2 border-black bg-black">
-            <img
-              src="/hood-2.png"
-              alt="Neighborhood inspiration 2"
-              className="image-render-pixel h-full w-full object-cover"
-            />
-          </div>
+          <Link href="/cam" className="block w-full max-w-xl">
+            <div className="aspect-square overflow-hidden border-2 border-black bg-black">
+              <img
+                src={currentHood.image}
+                alt={currentHood.name}
+                className="image-render-pixel h-full w-full object-cover"
+              />
+            </div>
+          </Link>
 
-          <div className="aspect-square overflow-hidden border-2 border-black bg-black">
-            <img
-              src="/hood-3.png"
-              alt="Neighborhood inspiration 3"
-              className="image-render-pixel h-full w-full object-cover"
-            />
-          </div>
+          <button
+            onClick={nextHood}
+            aria-label="Next hood image"
+            className="border-2 border-black bg-[#ccff00] px-3 py-4 text-2xl text-black transition-colors duration-200 hover:bg-black hover:text-[#ccff00] md:px-5 md:py-6 md:text-4xl"
+          >
+            →
+          </button>
         </div>
 
-        <a
+        <div className="mb-10 flex items-center justify-center gap-3">
+          {hoodGallery.map((item, index) => (
+            <button
+              key={item.name}
+              onClick={() => setActiveHood(index)}
+              aria-label={`Show ${item.name}`}
+              className={`h-3 w-3 border-2 border-black ${
+                index === activeHood ? "bg-black" : "bg-[#ccff00]"
+              }`}
+            />
+          ))}
+        </div>
+
+        <Link
           href="/cam"
           className="border-2 border-black bg-[#ccff00] px-8 py-4 text-sm uppercase tracking-[0.22em] text-black transition-colors duration-200 hover:bg-black hover:text-[#ccff00]"
         >
           Open Hoodie Cam
-        </a>
+        </Link>
       </section>
 
       <section
@@ -158,17 +199,28 @@ export default function Home() {
           Mint
         </p>
 
-        <h2 className="mb-8 text-5xl leading-none md:text-7xl">
+        <h2 className="mb-10 text-5xl leading-none md:text-7xl">
           Open mint.
           <br />
           Details TBA.
         </h2>
 
         <div className="mb-12 grid gap-4 text-sm uppercase tracking-[0.22em] md:grid-cols-3">
-          <div>Supply TBA</div>
-          <div>Mint date TBA</div>
-          <div>Robinhood Chain</div>
-        </div>
+  <div>
+    <p className="opacity-60">Supply</p>
+    <p className="mt-2 text-xl">TBA</p>
+  </div>
+
+  <div>
+    <p className="opacity-60">Mint Date</p>
+    <p className="mt-2 text-xl">TBA</p>
+  </div>
+
+  <div>
+    <p className="opacity-60">Chain</p>
+    <p className="mt-2 text-xl">Robinhood</p>
+  </div>
+</div>
 
         <a
           href="https://mintbay.xyz"
@@ -180,9 +232,30 @@ export default function Home() {
         </a>
       </section>
 
-      <footer className="flex justify-between px-6 py-8 text-xs uppercase tracking-[0.28em]">
-        <div>HOODIES</div>
-        <div>Fully on-chain</div>
+      <footer className="bg-[#ccff00] px-6 py-8 text-black">
+        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-xs uppercase tracking-[0.25em]">
+          <span>CC0</span>
+
+          <a
+            href="https://x.com/OnChainHoodies"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-4"
+          >
+            X
+          </a>
+
+          <a
+            href="https://github.com/FILTER8/hoodies"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-4"
+          >
+            GitHub
+          </a>
+
+          <span>Fully On-Chain</span>
+        </div>
       </footer>
     </main>
   );
