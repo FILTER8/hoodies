@@ -7,6 +7,9 @@ export const metadata: Metadata = {
     title: "Hoodie Cam",
     statusBarStyle: "black-translucent",
   },
+  icons: {
+    apple: "/cam-icon-180.png",
+  },
 };
 
 export default function CamLayout({ children }: { children: React.ReactNode }) {
