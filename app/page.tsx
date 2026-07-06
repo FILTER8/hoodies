@@ -18,6 +18,8 @@ const hoodGallery = [
 
 export default function Home() {
   const [activeHood, setActiveHood] = useState(0);
+  const [activeCharacter, setActiveCharacter] = useState<string | null>(null);
+
   const currentHood = hoodGallery[activeHood];
 
   function previousHood() {
@@ -99,39 +101,43 @@ export default function Home() {
         </p>
 
         <div className="grid w-full max-w-5xl grid-cols-2 gap-4 md:grid-cols-4">
-  {characters.map((character) => {
-    const isActive = activeCharacter === character.name;
+          {characters.map((character) => {
+            const isActive = activeCharacter === character.name;
 
-    return (
-      <button
-        key={character.name}
-        type="button"
-        onClick={() =>
-          setActiveCharacter(isActive ? null : character.name)
-        }
-        className="group relative aspect-square overflow-hidden border border-[#ccff00] bg-[#ccff00]"
-      >
-        <img
-          src={character.image}
-          alt={character.name}
-          className={`image-render-pixel h-full w-full object-cover transition duration-300 ${
-            isActive ? "opacity-0" : "opacity-100 md:group-hover:opacity-0"
-          }`}
-        />
+            return (
+              <button
+                key={character.name}
+                type="button"
+                onClick={() =>
+                  setActiveCharacter(isActive ? null : character.name)
+                }
+                className="group relative aspect-square overflow-hidden border border-[#ccff00] bg-[#ccff00]"
+              >
+                <img
+                  src={character.image}
+                  alt={character.name}
+                  className={`image-render-pixel h-full w-full object-cover transition duration-300 ${
+                    isActive
+                      ? "opacity-0"
+                      : "opacity-100 md:group-hover:opacity-0"
+                  }`}
+                />
 
-        <div
-          className={`absolute inset-0 flex items-center justify-center bg-black transition duration-300 ${
-            isActive ? "opacity-100" : "opacity-0 md:group-hover:opacity-100"
-          }`}
-        >
-          <p className="text-xl uppercase tracking-[0.18em] text-[#ccff00] md:text-2xl">
-            {character.name}
-          </p>
+                <div
+                  className={`absolute inset-0 flex items-center justify-center bg-black transition duration-300 ${
+                    isActive
+                      ? "opacity-100"
+                      : "opacity-0 md:group-hover:opacity-100"
+                  }`}
+                >
+                  <p className="text-xl uppercase tracking-[0.18em] text-[#ccff00] md:text-2xl">
+                    {character.name}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
         </div>
-      </button>
-    );
-  })}
-</div>
       </section>
 
       <section
@@ -220,21 +226,21 @@ export default function Home() {
         </h2>
 
         <div className="mb-12 grid gap-4 text-sm uppercase tracking-[0.22em] md:grid-cols-3">
-  <div>
-    <p className="opacity-60">Supply</p>
-    <p className="mt-2 text-xl">TBA</p>
-  </div>
+          <div>
+            <p className="opacity-60">Supply</p>
+            <p className="mt-2 text-xl">TBA</p>
+          </div>
 
-  <div>
-    <p className="opacity-60">Mint Date</p>
-    <p className="mt-2 text-xl">TBA</p>
-  </div>
+          <div>
+            <p className="opacity-60">Mint Date</p>
+            <p className="mt-2 text-xl">TBA</p>
+          </div>
 
-  <div>
-    <p className="opacity-60">Chain</p>
-    <p className="mt-2 text-xl">Robinhood</p>
-  </div>
-</div>
+          <div>
+            <p className="opacity-60">Chain</p>
+            <p className="mt-2 text-xl">Robinhood</p>
+          </div>
+        </div>
 
         <a
           href="https://mintbay.xyz"
