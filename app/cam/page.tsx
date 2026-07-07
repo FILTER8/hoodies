@@ -526,7 +526,7 @@ export default function HoodieCam() {
 
   return (
     <main
-      className="fixed inset-0 overflow-hidden bg-[#ccff00] text-black select-none"
+      className="fixed inset-0 overflow-y-auto overflow-x-hidden bg-[#ccff00] text-black select-none"
       style={{
         paddingTop: "env(safe-area-inset-top)",
         paddingBottom: "env(safe-area-inset-bottom)",
@@ -540,8 +540,7 @@ export default function HoodieCam() {
           margin: 0;
           padding: 0;
           width: 100%;
-          height: 100%;
-          overflow: hidden;
+          min-height: 100%;
           overscroll-behavior: none;
           background: #ccff00;
         }
@@ -621,7 +620,7 @@ export default function HoodieCam() {
 
       <video ref={videoRef} className="hidden" playsInline muted autoPlay />
 
-      <div className="mx-auto flex h-full w-full max-w-[560px] flex-col px-4 py-3">
+      <div className="mx-auto flex min-h-full w-full max-w-[560px] flex-col px-4 py-3">
         <header className="w-full">
           <div className="flex items-center justify-between">
             <div className="text-sm tracking-[0.28em]">HOODIE CAM</div>
