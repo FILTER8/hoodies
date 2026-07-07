@@ -49,7 +49,7 @@ export default function HoodieCam() {
   const [exposure, setExposure] = useState(1);
   const [pixelSize, setPixelSize] = useState(6);
   const [ditherStrength, setDitherStrength] = useState(1);
-  const [zoom, setZoom] = useState(1);
+  const [, setZoom] = useState(1);
   const [facingMode, setFacingMode] = useState<FacingMode>("environment");
   const [swapped, setSwapped] = useState(false);
   const [pendingBlob, setPendingBlob] = useState<Blob | null>(null);
@@ -526,7 +526,7 @@ export default function HoodieCam() {
 
   return (
     <main
-      className="fixed inset-0 overflow-y-auto overflow-x-hidden bg-[#ccff00] text-black select-none"
+      className="fixed inset-0 overflow-hidden bg-[#ccff00] text-black select-none"
       style={{
         paddingTop: "env(safe-area-inset-top)",
         paddingBottom: "env(safe-area-inset-bottom)",
@@ -540,7 +540,8 @@ export default function HoodieCam() {
           margin: 0;
           padding: 0;
           width: 100%;
-          min-height: 100%;
+          height: 100%;
+          overflow: hidden;
           overscroll-behavior: none;
           background: #ccff00;
         }
@@ -556,37 +557,37 @@ export default function HoodieCam() {
 
         .pixel-slider {
           width: 100%;
-          height: 18px;
+          height: 10px;
           appearance: none;
           background: transparent;
           touch-action: pan-x;
         }
 
         .pixel-slider::-webkit-slider-runnable-track {
-          height: 8px;
+          height: 4px;
           background: #000000;
           border: 0;
         }
 
         .pixel-slider::-webkit-slider-thumb {
           appearance: none;
-          width: 28px;
-          height: 42px;
-          margin-top: -17px;
+          width: 16px;
+          height: 22px;
+          margin-top: -9px;
           background: #000000;
           border: 0;
           border-radius: 0;
         }
 
         .pixel-slider::-moz-range-track {
-          height: 8px;
+          height: 4px;
           background: #000000;
           border: 0;
         }
 
         .pixel-slider::-moz-range-thumb {
-          width: 28px;
-          height: 42px;
+          width: 16px;
+          height: 22px;
           background: #000000;
           border: 0;
           border-radius: 0;
@@ -612,15 +613,15 @@ export default function HoodieCam() {
 
         .pixel-label {
           text-transform: uppercase;
-          letter-spacing: 0.16em;
-          font-size: 12px;
+          letter-spacing: 0.12em;
+          font-size: 8px;
           font-weight: 900;
         }
       `}</style>
 
       <video ref={videoRef} className="hidden" playsInline muted autoPlay />
 
-      <div className="mx-auto flex min-h-full w-full max-w-[560px] flex-col px-4 py-4">
+      <div className="mx-auto flex h-full w-full max-w-[560px] flex-col px-4 py-3">
         <header className="w-full">
           <div className="flex items-center justify-between">
             <div className="text-sm tracking-[0.28em]">HOODIE CAM</div>
@@ -632,13 +633,13 @@ export default function HoodieCam() {
           </p>
         </header>
 
-        <section className="mt-6 w-full">
+        <section className="mt-4 w-full">
           <div
             onPointerDown={handleCanvasPointerDown}
             onPointerMove={handleCanvasPointerMove}
             onPointerUp={handleCanvasPointerUp}
             onPointerCancel={handleCanvasPointerUp}
-            className="relative aspect-square w-full touch-none border-[6px] border-black bg-black p-2 shadow-[10px_10px_0_#000]"
+            className="relative aspect-square w-full touch-none border-[6px] border-black bg-black p-2 shadow-[8px_8px_0_#000]"
           >
             <canvas
               ref={canvasRef}
@@ -668,7 +669,7 @@ export default function HoodieCam() {
         <section
           onPointerDown={stopTouch}
           onPointerUp={stopTouch}
-          className="mt-8 flex w-full flex-col gap-6"
+          className="mt-4 flex w-full flex-col gap-2"
         >
           <ControlSlider
             label="Light"
@@ -699,26 +700,16 @@ export default function HoodieCam() {
             step={1}
             onChange={updatePixelSize}
           />
-
-          <ControlSlider
-            label="Zoom"
-            value={zoom}
-            displayValue={Number(zoom.toFixed(1))}
-            min={1}
-            max={4}
-            step={0.01}
-            onChange={updateZoom}
-          />
         </section>
 
         <section
           onPointerDown={stopTouch}
           onPointerUp={stopTouch}
-          className="mt-8 grid w-full grid-cols-3 gap-3 pb-8"
+          className="mt-4 grid w-full grid-cols-3 gap-3"
         >
           <button
             onClick={toggleGif}
-            className={`pixel-button px-3 py-4 text-xs ${
+            className={`pixel-button px-3 py-3 text-xs ${
               recordingGif ? "active" : ""
             }`}
           >
@@ -727,14 +718,14 @@ export default function HoodieCam() {
 
           <button
             onClick={takePhoto}
-            className="pixel-button px-3 py-4 text-xs"
+            className="pixel-button px-3 py-3 text-xs"
           >
             Image
           </button>
 
           <button
             onClick={toggleVideo}
-            className={`pixel-button px-3 py-4 text-xs ${
+            className={`pixel-button px-3 py-3 text-xs ${
               recording ? "active" : ""
             }`}
           >
@@ -743,14 +734,14 @@ export default function HoodieCam() {
 
           <button
             onClick={switchCamera}
-            className="pixel-button px-3 py-4 text-xs"
+            className="pixel-button px-3 py-3 text-xs"
           >
             {facingMode === "environment" ? "Back" : "Front"}
           </button>
 
           <button
             onClick={toggleSwapColors}
-            className={`pixel-button px-3 py-4 text-xs ${
+            className={`pixel-button px-3 py-3 text-xs ${
               swapped ? "active" : ""
             }`}
           >
@@ -759,7 +750,7 @@ export default function HoodieCam() {
 
           <Link
             href="/"
-            className="flex items-center justify-center border-4 border-black bg-black px-3 py-4 text-center text-xs uppercase tracking-[0.12em] text-[#ccff00] shadow-[5px_5px_0_#000] transition-all hover:bg-[#ccff00] hover:text-black"
+            className="flex items-center justify-center border-4 border-black bg-black px-3 py-3 text-center text-xs uppercase tracking-[0.12em] text-[#ccff00] shadow-[5px_5px_0_#000] transition-all hover:bg-[#ccff00] hover:text-black"
           >
             Home
           </Link>
@@ -822,7 +813,7 @@ function ControlSlider({
 }) {
   return (
     <label className="block w-full">
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-1 flex items-center justify-between">
         <span className="pixel-label">{label}</span>
         <span className="pixel-label">{displayValue}</span>
       </div>
