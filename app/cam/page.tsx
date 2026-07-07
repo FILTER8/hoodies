@@ -34,8 +34,14 @@ export default function HoodieCam() {
   const exposureRef = useRef(1);
   const pixelSizeRef = useRef(6);
   const ditherStrengthRef = useRef(1);
+  const zoomRef = useRef(1);
+
   const facingModeRef = useRef<FacingMode>("environment");
   const swappedRef = useRef(false);
+
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStartDistanceRef = useRef(0);
+  const pinchStartZoomRef = useRef(1);
 
   const [cameraReady, setCameraReady] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -43,12 +49,17 @@ export default function HoodieCam() {
   const [exposure, setExposure] = useState(1);
   const [pixelSize, setPixelSize] = useState(6);
   const [ditherStrength, setDitherStrength] = useState(1);
+  const [zoom, setZoom] = useState(1);
   const [facingMode, setFacingMode] = useState<FacingMode>("environment");
   const [swapped, setSwapped] = useState(false);
   const [pendingBlob, setPendingBlob] = useState<Blob | null>(null);
   const [pendingFilename, setPendingFilename] = useState("");
 
   const camStatus = recording || recordingGif ? "REC" : cameraReady ? "CAM" : "OFF";
+
+  function clamp(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
+  }
 
   function updateExposure(value: number) {
     exposureRef.current = value;
@@ -65,9 +76,65 @@ export default function HoodieCam() {
     setDitherStrength(value);
   }
 
+  function updateZoom(value: number) {
+    const next = clamp(value, 1, 4);
+    zoomRef.current = next;
+    setZoom(next);
+  }
+
   function toggleSwapColors() {
     swappedRef.current = !swappedRef.current;
     setSwapped(swappedRef.current);
+  }
+
+  function getPointerDistance() {
+    const points = Array.from(pointersRef.current.values());
+    if (points.length < 2) return 0;
+
+    const dx = points[0].x - points[1].x;
+    const dy = points[0].y - points[1].y;
+
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function handleCanvasPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pointersRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (pointersRef.current.size === 2) {
+      pinchStartDistanceRef.current = getPointerDistance();
+      pinchStartZoomRef.current = zoomRef.current;
+    }
+  }
+
+  function handleCanvasPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (!pointersRef.current.has(event.pointerId)) return;
+
+    pointersRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (pointersRef.current.size === 2) {
+      const distance = getPointerDistance();
+      const startDistance = pinchStartDistanceRef.current;
+
+      if (startDistance > 0) {
+        updateZoom(pinchStartZoomRef.current * (distance / startDistance));
+      }
+    }
+  }
+
+  function handleCanvasPointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    pointersRef.current.delete(event.pointerId);
+
+    if (pointersRef.current.size < 2) {
+      pinchStartDistanceRef.current = 0;
+      pinchStartZoomRef.current = zoomRef.current;
+    }
   }
 
   function drawCover(
@@ -80,23 +147,36 @@ export default function HoodieCam() {
     const videoH = source.videoHeight || targetH;
     const videoRatio = videoW / videoH;
     const targetRatio = targetW / targetH;
+    const currentZoom = zoomRef.current;
 
-    let drawW = targetW;
-    let drawH = targetH;
-    let x = 0;
-    let y = 0;
+    let sourceW = videoW;
+    let sourceH = videoH;
 
     if (videoRatio > targetRatio) {
-      drawH = targetH;
-      drawW = drawH * videoRatio;
-      x = (targetW - drawW) / 2;
+      sourceH = videoH;
+      sourceW = sourceH * targetRatio;
     } else {
-      drawW = targetW;
-      drawH = drawW / videoRatio;
-      y = (targetH - drawH) / 2;
+      sourceW = videoW;
+      sourceH = sourceW / targetRatio;
     }
 
-    ctx.drawImage(source, x, y, drawW, drawH);
+    sourceW = sourceW / currentZoom;
+    sourceH = sourceH / currentZoom;
+
+    const sourceX = (videoW - sourceW) / 2;
+    const sourceY = (videoH - sourceH) / 2;
+
+    ctx.drawImage(
+      source,
+      sourceX,
+      sourceY,
+      sourceW,
+      sourceH,
+      0,
+      0,
+      targetW,
+      targetH
+    );
   }
 
   function drawFrame() {
@@ -446,7 +526,7 @@ export default function HoodieCam() {
 
   return (
     <main
-      className="fixed inset-0 overflow-hidden bg-[#ccff00] text-black select-none"
+      className="fixed inset-0 overflow-y-auto overflow-x-hidden bg-[#ccff00] text-black select-none"
       style={{
         paddingTop: "env(safe-area-inset-top)",
         paddingBottom: "env(safe-area-inset-bottom)",
@@ -460,25 +540,56 @@ export default function HoodieCam() {
           margin: 0;
           padding: 0;
           width: 100%;
-          height: 100%;
-          overflow: hidden;
+          min-height: 100%;
           overscroll-behavior: none;
           background: #ccff00;
-          touch-action: none;
-        }
-
-        body {
-          position: fixed;
-          inset: 0;
         }
 
         * {
           box-sizing: border-box;
         }
 
+        .image-render-pixel {
+          image-rendering: pixelated;
+          image-rendering: crisp-edges;
+        }
+
         .pixel-slider {
-          accent-color: #000000;
+          width: 100%;
+          height: 18px;
+          appearance: none;
+          background: transparent;
           touch-action: pan-x;
+        }
+
+        .pixel-slider::-webkit-slider-runnable-track {
+          height: 8px;
+          background: #000000;
+          border: 0;
+        }
+
+        .pixel-slider::-webkit-slider-thumb {
+          appearance: none;
+          width: 28px;
+          height: 42px;
+          margin-top: -17px;
+          background: #000000;
+          border: 0;
+          border-radius: 0;
+        }
+
+        .pixel-slider::-moz-range-track {
+          height: 8px;
+          background: #000000;
+          border: 0;
+        }
+
+        .pixel-slider::-moz-range-thumb {
+          width: 28px;
+          height: 42px;
+          background: #000000;
+          border: 0;
+          border-radius: 0;
         }
 
         .pixel-button {
@@ -502,18 +613,17 @@ export default function HoodieCam() {
         .pixel-label {
           text-transform: uppercase;
           letter-spacing: 0.16em;
-          font-size: 10px;
+          font-size: 12px;
           font-weight: 900;
         }
       `}</style>
 
       <video ref={videoRef} className="hidden" playsInline muted autoPlay />
 
-      <div className="flex h-full w-full flex-col items-center px-4 py-4">
-        <header className="w-full max-w-[560px]">
+      <div className="mx-auto flex min-h-full w-full max-w-[560px] flex-col px-4 py-4">
+        <header className="w-full">
           <div className="flex items-center justify-between">
             <div className="text-sm tracking-[0.28em]">HOODIE CAM</div>
-
             <div className="text-xs tracking-[0.18em]">{camStatus}</div>
           </div>
 
@@ -522,37 +632,14 @@ export default function HoodieCam() {
           </p>
         </header>
 
-        <section className="mt-6 w-full max-w-[560px]">
-          <div className="mb-3 grid grid-cols-3 gap-3">
-            <ControlSlider
-              label="Light"
-              value={exposure}
-              min={0.45}
-              max={2}
-              step={0.01}
-              onChange={updateExposure}
-            />
-
-            <ControlSlider
-              label="Dither"
-              value={ditherStrength}
-              min={0.35}
-              max={2}
-              step={0.01}
-              onChange={updateDitherStrength}
-            />
-
-            <ControlSlider
-              label="Pixel"
-              value={pixelSize}
-              min={2}
-              max={20}
-              step={1}
-              onChange={updatePixelSize}
-            />
-          </div>
-
-          <div className="relative aspect-square w-full border-[6px] border-black bg-black p-2 shadow-[10px_10px_0_#000]">
+        <section className="mt-6 w-full">
+          <div
+            onPointerDown={handleCanvasPointerDown}
+            onPointerMove={handleCanvasPointerMove}
+            onPointerUp={handleCanvasPointerUp}
+            onPointerCancel={handleCanvasPointerUp}
+            className="relative aspect-square w-full touch-none border-[6px] border-black bg-black p-2 shadow-[10px_10px_0_#000]"
+          >
             <canvas
               ref={canvasRef}
               width={WIDTH}
@@ -581,7 +668,53 @@ export default function HoodieCam() {
         <section
           onPointerDown={stopTouch}
           onPointerUp={stopTouch}
-          className="mt-6 grid w-full max-w-[560px] grid-cols-3 gap-3"
+          className="mt-8 flex w-full flex-col gap-6"
+        >
+          <ControlSlider
+            label="Light"
+            value={exposure}
+            displayValue={Math.round(exposure * 100)}
+            min={0.45}
+            max={2}
+            step={0.01}
+            onChange={updateExposure}
+          />
+
+          <ControlSlider
+            label="Dither"
+            value={ditherStrength}
+            displayValue={Math.round(ditherStrength * 100)}
+            min={0.35}
+            max={2}
+            step={0.01}
+            onChange={updateDitherStrength}
+          />
+
+          <ControlSlider
+            label="Pixel"
+            value={pixelSize}
+            displayValue={pixelSize}
+            min={2}
+            max={20}
+            step={1}
+            onChange={updatePixelSize}
+          />
+
+          <ControlSlider
+            label="Zoom"
+            value={zoom}
+            displayValue={Number(zoom.toFixed(1))}
+            min={1}
+            max={4}
+            step={0.01}
+            onChange={updateZoom}
+          />
+        </section>
+
+        <section
+          onPointerDown={stopTouch}
+          onPointerUp={stopTouch}
+          className="mt-8 grid w-full grid-cols-3 gap-3 pb-8"
         >
           <button
             onClick={toggleGif}
@@ -673,6 +806,7 @@ export default function HoodieCam() {
 function ControlSlider({
   label,
   value,
+  displayValue,
   min,
   max,
   step,
@@ -680,14 +814,18 @@ function ControlSlider({
 }: {
   label: string;
   value: number;
+  displayValue: number;
   min: number;
   max: number;
   step: number;
   onChange: (value: number) => void;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="pixel-label">{label}</span>
+    <label className="block w-full">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="pixel-label">{label}</span>
+        <span className="pixel-label">{displayValue}</span>
+      </div>
 
       <input
         type="range"
@@ -696,7 +834,7 @@ function ControlSlider({
         step={step}
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="pixel-slider w-full"
+        className="pixel-slider"
       />
     </label>
   );
