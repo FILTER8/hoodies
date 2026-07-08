@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const characters = [
   { name: "Collector", image: "/collector.png" },
@@ -19,8 +19,39 @@ const hoodGallery = [
 export default function Home() {
   const [activeHood, setActiveHood] = useState(0);
   const [activeCharacter, setActiveCharacter] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState("");
 
   const currentHood = hoodGallery[activeHood];
+
+  useEffect(() => {
+    const target = new Date("2026-07-10T17:00:00Z").getTime();
+
+    function updateCountdown() {
+      const now = Date.now();
+      const diff = Math.max(0, target - now);
+
+      if (diff <= 0) {
+        setTimeLeft("MINT IS LIVE");
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((diff / (1000 * 60)) % 60);
+      const seconds = Math.floor((diff / 1000) % 60);
+
+      setTimeLeft(
+        `${days}D ${hours.toString().padStart(2, "0")}H ${minutes
+          .toString()
+          .padStart(2, "0")}M ${seconds.toString().padStart(2, "0")}S`
+      );
+    }
+
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   function previousHood() {
     setActiveHood((current) =>
@@ -216,24 +247,34 @@ export default function Home() {
         className="flex min-h-screen flex-col items-center justify-center bg-black px-6 py-24 text-center text-[#ccff00]"
       >
         <p className="mb-10 text-sm uppercase tracking-[0.24em] md:text-base md:tracking-[0.28em]">
-          Mint
+          Public Mint
         </p>
 
         <h2 className="mb-10 text-5xl leading-none md:text-7xl">
-          Open mint.
+          Welcome
           <br />
-          Details TBA.
+          to the Hood.
         </h2>
 
-        <div className="mb-12 grid gap-4 text-sm uppercase tracking-[0.22em] md:grid-cols-3">
+        <div className="mb-14 grid w-full max-w-4xl gap-8 text-sm uppercase tracking-[0.22em] md:grid-cols-5">
           <div>
             <p className="opacity-60">Supply</p>
-            <p className="mt-2 text-xl">TBA</p>
+            <p className="mt-2 text-xl">6,000</p>
           </div>
 
           <div>
-            <p className="opacity-60">Mint Date</p>
-            <p className="mt-2 text-xl">TBA</p>
+            <p className="opacity-60">Price</p>
+            <p className="mt-2 text-xl">0.001 ETH</p>
+          </div>
+
+          <div>
+            <p className="opacity-60">Date</p>
+            <p className="mt-2 text-xl">July 10</p>
+          </div>
+
+          <div>
+            <p className="opacity-60">Time</p>
+            <p className="mt-2 text-xl">17:00 UTC</p>
           </div>
 
           <div>
@@ -242,13 +283,31 @@ export default function Home() {
           </div>
         </div>
 
+        <div className="mb-10 border-2 border-[#ccff00] px-6 py-4 text-center">
+          <p className="mb-2 text-xs uppercase tracking-[0.24em] opacity-60">
+            Mint starts in
+          </p>
+
+          <p className="text-2xl uppercase tracking-[0.18em] md:text-4xl">
+            {timeLeft}
+          </p>
+        </div>
+
+        <p className="mb-10 max-w-2xl text-lg leading-relaxed md:text-xl">
+          Hand-drawn.
+          <br />
+          Fully on-chain.
+          <br />
+          Built to evolve.
+        </p>
+
         <a
           href="https://mintbay.xyz"
           target="_blank"
           rel="noreferrer"
           className="border-2 border-[#ccff00] bg-black px-8 py-4 text-sm uppercase tracking-[0.22em] text-[#ccff00] transition-colors duration-200 hover:bg-[#ccff00] hover:text-black"
         >
-          Minting platform: mintbay.xyz
+          Mint on Mintbay
         </a>
       </section>
 
