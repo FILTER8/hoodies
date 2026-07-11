@@ -1,341 +1,311 @@
-"use client";
-
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import SiteHeader from "../components/SiteHeader";
+import SiteFooter from "../components/SiteFooter";
+import {
+  contractExplorerUrl,
+  shortAddress,
+  siteConfig,
+} from "../lib/config";
 
-const characters = [
+const neighbors = [
+  { name: "Builder", image: "/builder.png" },
   { name: "Collector", image: "/collector.png" },
   { name: "Flipper", image: "/flipper.png" },
   { name: "HODLer", image: "/hodler.png" },
-  { name: "Builder", image: "/builder.png" },
 ];
 
-const hoodGallery = [
-  { name: "Hood 01", image: "/hood-1.png" },
-  { name: "Hood 02", image: "/hood-2.GIF" },
-  { name: "Hood 03", image: "/hood-3.png" },
+const builds = [
+  {
+    label: "Live",
+    title: "Grid Exporter",
+    copy: "Connect your wallet, choose the Hoodies you own and export them together as one clean, branded square PNG.",
+    href: "/tools/export",
+    action: "Open exporter",
+  },
+  {
+    label: "Live",
+    title: "Hoodie Cam",
+    copy: "Capture your surroundings through the black-and-green 1-bit visual language of the Hood.",
+    href: "/cam",
+    action: "Open camera",
+  },
+  {
+    label: "Building",
+    title: "Ink Explorer",
+    copy: "Inspect traits, count black pixels and discover another layer of rarity inside every Hoodie.",
+    href: "#",
+    action: "Coming next",
+  },
+  {
+    label: "Research",
+    title: "Agent Tools",
+    copy: "Machine-readable tools for agents to inspect, understand and interact with fully on-chain NFTs.",
+    href: "#agents",
+    action: "Explore direction",
+  },
+];
+
+const contracts = [
+  { label: "Collection", address: siteConfig.collectionAddress },
+  { label: "Renderer", address: siteConfig.rendererAddress },
+  { label: "Pixel Data", address: siteConfig.pixelDataAddress },
 ];
 
 export default function Home() {
-  const [activeHood, setActiveHood] = useState(0);
-  const [activeCharacter, setActiveCharacter] = useState<string | null>(null);
-  const [timeLeft, setTimeLeft] = useState("");
-
-  const currentHood = hoodGallery[activeHood];
-
-  useEffect(() => {
-    const target = new Date("2026-07-10T17:00:00Z").getTime();
-
-    function updateCountdown() {
-      const now = Date.now();
-      const diff = Math.max(0, target - now);
-
-      if (diff <= 0) {
-        setTimeLeft("MINT IS LIVE");
-        return;
-      }
-
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-      const minutes = Math.floor((diff / (1000 * 60)) % 60);
-      const seconds = Math.floor((diff / 1000) % 60);
-
-      setTimeLeft(
-        `${days}D ${hours.toString().padStart(2, "0")}H ${minutes
-          .toString()
-          .padStart(2, "0")}M ${seconds.toString().padStart(2, "0")}S`
-      );
-    }
-
-    updateCountdown();
-    const timer = setInterval(updateCountdown, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  function previousHood() {
-    setActiveHood((current) =>
-      current === 0 ? hoodGallery.length - 1 : current - 1
-    );
-  }
-
-  function nextHood() {
-    setActiveHood((current) =>
-      current === hoodGallery.length - 1 ? 0 : current + 1
-    );
-  }
-
   return (
     <main className="bg-[#ccff00] text-black">
-      <header className="fixed left-6 right-6 top-6 z-50 flex justify-between text-xs md:text-sm">
-        <div className="tracking-[0.28em]">HOODIES</div>
+      <SiteHeader />
 
-        <a
-          href="https://x.com/OnChainHoodies"
-          target="_blank"
-          rel="noreferrer"
-          className="bg-[#ccff00] text-black transition-colors duration-200 hover:bg-black hover:text-[#ccff00]"
-        >
-          @OnChainHoodies
-        </a>
-      </header>
-
-      <section className="flex min-h-screen flex-col items-center justify-center px-6 pt-24 text-center">
+      <section className="mx-auto flex min-h-screen max-w-[1440px] flex-col items-center justify-center px-6 pb-16 pt-28 text-center">
         <img
           src="/onchainhoodies.gif"
-          alt="OnChainHoodies animated pixel character"
-          className="image-render-pixel mb-10 w-[240px] md:w-[360px]"
+          alt="Animated OnChainHoodie"
+          className="image-render-pixel mb-9 w-[220px] md:w-[350px]"
         />
 
-        <h1 className="mb-8 text-6xl leading-none md:text-8xl">
-          OnChain
+        <p className="mb-5 text-xs uppercase tracking-[0.24em]">
+          Fully on-chain · Built by builders
+        </p>
+
+        <h1 className="text-[clamp(4rem,12vw,10rem)] leading-[0.82] tracking-[-0.08em]">
+          WELCOME TO
           <br />
-          HOODIES
+          THE HOOD
         </h1>
 
-        <p className="max-w-2xl text-lg leading-relaxed opacity-75 md:text-2xl">
-          The fully on-chain neighborhood of Web3.
+        <p className="mt-10 max-w-2xl text-lg leading-relaxed md:text-2xl">
+          OnChainHoodies is a fully on-chain neighborhood for the people of
+          Web3.
           <br />
-          1-bit. Hand-drawn. Fully on-chain.
+          The collection is permanent. The Hood keeps building.
         </p>
 
-        <a
-          href="#collection"
-          className="mt-20 bg-[#ccff00] text-xs uppercase tracking-[0.35em] text-black transition-colors duration-200 hover:bg-black hover:text-[#ccff00]"
-        >
-          scroll
-          <br />↓
-        </a>
-      </section>
-
-      <section
-        id="collection"
-        className="flex min-h-screen flex-col items-center justify-center bg-black px-6 py-24 text-center text-[#ccff00]"
-      >
-        <p className="mb-10 text-sm uppercase tracking-[0.24em] md:text-base md:tracking-[0.28em]">
-          Collection info
-        </p>
-
-        <h2 className="mb-8 text-5xl leading-none md:text-7xl">
-          A hood for
-          <br />
-          Web3 people.
-        </h2>
-
-        <p className="mb-14 max-w-2xl text-lg leading-relaxed md:text-2xl">
-          OnChainHoodies is a fully on-chain NFT collection celebrating the
-          people of Web3. We got 4 characters: Collectors, Flippers, HODLers
-          and Builders.
-          <br />
-          <br />
-          Who are you?
-        </p>
-
-        <div className="grid w-full max-w-5xl grid-cols-2 gap-4 md:grid-cols-4">
-          {characters.map((character) => {
-            const isActive = activeCharacter === character.name;
-
-            return (
-              <button
-                key={character.name}
-                type="button"
-                onClick={() =>
-                  setActiveCharacter(isActive ? null : character.name)
-                }
-                className="group relative aspect-square overflow-hidden border border-[#ccff00] bg-[#ccff00]"
-              >
-                <img
-                  src={character.image}
-                  alt={character.name}
-                  className={`image-render-pixel h-full w-full object-cover transition duration-300 ${
-                    isActive
-                      ? "opacity-0"
-                      : "opacity-100 md:group-hover:opacity-0"
-                  }`}
-                />
-
-                <div
-                  className={`absolute inset-0 flex items-center justify-center bg-black transition duration-300 ${
-                    isActive
-                      ? "opacity-100"
-                      : "opacity-0 md:group-hover:opacity-100"
-                  }`}
-                >
-                  <p className="text-xl uppercase tracking-[0.18em] text-[#ccff00] md:text-2xl">
-                    {character.name}
-                  </p>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section
-        id="hoodie-cam"
-        className="flex min-h-screen flex-col items-center justify-center px-6 py-24 text-center"
-      >
-        <p className="mb-10 text-sm uppercase tracking-[0.24em] md:text-base md:tracking-[0.28em]">
-          Hoodie Cam
-        </p>
-
-        <h2 className="mb-8 text-5xl leading-none md:text-7xl">
-          What&apos;s up
-          <br />
-          in your hood?
-        </h2>
-
-        <p className="mb-12 max-w-3xl text-lg leading-relaxed md:text-2xl">
-          Capture your neighborhood in Hoodie style.
-          <br />
-          Turn your world into 1-bit black & green.
-          <br />
-          Share what&apos;s happening in your hood.
-        </p>
-
-        <div className="mb-10 flex w-full max-w-4xl items-center justify-center gap-3 md:gap-6">
-          <button
-            onClick={previousHood}
-            aria-label="Previous hood image"
-            className="border-2 border-black bg-[#ccff00] px-3 py-4 text-2xl text-black transition-colors duration-200 hover:bg-black hover:text-[#ccff00] md:px-5 md:py-6 md:text-4xl"
+        <div className="mt-10 flex flex-wrap justify-center gap-3">
+          <a href="#builds" className="pixel-cta">
+            Explore the builds
+          </a>
+          <a
+            href={siteConfig.openSeaUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="pixel-cta pixel-cta-dark"
           >
-            ←
-          </button>
+            View on OpenSea
+          </a>
+        </div>
 
-          <Link href="/cam" className="block w-full max-w-xl">
-            <div className="aspect-square overflow-hidden border-2 border-black bg-black">
-              <img
-                src={currentHood.image}
-                alt={currentHood.name}
-                className="image-render-pixel h-full w-full object-cover"
-              />
+        <div className="mt-16 grid w-full max-w-5xl grid-cols-2 border-2 border-black text-[10px] uppercase tracking-[0.16em] md:grid-cols-4">
+          {[
+            "6,000 Hoodies",
+            siteConfig.chainName,
+            "Fully On-Chain",
+            "CC0",
+          ].map((item) => (
+            <div
+              key={item}
+              className="border-black p-4 even:border-l-2 md:border-l-2 md:first:border-l-0"
+            >
+              {item}
             </div>
-          </Link>
-
-          <button
-            onClick={nextHood}
-            aria-label="Next hood image"
-            className="border-2 border-black bg-[#ccff00] px-3 py-4 text-2xl text-black transition-colors duration-200 hover:bg-black hover:text-[#ccff00] md:px-5 md:py-6 md:text-4xl"
-          >
-            →
-          </button>
-        </div>
-
-        <div className="mb-10 flex items-center justify-center gap-3">
-          {hoodGallery.map((item, index) => (
-            <button
-              key={item.name}
-              onClick={() => setActiveHood(index)}
-              aria-label={`Show ${item.name}`}
-              className={`h-3 w-3 border-2 border-black ${
-                index === activeHood ? "bg-black" : "bg-[#ccff00]"
-              }`}
-            />
           ))}
         </div>
-
-        <Link
-          href="/cam"
-          className="border-2 border-black bg-[#ccff00] px-8 py-4 text-sm uppercase tracking-[0.22em] text-black transition-colors duration-200 hover:bg-black hover:text-[#ccff00]"
-        >
-          Open Hoodie Cam
-        </Link>
       </section>
 
-      <section
-        id="mint"
-        className="flex min-h-screen flex-col items-center justify-center bg-black px-6 py-24 text-center text-[#ccff00]"
-      >
-        <p className="mb-10 text-sm uppercase tracking-[0.24em] md:text-base md:tracking-[0.28em]">
-          Public Mint
-        </p>
-
-        <h2 className="mb-10 text-5xl leading-none md:text-7xl">
-          Welcome
-          <br />
-          to the Hood.
-        </h2>
-
-        <div className="mb-14 grid w-full max-w-4xl gap-8 text-sm uppercase tracking-[0.22em] md:grid-cols-5">
-          <div>
-            <p className="opacity-60">Supply</p>
-            <p className="mt-2 text-xl">6,000</p>
+      <section id="collection" className="bg-black px-6 py-24 text-[#ccff00]">
+        <div className="mx-auto max-w-[1440px]">
+          <div className="section-heading-row">
+            <p>01 / Collection</p>
+            <p>Meet the Hood</p>
           </div>
 
-          <div>
-            <p className="opacity-60">Price</p>
-            <p className="mt-2 text-xl">0.001 ETH</p>
-          </div>
+          <div className="mt-12 grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
+            <div>
+              <h2 className="section-title">
+                Four neighbors.
+                <br />
+                One Hood.
+              </h2>
 
-          <div>
-            <p className="opacity-60">Date</p>
-            <p className="mt-2 text-xl">July 10</p>
-          </div>
+              <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-80 md:text-xl">
+                Builders, Collectors, Flippers and HODLers. Familiar faces from
+                the on-chain world, hand-drawn in 1-bit and stored fully
+                on-chain.
+              </p>
+            </div>
 
-          <div>
-            <p className="opacity-60">Time</p>
-            <p className="mt-2 text-xl">17:00 UTC</p>
-          </div>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {neighbors.map((neighbor) => (
+                <article
+                  key={neighbor.name}
+                  className="group border-2 border-[#ccff00]"
+                >
+                  <div className="aspect-square overflow-hidden bg-[#ccff00]">
+                    <img
+                      src={neighbor.image}
+                      alt={neighbor.name}
+                      className="image-render-pixel h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                  </div>
 
-          <div>
-            <p className="opacity-60">Chain</p>
-            <p className="mt-2 text-xl">Robinhood</p>
+                  <p className="border-t-2 border-[#ccff00] p-3 text-center text-xs uppercase tracking-[0.16em]">
+                    {neighbor.name}
+                  </p>
+                </article>
+              ))}
+            </div>
           </div>
         </div>
-
-        <div className="mb-10 border-2 border-[#ccff00] px-6 py-4 text-center">
-          <p className="mb-2 text-xs uppercase tracking-[0.24em] opacity-60">
-            Mint starts in
-          </p>
-
-          <p className="text-2xl uppercase tracking-[0.18em] md:text-4xl">
-            {timeLeft}
-          </p>
-        </div>
-
-        <p className="mb-10 max-w-2xl text-lg leading-relaxed md:text-xl">
-          Hand-drawn.
-          <br />
-          Fully on-chain.
-          <br />
-          Built to evolve.
-        </p>
-
-        <a
-          href="https://mintbay.xyz"
-          target="_blank"
-          rel="noreferrer"
-          className="border-2 border-[#ccff00] bg-black px-8 py-4 text-sm uppercase tracking-[0.22em] text-[#ccff00] transition-colors duration-200 hover:bg-[#ccff00] hover:text-black"
-        >
-          Mint on Mintbay
-        </a>
       </section>
 
-      <footer className="bg-[#ccff00] px-6 py-8 text-black">
-        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-xs uppercase tracking-[0.25em]">
-          <span>CC0</span>
+      <section id="builds" className="px-6 py-24">
+        <div className="mx-auto max-w-[1440px]">
+          <div className="section-heading-row border-black">
+            <p>02 / Builds</p>
+            <p>Built in the Hood</p>
+          </div>
 
-          <a
-            href="https://x.com/OnChainHoodies"
-            target="_blank"
-            rel="noreferrer"
-            className="underline underline-offset-4"
-          >
-            X
-          </a>
+          <div className="mt-12 grid border-l-2 border-t-2 border-black md:grid-cols-2">
+            {builds.map((build, index) => (
+              <article
+                key={build.title}
+                className="flex min-h-[330px] flex-col justify-between border-b-2 border-r-2 border-black p-6 md:p-10"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-6">
+                    <span className="text-[10px] uppercase tracking-[0.18em] opacity-60">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
 
-          <a
-            href="https://github.com/FILTER8/hoodies"
-            target="_blank"
-            rel="noreferrer"
-            className="underline underline-offset-4"
-          >
-            GitHub
-          </a>
+                    <span className="border border-black px-2 py-1 text-[9px] uppercase tracking-[0.14em]">
+                      {build.label}
+                    </span>
+                  </div>
 
-          <span>Fully On-Chain</span>
+                  <h3 className="mt-12 text-4xl leading-none md:text-5xl">
+                    {build.title}
+                  </h3>
+
+                  <p className="mt-6 max-w-xl text-base leading-relaxed opacity-75 md:text-lg">
+                    {build.copy}
+                  </p>
+                </div>
+
+                {build.href === "#" ? (
+                  <span className="mt-10 text-xs uppercase tracking-[0.18em] opacity-50">
+                    {build.action} →
+                  </span>
+                ) : (
+                  <Link
+                    href={build.href}
+                    className="mt-10 text-xs uppercase tracking-[0.18em] underline underline-offset-4"
+                  >
+                    {build.action} →
+                  </Link>
+                )}
+              </article>
+            ))}
+          </div>
         </div>
-      </footer>
+      </section>
+
+      <section id="agents" className="bg-black px-6 py-24 text-[#ccff00]">
+        <div className="mx-auto grid max-w-[1440px] gap-12 lg:grid-cols-2">
+          <div>
+            <div className="section-heading-row">
+              <p>03 / Agents</p>
+              <p>Humans + machines</p>
+            </div>
+
+            <h2 className="section-title mt-12">
+              Readable by humans.
+              <br />
+              Ready for agents.
+            </h2>
+          </div>
+
+          <div className="flex flex-col justify-end">
+            <p className="max-w-2xl text-lg leading-relaxed opacity-80 md:text-2xl">
+              Fully on-chain data gives collectors, builders and agents an open
+              foundation to inspect traits, interpret artwork and create new
+              ways to explore the collection.
+            </p>
+
+            <div className="mt-10 grid grid-cols-2 border-l border-t border-[#ccff00] text-[10px] uppercase tracking-[0.14em]">
+              {[
+                "On-chain metadata",
+                "Trait inspection",
+                "Machine-readable artwork",
+                "Agent tools",
+              ].map((item) => (
+                <div
+                  key={item}
+                  className="border-b border-r border-[#ccff00] p-4"
+                >
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="contracts" className="px-6 py-24">
+        <div className="mx-auto max-w-[1440px]">
+          <div className="section-heading-row border-black">
+            <p>04 / On-chain</p>
+            <p>Verify everything</p>
+          </div>
+
+          <div className="mt-12 grid gap-12 lg:grid-cols-[0.7fr_1.3fr]">
+            <div>
+              <h2 className="section-title">Contracts, not promises.</h2>
+
+              <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75">
+                Collection data, rendering and pixels live on-chain. Inspect
+                the contracts, read the code and verify the Hood yourself.
+              </p>
+            </div>
+
+            <div className="border-l-2 border-t-2 border-black">
+              {contracts.map((contract) => {
+                const href = contractExplorerUrl(contract.address);
+
+                return (
+                  <div
+                    key={contract.label}
+                    className="grid gap-3 border-b-2 border-r-2 border-black p-5 md:grid-cols-[160px_1fr_auto] md:items-center"
+                  >
+                    <span className="text-[10px] uppercase tracking-[0.16em] opacity-60">
+                      {contract.label}
+                    </span>
+
+                    <code className="break-all text-sm">
+                      {contract.address || "Add address in .env.local"}
+                    </code>
+
+                    {href === "#" ? (
+                      <span className="text-[10px] uppercase tracking-[0.14em] opacity-40">
+                        {shortAddress(contract.address)}
+                      </span>
+                    ) : (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] uppercase tracking-[0.14em] underline underline-offset-4"
+                      >
+                        Explorer ↗
+                      </a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <SiteFooter />
     </main>
   );
 }

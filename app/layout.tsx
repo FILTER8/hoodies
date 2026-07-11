@@ -1,44 +1,44 @@
 import "./globals.css";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import AppShell from "../components/AppShell";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://onchainhoodies.xyz"),
-
-  title: "HOODIES",
-
-  description:
-    "The fully on-chain neighborhood of Web3. 1-bit. Hand-drawn. Fully on-chain.",
-
-  openGraph: {
-    title: "HOODIES",
-    description:
-      "The fully on-chain neighborhood of Web3. 1-bit. Hand-drawn. Fully on-chain.",
-    images: [
-      {
-        url: "/og-banner.png",
-        width: 1200,
-        height: 630,
-      },
-    ],
+  title: {
+    default: "OnChainHoodies",
+    template: "%s · OnChainHoodies",
   },
-
+  description:
+    "A fully on-chain neighborhood built by builders for the people of Web3.",
+  openGraph: {
+    title: "OnChainHoodies",
+    description:
+      "The collection is permanent. The Hood keeps building.",
+    images: [{ url: "/og-banner.png", width: 1200, height: 630 }],
+  },
   twitter: {
     card: "summary_large_image",
-    title: "HOODIES",
+    title: "OnChainHoodies",
     description:
-      "The fully on-chain neighborhood of Web3. 1-bit. Hand-drawn. Fully on-chain.",
+      "The collection is permanent. The Hood keeps building.",
     images: ["/og-banner.png"],
   },
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#ccff00",
+};
+
 export default function RootLayout({
   children,
-}: {
-  children: React.ReactNode;
-}) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AppShell>{children}</AppShell>
+      </body>
     </html>
   );
 }
