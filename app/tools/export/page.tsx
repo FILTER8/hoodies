@@ -27,7 +27,8 @@ type GridShape = {
 };
 
 const outputSizes = [1200, 2400, 4800] as const;
-const spacingOptions = [0, 10, 50] as const;
+const MAX_SPACE_AROUND = 120;
+const MAX_SPACE_BETWEEN = 60;
 const REFERENCE_OUTPUT_SIZE = 1200;
 const GREEN = "#ccff00";
 const BLACK = "#000000";
@@ -186,13 +187,53 @@ function CompactOptions<T extends number>({
   );
 }
 
+
+function ControlSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="block border border-black p-2.5">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-[8px] uppercase tracking-[0.14em] opacity-60">
+          {label}
+        </span>
+        <span className="text-[9px] uppercase tracking-[0.12em]">
+          {value}
+        </span>
+      </div>
+
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="pixel-slider"
+      />
+    </label>
+  );
+}
+
 export default function ExportPage() {
   const { address, connect } = useWallet();
   const [hoodies, setHoodies] = useState<Hoodie[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [outputSize, setOutputSize] = useState<(typeof outputSizes)[number]>(2400);
-  const [spaceAround, setSpaceAround] = useState<(typeof spacingOptions)[number]>(10);
-  const [spaceBetween, setSpaceBetween] = useState<(typeof spacingOptions)[number]>(10);
+  const [spaceAround, setSpaceAround] = useState(50);
+  const [spaceBetween, setSpaceBetween] = useState(20);
   const [showTokenIds, setShowTokenIds] = useState(true);
   const [showBranding, setShowBranding] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(true);
@@ -378,24 +419,35 @@ export default function ExportPage() {
 
       const outerPadding = scaledSpacing(spaceAround, outputSize);
       const gap = scaledSpacing(spaceBetween, outputSize);
+      const brandFontSize = Math.max(18, Math.round(outputSize * 0.014));
       const brandHeight = showBranding
-        ? Math.max(20, Math.round(outputSize * 0.035))
+        ? Math.max(
+            Math.round(outputSize * 0.06),
+            Math.round(brandFontSize * 2.4)
+          )
+        : 0;
+      const brandingGap = showBranding
+        ? Math.max(8, Math.round(outputSize * 0.012))
         : 0;
       const idHeight = showTokenIds
         ? Math.max(16, Math.round(outputSize * 0.025))
         : 0;
 
+      const contentTop =
+        outerPadding + brandHeight + brandingGap;
+      const contentBottom = outputSize - outerPadding;
+      const contentHeight = contentBottom - contentTop;
+
       const availableWidth =
         outputSize - outerPadding * 2 - gap * Math.max(0, columns - 1);
-      const availableHeight =
-        outputSize -
-        outerPadding * 2 -
-        brandHeight -
-        gap * Math.max(0, rows - 1);
+      const availableGridHeight =
+        contentHeight - gap * Math.max(0, rows - 1);
 
       const cellByWidth = availableWidth / columns;
-      const cellByHeight = availableHeight / rows;
-      const artworkSize = Math.floor(Math.min(cellByWidth, cellByHeight - idHeight));
+      const cellByHeight = availableGridHeight / rows;
+      const artworkSize = Math.floor(
+        Math.min(cellByWidth, cellByHeight - idHeight)
+      );
 
       if (artworkSize < 8) {
         throw new Error(
@@ -408,7 +460,7 @@ export default function ExportPage() {
       const gridHeight = rows * cellHeight + gap * Math.max(0, rows - 1);
       const gridLeft = Math.round((outputSize - gridWidth) / 2);
       const gridTop = Math.round(
-        outerPadding + brandHeight + (availableHeight - gridHeight) / 2
+        contentTop + Math.max(0, (contentHeight - gridHeight) / 2)
       );
 
       context.fillStyle = BLACK;
@@ -444,7 +496,6 @@ export default function ExportPage() {
         context.save();
         context.fillStyle = BLACK;
 
-        const brandFontSize = Math.max(18, Math.round(outputSize * 0.014));
         const brandTracking = Math.max(2, Math.round(outputSize * 0.0035));
 
         drawTrackedText(
@@ -485,6 +536,46 @@ export default function ExportPage() {
 
   return (
     <main className="min-h-screen bg-[#ccff00] text-black">
+      <style jsx global>{`
+        .pixel-slider {
+          width: 100%;
+          height: 14px;
+          appearance: none;
+          background: transparent;
+          cursor: pointer;
+          touch-action: pan-x;
+        }
+
+        .pixel-slider::-webkit-slider-runnable-track {
+          height: 4px;
+          background: #000000;
+          border: 0;
+        }
+
+        .pixel-slider::-webkit-slider-thumb {
+          appearance: none;
+          width: 16px;
+          height: 22px;
+          margin-top: -9px;
+          background: #000000;
+          border: 0;
+          border-radius: 0;
+        }
+
+        .pixel-slider::-moz-range-track {
+          height: 4px;
+          background: #000000;
+          border: 0;
+        }
+
+        .pixel-slider::-moz-range-thumb {
+          width: 16px;
+          height: 22px;
+          background: #000000;
+          border: 0;
+          border-radius: 0;
+        }
+      `}</style>
       <SiteHeader />
 
       <section className="mx-auto max-w-[1500px] px-4 pb-14 pt-20 md:px-6 md:pt-24">
@@ -598,18 +689,20 @@ export default function ExportPage() {
 
           <div className="min-w-0">
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              <CompactOptions
+              <ControlSlider
                 label="Space around"
-                options={spacingOptions}
                 value={spaceAround}
-                suffix=""
+                min={0}
+                max={MAX_SPACE_AROUND}
+                step={1}
                 onChange={setSpaceAround}
               />
-              <CompactOptions
+              <ControlSlider
                 label="Space between"
-                options={spacingOptions}
                 value={spaceBetween}
-                suffix=""
+                min={0}
+                max={MAX_SPACE_BETWEEN}
+                step={1}
                 onChange={setSpaceBetween}
               />
               <CompactOptions
