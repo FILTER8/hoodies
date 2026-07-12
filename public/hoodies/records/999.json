@@ -1,0 +1,36 @@
+{
+  "token_id": 999,
+  "name": "OnChainHoodies #999",
+  "description": "The fully on-chain neighborhood of Web3",
+  "image_path": "images/999.svg",
+  "metadata_path": "raw-metadata/999.json",
+  "api_path": "api/v1/tokens/999.json",
+  "image_type": "image/svg+xml",
+  "image_sha256": "b35ee837a5ee8f22a94e03e339a513790d0c576eba1e73130ac012714614d076",
+  "attributes": [
+    {
+      "trait_type": "Background",
+      "value": "Robin"
+    },
+    {
+      "trait_type": "Hoddie",
+      "value": "Collector"
+    },
+    {
+      "trait_type": "Dress",
+      "value": "race-jacket"
+    },
+    {
+      "trait_type": "Mouth",
+      "value": "skull-teeth"
+    },
+    {
+      "trait_type": "Top",
+      "value": "pompadour"
+    },
+    {
+      "trait_type": "Eyes",
+      "value": "sleepy-eyes"
+    }
+  ]
+}

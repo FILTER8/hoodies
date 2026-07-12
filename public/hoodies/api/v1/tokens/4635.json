@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "1.0",
+  "collection": "OnChainHoodies",
+  "chain": "Robinhood Chain",
+  "contract": "0x9ec6c5b9f572a9b02138e553bc5f5882da735f45",
+  "tokenId": "4635",
+  "name": "OnChainHoodies #4635",
+  "description": "The fully on-chain neighborhood of Web3",
+  "image": "/images/4635.svg",
+  "metadata": "/raw-metadata/4635.json",
+  "attributes": [
+    {
+      "trait_type": "Background",
+      "value": "Robin"
+    },
+    {
+      "trait_type": "Hoddie",
+      "value": "Builder"
+    },
+    {
+      "trait_type": "Dress",
+      "value": "chains"
+    },
+    {
+      "trait_type": "Mouth",
+      "value": "full-beard"
+    },
+    {
+      "trait_type": "Eyes",
+      "value": "robo-mask"
+    }
+  ],
+  "content": {
+    "type": "image/svg+xml",
+    "sha256": "d59fec29cd7e0dbad50e206ccd4e30f83ac4533a0c35b30c78faebd47e72e6ac"
+  }
+}

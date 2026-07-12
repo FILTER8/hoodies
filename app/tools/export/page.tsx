@@ -429,9 +429,16 @@ export default function ExportPage() {
       const brandingGap = showBranding
         ? Math.max(8, Math.round(outputSize * 0.012))
         : 0;
-      const idHeight = showTokenIds
-        ? Math.max(16, Math.round(outputSize * 0.025))
+      const idFontSize = showTokenIds
+        ? Math.max(9, Math.round(outputSize * 0.0105))
         : 0;
+      const idGap = showTokenIds
+        ? Math.max(4, Math.round(outputSize * 0.0035))
+        : 0;
+      const idLineHeight = showTokenIds
+        ? Math.max(idFontSize + 4, Math.round(idFontSize * 1.4))
+        : 0;
+      const idHeight = idGap + idLineHeight;
 
       const contentTop =
         outerPadding + brandHeight + brandingGap;
@@ -480,14 +487,17 @@ export default function ExportPage() {
         context.drawImage(image, x, y, artworkSize, artworkSize);
 
         if (showTokenIds) {
-          const idFontSize = Math.max(9, Math.round(idHeight * 0.42));
+          context.save();
           context.fillStyle = BLACK;
           context.font = `${idFontSize}px DepartureMono, monospace`;
+          context.textAlign = "center";
+          context.textBaseline = "top";
           context.fillText(
             `#${hoodie.tokenId}`,
             x + artworkSize / 2,
-            y + artworkSize + idHeight / 2
+            y + artworkSize + idGap
           );
+          context.restore();
         }
       }
 
@@ -836,7 +846,7 @@ function SquarePreview({
               <HoodieArtwork hoodie={hoodie} />
             </div>
             {showTokenIds && (
-              <p className="shrink-0 pt-[0.35cqw] text-center text-[clamp(5px,0.9cqw,9px)] uppercase tracking-[0.08em]">
+              <p className="shrink-0 pt-[0.5cqw] text-center text-[clamp(5px,0.9cqw,9px)] leading-none uppercase tracking-[0.08em]">
                 #{hoodie.tokenId}
               </p>
             )}

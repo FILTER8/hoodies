@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0",
+  "collection": "OnChainHoodies",
+  "chain": "Robinhood Chain",
+  "contract": "0x9ec6c5b9f572a9b02138e553bc5f5882da735f45",
+  "tokenId": "3033",
+  "name": "OnChainHoodies #3033",
+  "description": "The fully on-chain neighborhood of Web3",
+  "image": "/images/3033.svg",
+  "metadata": "/raw-metadata/3033.json",
+  "attributes": [
+    {
+      "trait_type": "Background",
+      "value": "Robin"
+    },
+    {
+      "trait_type": "Hoddie",
+      "value": "Hodler"
+    },
+    {
+      "trait_type": "Dress",
+      "value": "amor-west"
+    },
+    {
+      "trait_type": "Mouth",
+      "value": "open-mouth"
+    },
+    {
+      "trait_type": "Top",
+      "value": "sailor-hat"
+    },
+    {
+      "trait_type": "Eyes",
+      "value": "side-look"
+    }
+  ],
+  "content": {
+    "type": "image/svg+xml",
+    "sha256": "c4170de9686e0c45bffcdd3116ea587f6f6c540268980ce22a9f87e1e6440b16"
+  }
+}
