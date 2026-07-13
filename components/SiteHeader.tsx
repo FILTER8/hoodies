@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import WalletButton from "./WalletButton";
 import { siteConfig } from "../lib/config";
+import WalletButton from "./WalletButton";
 
 const links = [
   { href: "/#collection", label: "Collection" },
@@ -19,7 +19,11 @@ export default function SiteHeader() {
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b-2 border-black bg-[#ccff00]">
       <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 md:px-8">
-        <Link href="/" className="text-sm tracking-[0.28em]">
+        <Link
+          href="/"
+          className="text-sm tracking-[0.28em]"
+          aria-label="OnChainHoodies home"
+        >
           {siteConfig.shortName}
         </Link>
 
@@ -70,6 +74,7 @@ export default function SiteHeader() {
                 {link.label}
               </Link>
             ))}
+
             <a
               href={siteConfig.openSeaUrl}
               target="_blank"
@@ -78,7 +83,14 @@ export default function SiteHeader() {
             >
               OpenSea
             </a>
-            <WalletButton />
+
+            <div className="border-2 border-black p-3">
+              <WalletButton />
+              <p className="mt-3 text-[8px] uppercase leading-relaxed tracking-[0.11em] opacity-65">
+                Secure wallet connection through RainbowKit and WalletConnect.
+                We never request seed phrases or private keys.
+              </p>
+            </div>
           </div>
         </div>
       )}
