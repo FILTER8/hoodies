@@ -1,0 +1,36 @@
+{
+  "token_id": 401,
+  "name": "OnChainHoodies #401",
+  "description": "The fully on-chain neighborhood of Web3",
+  "image_path": "images/401.svg",
+  "metadata_path": "raw-metadata/401.json",
+  "api_path": "api/v1/tokens/401.json",
+  "image_type": "image/svg+xml",
+  "image_sha256": "2d9da603deb3c050ccc2336f84e612fcccb266efeeef4a9c083d28f620e78ae2",
+  "attributes": [
+    {
+      "trait_type": "Background",
+      "value": "Robin"
+    },
+    {
+      "trait_type": "Hoddie",
+      "value": "Builder"
+    },
+    {
+      "trait_type": "Dress",
+      "value": "stripped-sweater"
+    },
+    {
+      "trait_type": "Mouth",
+      "value": "beard"
+    },
+    {
+      "trait_type": "Top",
+      "value": "feather"
+    },
+    {
+      "trait_type": "Eyes",
+      "value": "robo-mask"
+    }
+  ]
+}

@@ -8,7 +8,7 @@ import WalletButton from "./WalletButton";
 const links = [
   { href: "/#collection", label: "Collection" },
   { href: "/#builds", label: "Builds" },
-  { href: "/tools/export", label: "Exporter" },
+  { href: "/tools/explorer", label: "Explorer" },
   { href: "/cam", label: "Cam" },
   { href: "/#contracts", label: "Contracts" },
 ];
@@ -17,7 +17,7 @@ export default function SiteHeader() {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b-2 border-black bg-[#ccff00]">
+    <header className="fixed inset-x-0 top-0 z-50 border-b-2 border-[var(--hood-fg)] bg-[var(--hood-bg)] text-[var(--hood-fg)]">
       <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 md:px-8">
         <Link
           href="/"
@@ -53,7 +53,7 @@ export default function SiteHeader() {
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="border-2 border-black px-3 py-2 text-[10px] uppercase tracking-[0.16em] lg:hidden"
+          className="border-2 border-[var(--hood-fg)] px-3 py-2 text-[10px] uppercase tracking-[0.16em] lg:hidden"
           aria-expanded={open}
           aria-label="Toggle navigation"
         >
@@ -62,14 +62,14 @@ export default function SiteHeader() {
       </div>
 
       {open && (
-        <div className="border-t-2 border-black bg-[#ccff00] p-4 lg:hidden">
+        <div className="border-t-2 border-[var(--hood-fg)] bg-[var(--hood-bg)] p-4 lg:hidden">
           <div className="grid gap-3">
             {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="border-2 border-black px-4 py-3 text-xs uppercase tracking-[0.16em]"
+                className="border-2 border-[var(--hood-fg)] px-4 py-3 text-xs uppercase tracking-[0.16em]"
               >
                 {link.label}
               </Link>
@@ -79,12 +79,12 @@ export default function SiteHeader() {
               href={siteConfig.openSeaUrl}
               target="_blank"
               rel="noreferrer"
-              className="border-2 border-black px-4 py-3 text-xs uppercase tracking-[0.16em]"
+              className="border-2 border-[var(--hood-fg)] px-4 py-3 text-xs uppercase tracking-[0.16em]"
             >
               OpenSea
             </a>
 
-            <div className="border-2 border-black p-3">
+            <div className="border-2 border-[var(--hood-fg)] p-3">
               <WalletButton />
               <p className="mt-3 text-[8px] uppercase leading-relaxed tracking-[0.11em] opacity-65">
                 Secure wallet connection through RainbowKit and WalletConnect.

@@ -1,3 +1,6 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
@@ -7,34 +10,66 @@ import {
   siteConfig,
 } from "../lib/config";
 
-const neighbors = [
-  { name: "Builder", image: "/builder.png" },
-  { name: "Collector", image: "/collector.png" },
-  { name: "Flipper", image: "/flipper.png" },
-  { name: "HODLer", image: "/hodler.png" },
+const API_BASE = "https://api.onchainhoodies.xyz";
+
+type NeighborName = "Builder" | "Collector" | "Flipper" | "HODLer";
+
+type NeighborToken = {
+  tokenId: number;
+  name: string;
+  image: string;
+  hoodie: NeighborName;
+};
+
+type SearchResult = {
+  tokenId: number;
+  name?: string;
+  image?: string;
+  traits?: {
+    hoodie?: string;
+  };
+};
+
+type SearchResponse = {
+  total: number;
+  results: SearchResult[];
+};
+
+const neighborTypes: NeighborName[] = [
+  "Builder",
+  "Collector",
+  "Flipper",
+  "HODLer",
 ];
+
+const neighborFallbacks: Record<NeighborName, string> = {
+  Builder: "/builder.png",
+  Collector: "/collector.png",
+  Flipper: "/flipper.png",
+  HODLer: "/hodler.png",
+};
 
 const builds = [
   {
     label: "Live",
     title: "Grid Exporter",
-    copy: "Connect your wallet, choose the Hoodies you own and export them together as one clean, branded square PNG.",
+    copy: "Choose the Hoodies in your wallet and export them as one clean, branded square PNG.",
     href: "/tools/export",
     action: "Open exporter",
   },
   {
     label: "Live",
     title: "Hoodie Cam",
-    copy: "Capture your surroundings through the black-and-green 1-bit visual language of the Hood.",
+    copy: "Capture your surroundings through the black-and-green 1-bit language of the Hood.",
     href: "/cam",
     action: "Open camera",
   },
   {
-    label: "Building",
-    title: "Ink Explorer",
-    copy: "Inspect traits, count black pixels and discover another layer of rarity inside every Hoodie.",
-    href: "#",
-    action: "Coming next",
+    label: "Live",
+    title: "Hoodie Explorer",
+    copy: "Explore traits, Neighborhood Rarity and the on-chain ink inside every Hoodie.",
+    href: "/tools/explorer",
+    action: "Open Explorer",
   },
   {
     label: "Research",
@@ -51,7 +86,133 @@ const contracts = [
   { label: "Pixel Data", address: siteConfig.pixelDataAddress },
 ];
 
+function normalizeHoodie(value: string): NeighborName | null {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "builder") return "Builder";
+  if (normalized === "collector") return "Collector";
+  if (normalized === "flipper") return "Flipper";
+  if (normalized === "hodler") return "HODLer";
+
+  return null;
+}
+
+async function fetchRandomNeighbor(
+  hoodie: NeighborName,
+  signal?: AbortSignal,
+): Promise<NeighborToken> {
+  const params = new URLSearchParams({
+    hoodie,
+    limit: "1",
+    offset: "0",
+    sort: "token",
+  });
+
+  const firstResponse = await fetch(
+    `${API_BASE}/v1/search?${params.toString()}`,
+    {
+      signal,
+      cache: "no-store",
+    },
+  );
+
+  if (!firstResponse.ok) {
+    throw new Error(`Could not load ${hoodie} supply.`);
+  }
+
+  const firstData = (await firstResponse.json()) as SearchResponse;
+
+  if (!Number.isFinite(firstData.total) || firstData.total < 1) {
+    throw new Error(`No ${hoodie} Hoodies found.`);
+  }
+
+  const randomOffset = Math.floor(Math.random() * firstData.total);
+  params.set("offset", String(randomOffset));
+
+  const tokenResponse = await fetch(
+    `${API_BASE}/v1/search?${params.toString()}`,
+    {
+      signal,
+      cache: "no-store",
+    },
+  );
+
+  if (!tokenResponse.ok) {
+    throw new Error(`Could not load a random ${hoodie}.`);
+  }
+
+  const tokenData = (await tokenResponse.json()) as SearchResponse;
+  const result = tokenData.results?.[0];
+
+  if (!result || typeof result.tokenId !== "number") {
+    throw new Error(`The ${hoodie} response was empty.`);
+  }
+
+  const resolvedHoodie =
+    normalizeHoodie(result.traits?.hoodie ?? "") ?? hoodie;
+
+  return {
+    tokenId: result.tokenId,
+    name: result.name ?? `OnChainHoodies #${result.tokenId}`,
+    image:
+      result.image ??
+      `${API_BASE}/images/${result.tokenId}.svg`,
+    hoodie: resolvedHoodie,
+  };
+}
+
 export default function Home() {
+  const [neighbors, setNeighbors] = useState<
+    Partial<Record<NeighborName, NeighborToken>>
+  >({});
+  const [loadingNeighbors, setLoadingNeighbors] = useState<
+    Partial<Record<NeighborName, boolean>>
+  >({});
+
+  const refreshNeighbor = useCallback(
+    async (hoodie: NeighborName, signal?: AbortSignal) => {
+      setLoadingNeighbors((current) => ({
+        ...current,
+        [hoodie]: true,
+      }));
+
+      try {
+        const nextNeighbor = await fetchRandomNeighbor(hoodie, signal);
+
+        setNeighbors((current) => ({
+          ...current,
+          [hoodie]: nextNeighbor,
+        }));
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        console.error(error);
+      } finally {
+        if (!signal?.aborted) {
+          setLoadingNeighbors((current) => ({
+            ...current,
+            [hoodie]: false,
+          }));
+        }
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void Promise.all(
+      neighborTypes.map((hoodie) =>
+        refreshNeighbor(hoodie, controller.signal),
+      ),
+    );
+
+    return () => controller.abort();
+  }, [refreshNeighbor]);
+
   return (
     <main className="bg-[#ccff00] text-black">
       <SiteHeader />
@@ -63,21 +224,14 @@ export default function Home() {
           className="image-render-pixel mb-9 w-[220px] md:w-[350px]"
         />
 
-        <p className="mb-5 text-xs uppercase tracking-[0.24em]">
-          Fully on-chain · Built by builders
-        </p>
-
         <h1 className="text-[clamp(4rem,12vw,10rem)] leading-[0.82] tracking-[-0.08em]">
           WELCOME TO
           <br />
           THE HOOD
         </h1>
 
-        <p className="mt-10 max-w-2xl text-lg leading-relaxed md:text-2xl">
-          OnChainHoodies is a fully on-chain neighborhood for the people of
-          Web3.
-          <br />
-          The collection is permanent. The Hood keeps building.
+        <p className="mt-10 max-w-xl text-lg leading-relaxed md:text-2xl">
+          A fully on-chain neighborhood.
         </p>
 
         <div className="mt-10 flex flex-wrap justify-center gap-3">
@@ -131,27 +285,50 @@ export default function Home() {
                 the on-chain world, hand-drawn in 1-bit and stored fully
                 on-chain.
               </p>
+
+              <p className="mt-5 text-[10px] uppercase tracking-[0.16em] opacity-60">
+                Tap a neighbor to meet another.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {neighbors.map((neighbor) => (
-                <article
-                  key={neighbor.name}
-                  className="group border-2 border-[#ccff00]"
-                >
-                  <div className="aspect-square overflow-hidden bg-[#ccff00]">
-                    <img
-                      src={neighbor.image}
-                      alt={neighbor.name}
-                      className="image-render-pixel h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                  </div>
+              {neighborTypes.map((hoodie) => {
+                const neighbor = neighbors[hoodie];
+                const isLoading = loadingNeighbors[hoodie] ?? false;
+                const image = neighbor?.image ?? neighborFallbacks[hoodie];
+                const tokenLabel = neighbor
+                  ? `#${neighbor.tokenId}`
+                  : "Loading";
 
-                  <p className="border-t-2 border-[#ccff00] p-3 text-center text-xs uppercase tracking-[0.16em]">
-                    {neighbor.name}
-                  </p>
-                </article>
-              ))}
+                return (
+                  <button
+                    key={hoodie}
+                    type="button"
+                    onClick={() => void refreshNeighbor(hoodie)}
+                    disabled={isLoading}
+                    aria-label={`Load another ${hoodie} Hoodie`}
+                    className="group border-2 border-[#ccff00] text-left disabled:cursor-wait disabled:opacity-70"
+                  >
+                    <div className="relative aspect-square overflow-hidden bg-[#ccff00]">
+                      <img
+                        src={image}
+                        alt={
+                          neighbor?.name ??
+                          `${hoodie} OnChainHoodie`
+                        }
+                        className={`image-render-pixel h-full w-full object-cover ${
+                          isLoading ? "opacity-100" : "opacity-100"
+                        }`}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 border-t-2 border-[#ccff00] p-3 text-[10px] uppercase tracking-[0.14em]">
+                      <span>{hoodie}</span>
+                      <span className="opacity-60">{tokenLabel}</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

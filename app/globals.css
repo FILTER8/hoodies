@@ -11,6 +11,8 @@
 :root {
   --green: #ccff00;
   --black: #000000;
+  --hood-bg: var(--green);
+  --hood-fg: var(--black);
 }
 
 * {
@@ -49,8 +51,8 @@ button {
 }
 
 ::selection {
-  background: var(--black);
-  color: var(--green);
+  background: var(--hood-fg);
+  color: var(--hood-bg);
 }
 
 .image-render-pixel {
@@ -63,10 +65,10 @@ button {
   min-height: 52px;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--black);
-  background: var(--green);
+  border: 2px solid var(--hood-fg);
+  background: var(--hood-bg);
   padding: 0.9rem 1.4rem;
-  color: var(--black);
+  color: var(--hood-fg);
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.16em;
@@ -79,13 +81,13 @@ button {
 }
 
 .pixel-cta-dark {
-  background: var(--black);
-  color: var(--green);
+  background: var(--hood-fg);
+  color: var(--hood-bg);
 }
 
 .pixel-cta-dark:hover {
-  background: var(--green);
-  color: var(--black);
+  background: var(--hood-bg);
+  color: var(--hood-fg);
 }
 
 .section-heading-row {
