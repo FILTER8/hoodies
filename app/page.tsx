@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
@@ -35,6 +35,35 @@ type SearchResponse = {
   results: SearchResult[];
 };
 
+type MarketMetric = "floor" | "sales" | "volume" | "holders";
+type MarketRange = "7D" | "30D" | "ALL";
+
+type ChartPoint = {
+  timestamp: number;
+  label: string;
+  floor: number;
+  sales: number;
+  volume: number;
+  owners: number | null;
+  averageSale: number | null;
+  medianSale: number | null;
+  highestSale: number | null;
+  buyers: number | null;
+  sellers: number | null;
+};
+
+type MarketSummary = {
+  floor: number | null;
+  floorCurrency: string;
+  bestOffer: number | null;
+  bestOfferCurrency: string;
+  owners: number | null;
+  totalVolume: number | null;
+  totalSales: number | null;
+};
+
+type UnknownRecord = Record<string, unknown>;
+
 const neighborTypes: NeighborName[] = [
   "Builder",
   "Collector",
@@ -67,16 +96,16 @@ const builds = [
   {
     label: "Live",
     title: "Hoodie Explorer",
-    copy: "Explore traits, Neighborhood Rarity and the on-chain ink inside every Hoodie.",
+    copy: "Explore traits, Neighborhood Rarity, market data and the on-chain ink inside every Hoodie.",
     href: "/tools/explorer",
-    action: "Open Explorer",
+    action: "Open explorer",
   },
   {
-    label: "Research",
-    title: "Agent Tools",
-    copy: "Machine-readable tools for agents to inspect, understand and interact with fully on-chain NFTs.",
-    href: "#agents",
-    action: "Explore direction",
+    label: "Live",
+    title: "Builder API",
+    copy: "Build with artwork, traits, rarity, ink, market data and collector intelligence. Good builds can earn from the 150 OCH Builder Treasury.",
+    href: "/api",
+    action: "Build in the Hood",
   },
 ];
 
@@ -85,6 +114,236 @@ const contracts = [
   { label: "Renderer", address: siteConfig.rendererAddress },
   { label: "Pixel Data", address: siteConfig.pixelDataAddress },
 ];
+
+const metricLabels: Record<MarketMetric, string> = {
+  floor: "Floor",
+  sales: "Sales",
+  volume: "Volume",
+  holders: "Holders",
+};
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function numberFrom(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (isRecord(value)) {
+    for (const key of ["amount", "value", "eth", "price", "total"]) {
+      const nested = numberFrom(value[key]);
+      if (nested !== null) return nested;
+    }
+  }
+
+  return null;
+}
+
+function stringFrom(value: unknown, fallback = "ETH") {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function findValue(
+  object: UnknownRecord,
+  paths: string[][],
+): unknown {
+  for (const path of paths) {
+    let current: unknown = object;
+
+    for (const key of path) {
+      if (!isRecord(current)) {
+        current = undefined;
+        break;
+      }
+
+      current = current[key];
+    }
+
+    if (current !== undefined && current !== null) return current;
+  }
+
+  return undefined;
+}
+
+function unwrapData(value: unknown): UnknownRecord {
+  if (!isRecord(value)) return {};
+  return isRecord(value.data) ? value.data : value;
+}
+
+function normalizeMarketSummary(value: unknown): MarketSummary {
+  const data = unwrapData(value);
+
+  const floorValue = findValue(data, [
+    ["floor"],
+    ["floorPrice"],
+    ["floor_price"],
+    ["collectionFloor"],
+    ["total", "floor_price"],
+    ["total", "floorPrice"],
+  ]);
+
+  const offerValue = findValue(data, [
+    ["bestCollectionOffer"],
+    ["bestOffer"],
+    ["best_offer"],
+    ["offers", "best"],
+  ]);
+
+  return {
+    floor: numberFrom(floorValue),
+    floorCurrency: stringFrom(
+      findValue(data, [
+        ["floor", "currency"],
+        ["floor", "symbol"],
+        ["floorCurrency"],
+        ["floor_price_symbol"],
+        ["total", "floor_price_symbol"],
+      ]),
+    ),
+    bestOffer: numberFrom(offerValue),
+    bestOfferCurrency: stringFrom(
+      findValue(data, [
+        ["bestCollectionOffer", "price", "currency"],
+        ["bestCollectionOffer", "currency"],
+        ["bestOffer", "price", "currency"],
+        ["bestOffer", "currency"],
+      ]),
+      "WETH",
+    ),
+    owners: numberFrom(
+      findValue(data, [
+        ["owners"],
+        ["ownerCount"],
+        ["owner_count"],
+        ["total", "owners"],
+        ["total", "num_owners"],
+      ]),
+    ),
+    totalVolume: numberFrom(
+      findValue(data, [
+        ["volume"],
+        ["totalVolume"],
+        ["total_volume"],
+        ["total", "volume"],
+      ]),
+    ),
+    totalSales: numberFrom(
+      findValue(data, [
+        ["sales"],
+        ["totalSales"],
+        ["total_sales"],
+        ["total", "sales"],
+        ["total", "count"],
+      ]),
+    ),
+  };
+}
+
+function collectArrays(value: unknown, output: unknown[][] = []): unknown[][] {
+  if (Array.isArray(value)) {
+    output.push(value);
+
+    for (const item of value) {
+      collectArrays(item, output);
+    }
+
+    return output;
+  }
+
+  if (isRecord(value)) {
+    for (const nested of Object.values(value)) {
+      collectArrays(nested, output);
+    }
+  }
+
+  return output;
+}
+
+function timestampFrom(record: UnknownRecord): number | null {
+  const raw = findValue(record, [
+    ["timestamp"],
+    ["time"],
+    ["date"],
+    ["createdAt"],
+    ["created_at"],
+    ["eventTimestamp"],
+    ["event_timestamp"],
+    ["blockTimestamp"],
+  ]);
+
+  if (typeof raw === "number") {
+    return raw > 10_000_000_000 ? raw : raw * 1000;
+  }
+
+  if (typeof raw === "string") {
+    const numeric = Number(raw);
+
+    if (Number.isFinite(numeric)) {
+      return numeric > 10_000_000_000 ? numeric : numeric * 1000;
+    }
+
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function priceFromRecord(record: UnknownRecord): number | null {
+  return numberFrom(
+    findValue(record, [
+      ["floor"],
+      ["floorPrice"],
+      ["floor_price"],
+      ["price"],
+      ["payment", "quantity"],
+      ["payment", "amount"],
+      ["payment", "value"],
+      ["salePrice"],
+      ["sale_price"],
+      ["value"],
+    ]),
+  );
+}
+
+function normalizeHistory(value: unknown): ChartPoint[] {
+  const root = unwrapData(value);
+  const source = Array.isArray(root.points) ? root.points : [];
+
+  return source
+    .filter(isRecord)
+    .map((point) => {
+      const date = typeof point.date === "string" ? point.date : null;
+      if (!date) return null;
+
+      const timestamp = Date.parse(`${date}T00:00:00Z`);
+      if (!Number.isFinite(timestamp)) return null;
+
+      return {
+        timestamp,
+        label: new Intl.DateTimeFormat("en", {
+          month: "short",
+          day: "numeric",
+        }).format(new Date(timestamp)),
+        floor: numberFrom(point.floor) ?? 0,
+        sales: numberFrom(point.sales) ?? 0,
+        volume: numberFrom(point.volume) ?? 0,
+        owners: numberFrom(point.owners),
+        averageSale: numberFrom(point.averageSale),
+        medianSale: numberFrom(point.medianSale),
+        highestSale: numberFrom(point.highestSale),
+        buyers: numberFrom(point.buyers),
+        sellers: numberFrom(point.sellers),
+      };
+    })
+    .filter((point): point is ChartPoint => point !== null)
+    .sort((left, right) => left.timestamp - right.timestamp);
+}
 
 function normalizeHoodie(value: string): NeighborName | null {
   const normalized = value.trim().toLowerCase();
@@ -155,10 +414,261 @@ async function fetchRandomNeighbor(
     tokenId: result.tokenId,
     name: result.name ?? `OnChainHoodies #${result.tokenId}`,
     image:
-      result.image ??
-      `${API_BASE}/images/${result.tokenId}.svg`,
+      result.image ?? `${API_BASE}/images/${result.tokenId}.svg`,
     hoodie: resolvedHoodie,
   };
+}
+
+function compactNumber(value: number | null, digits = 2) {
+  if (value === null) return "—";
+
+  return new Intl.NumberFormat("en", {
+    maximumFractionDigits: digits,
+    notation: value >= 10000 ? "compact" : "standard",
+  }).format(value);
+}
+
+function MarketChart({
+  points,
+  metric,
+}: {
+  points: ChartPoint[];
+  metric: MarketMetric;
+}) {
+  const width = 1000;
+  const height = 390;
+  const paddingLeft = 56;
+  const paddingRight = 24;
+  const paddingTop = 28;
+  const paddingBottom = 48;
+  const chartWidth = width - paddingLeft - paddingRight;
+  const chartHeight = height - paddingTop - paddingBottom;
+  const isBarChart = metric === "sales" || metric === "volume";
+
+  const visiblePoints =
+    metric === "holders"
+      ? points.filter((point) => point.owners !== null)
+      : points;
+
+  const getValue = (point: ChartPoint) => {
+    if (metric === "holders") return point.owners ?? 0;
+    return point[metric];
+  };
+
+  const values = visiblePoints.map(getValue);
+  const rawMaximum = Math.max(...values, 0);
+  const positiveValues = values.filter((value) => value > 0);
+  const rawMinimum =
+    metric === "floor" || metric === "holders"
+      ? Math.min(...positiveValues, rawMaximum || 0)
+      : 0;
+
+  const isAutoZoomMetric = metric === "floor" || metric === "holders";
+  const rawSpread = Math.max(rawMaximum - rawMinimum, 0);
+
+  const minimumPadding = isAutoZoomMetric
+    ? metric === "floor"
+      ? Math.max(rawMaximum * 0.01, 0.00025)
+      : Math.max(rawMaximum * 0.0025, 1)
+    : 0;
+
+  const spreadPadding = isAutoZoomMetric
+    ? Math.max(rawSpread * 0.18, minimumPadding)
+    : 0;
+
+  const minimum = isAutoZoomMetric
+    ? Math.max(0, rawMinimum - spreadPadding)
+    : 0;
+
+  const maximum = isAutoZoomMetric
+    ? rawMaximum + spreadPadding
+    : Math.max(rawMaximum, 1);
+
+  const range = Math.max(
+    maximum - minimum,
+    isAutoZoomMetric ? minimumPadding * 2 : maximum * 0.08,
+    0.000001,
+  );
+
+  const xForIndex = (index: number) =>
+    visiblePoints.length <= 1
+      ? paddingLeft + chartWidth / 2
+      : paddingLeft +
+        (index / (visiblePoints.length - 1)) * chartWidth;
+
+  const yForValue = (value: number) =>
+    paddingTop + chartHeight - ((value - minimum) / range) * chartHeight;
+
+  const coordinates = visiblePoints.map((point, index) => ({
+    x: xForIndex(index),
+    y: yForValue(getValue(point)),
+    value: getValue(point),
+    point,
+  }));
+
+  const line = coordinates
+    .map(({ x, y }) => `${x.toFixed(2)},${y.toFixed(2)}`)
+    .join(" ");
+
+  const barSlot =
+    visiblePoints.length > 0 ? chartWidth / visiblePoints.length : chartWidth;
+  const barWidth = Math.max(12, Math.min(86, barSlot * 0.58));
+
+  const formatAxisValue = (value: number) => {
+    if (metric === "sales" || metric === "holders") {
+      return compactNumber(value, 0);
+    }
+
+    return compactNumber(value, value < 1 ? 4 : 2);
+  };
+
+  if (visiblePoints.length < (isBarChart ? 1 : 2)) {
+    return (
+      <div className="grid min-h-[390px] place-items-center border-2 border-[#ccff00] p-8 text-center">
+        <div>
+          <p className="text-sm uppercase tracking-[0.16em]">
+            {metric === "holders"
+              ? "Holder history starts now"
+              : "Market history is loading"}
+          </p>
+          <p className="mt-3 max-w-md text-xs leading-relaxed opacity-60">
+            {metric === "holders"
+              ? "Historical owner counts cannot be reconstructed reliably. The hourly recorder is now building this chart forward."
+              : "Live summary data remains available above."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-2 border-[#ccff00] p-3 md:p-5">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={`${metricLabels[metric]} market chart`}
+        className="h-auto w-full overflow-visible"
+      >
+        {[0, 1, 2, 3, 4].map((step) => {
+          const ratio = step / 4;
+          const y = paddingTop + ratio * chartHeight;
+          const axisValue = maximum - ratio * (maximum - minimum);
+
+          return (
+            <g key={step}>
+              <line
+                x1={paddingLeft}
+                x2={paddingLeft + chartWidth}
+                y1={y}
+                y2={y}
+                stroke="currentColor"
+                strokeOpacity="0.16"
+                strokeWidth="1"
+              />
+              <text
+                x={paddingLeft - 12}
+                y={y + 4}
+                textAnchor="end"
+                fill="currentColor"
+                fillOpacity="0.52"
+                fontSize="13"
+              >
+                {formatAxisValue(axisValue)}
+              </text>
+            </g>
+          );
+        })}
+
+        {isBarChart ? (
+          coordinates.map(({ x, y, value, point }, index) => {
+            const baseline = paddingTop + chartHeight;
+            const renderedHeight = Math.max(2, baseline - y);
+
+            return (
+              <g key={`${point.timestamp}-${index}`}>
+                <rect
+                  x={x - barWidth / 2}
+                  y={baseline - renderedHeight}
+                  width={barWidth}
+                  height={renderedHeight}
+                  fill="currentColor"
+                  fillOpacity="0.92"
+                >
+                  <title>
+                    {point.label}: {formatAxisValue(value)}
+                    {metric === "sales" ? " sales" : " ETH"}
+                  </title>
+                </rect>
+                <rect
+                  x={x - barWidth / 2}
+                  y={baseline - renderedHeight}
+                  width={barWidth}
+                  height={renderedHeight}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+              </g>
+            );
+          })
+        ) : (
+          <>
+            <polyline
+              points={line}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="5"
+              strokeLinejoin="miter"
+              strokeLinecap="square"
+            />
+
+            {coordinates.map(({ x, y, value, point }, index) => (
+              <circle
+                key={`${point.timestamp}-${index}`}
+                cx={x}
+                cy={y}
+                r="5"
+                fill="currentColor"
+              >
+                <title>
+                  {point.label}: {formatAxisValue(value)}
+                  {metric === "floor"
+                    ? " ETH"
+                    : metric === "holders"
+                      ? " holders"
+                      : ""}
+                </title>
+              </circle>
+            ))}
+          </>
+        )}
+
+        {visiblePoints.map((point, index) => {
+          const shouldShow =
+            visiblePoints.length <= 8 ||
+            index === 0 ||
+            index === visiblePoints.length - 1 ||
+            index % Math.ceil(visiblePoints.length / 6) === 0;
+
+          if (!shouldShow) return null;
+
+          return (
+            <text
+              key={`label-${point.timestamp}`}
+              x={xForIndex(index)}
+              y={height - 15}
+              textAnchor="middle"
+              fill="currentColor"
+              fillOpacity="0.52"
+              fontSize="12"
+            >
+              {point.label.toUpperCase()}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
+  );
 }
 
 export default function Home() {
@@ -168,6 +678,21 @@ export default function Home() {
   const [loadingNeighbors, setLoadingNeighbors] = useState<
     Partial<Record<NeighborName, boolean>>
   >({});
+  const [marketSummary, setMarketSummary] = useState<MarketSummary>({
+    floor: null,
+    floorCurrency: "ETH",
+    bestOffer: null,
+    bestOfferCurrency: "WETH",
+    owners: null,
+    totalVolume: null,
+    totalSales: null,
+  });
+  const [marketPoints, setMarketPoints] = useState<ChartPoint[]>([]);
+  const [marketMetric, setMarketMetric] =
+    useState<MarketMetric>("floor");
+  const [marketRange, setMarketRange] = useState<MarketRange>("30D");
+  const [marketLoading, setMarketLoading] = useState(true);
+  const [marketError, setMarketError] = useState(false);
 
   const refreshNeighbor = useCallback(
     async (hoodie: NeighborName, signal?: AbortSignal) => {
@@ -212,6 +737,128 @@ export default function Home() {
 
     return () => controller.abort();
   }, [refreshNeighbor]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadMarket() {
+      setMarketLoading(true);
+      setMarketError(false);
+
+      const historyRange =
+        marketRange === "7D" ? "7d" : marketRange === "30D" ? "30d" : "all";
+
+      try {
+        const [summaryResponse, historyResponse] = await Promise.all([
+          fetch(`${API_BASE}/v1/market/collection`, {
+            signal: controller.signal,
+            cache: "no-store",
+          }),
+          fetch(
+            `${API_BASE}/v1/market/history?range=${historyRange}`,
+            {
+              signal: controller.signal,
+              cache: "no-store",
+            },
+          ),
+        ]);
+
+        if (!summaryResponse.ok) {
+          throw new Error("Market summary unavailable.");
+        }
+
+        const summaryJson: unknown = await summaryResponse.json();
+        setMarketSummary(normalizeMarketSummary(summaryJson));
+
+        if (historyResponse.ok) {
+          const historyJson: unknown = await historyResponse.json();
+          setMarketPoints(normalizeHistory(historyJson));
+        } else {
+          setMarketPoints([]);
+        }
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          error.name === "AbortError"
+        ) {
+          return;
+        }
+
+        console.error(error);
+        setMarketError(true);
+      } finally {
+        if (!controller.signal.aborted) {
+          setMarketLoading(false);
+        }
+      }
+    }
+
+    void loadMarket();
+
+    return () => controller.abort();
+  }, [marketRange]);
+
+  const activePoints = useMemo(() => {
+    if (marketPoints.length <= 60) return marketPoints;
+
+    const step = Math.ceil(marketPoints.length / 60);
+    return marketPoints.filter(
+      (_, index) => index % step === 0 || index === marketPoints.length - 1,
+    );
+  }, [marketPoints]);
+
+  const selectedMarketStats = useMemo(() => {
+    const latestFloor =
+      [...activePoints].reverse().find((point) => point.floor > 0)?.floor ??
+      marketSummary.floor;
+
+    const latestOwners =
+      [...activePoints].reverse().find((point) => point.owners !== null)
+        ?.owners ?? marketSummary.owners;
+
+    const totalSales = activePoints.reduce(
+      (sum, point) => sum + point.sales,
+      0,
+    );
+    const totalVolume = activePoints.reduce(
+      (sum, point) => sum + point.volume,
+      0,
+    );
+    const totalBuyers = activePoints.reduce(
+      (sum, point) => sum + (point.buyers ?? 0),
+      0,
+    );
+    const totalSellers = activePoints.reduce(
+      (sum, point) => sum + (point.sellers ?? 0),
+      0,
+    );
+    const highestSale = Math.max(
+      ...activePoints.map((point) => point.highestSale ?? 0),
+      0,
+    );
+    const weightedAverageSale =
+      totalSales > 0 ? totalVolume / totalSales : null;
+
+    return {
+      latestFloor,
+      latestOwners,
+      totalSales,
+      totalVolume,
+      totalBuyers,
+      totalSellers,
+      highestSale,
+      weightedAverageSale,
+    };
+  }, [activePoints, marketSummary.floor, marketSummary.owners]);
+
+  const selectedMetricValue =
+    marketMetric === "floor"
+      ? selectedMarketStats.latestFloor
+      : marketMetric === "sales"
+        ? selectedMarketStats.totalSales
+        : marketMetric === "volume"
+          ? selectedMarketStats.totalVolume
+          : selectedMarketStats.latestOwners;
 
   return (
     <main className="bg-[#ccff00] text-black">
@@ -307,18 +954,16 @@ export default function Home() {
                     onClick={() => void refreshNeighbor(hoodie)}
                     disabled={isLoading}
                     aria-label={`Load another ${hoodie} Hoodie`}
-                    className="group border-2 border-[#ccff00] text-left disabled:cursor-wait disabled:opacity-70"
+                    className="border-2 border-[#ccff00] text-left disabled:cursor-wait disabled:opacity-70"
                   >
-                    <div className="relative aspect-square overflow-hidden bg-[#ccff00]">
+                    <div className="aspect-square overflow-hidden bg-[#ccff00]">
                       <img
                         src={image}
                         alt={
                           neighbor?.name ??
                           `${hoodie} OnChainHoodie`
                         }
-                        className={`image-render-pixel h-full w-full object-cover ${
-                          isLoading ? "opacity-100" : "opacity-100"
-                        }`}
+                        className="image-render-pixel h-full w-full object-cover"
                       />
                     </div>
 
@@ -334,10 +979,275 @@ export default function Home() {
         </div>
       </section>
 
+      <section id="market" className="bg-[#ccff00] px-6 py-24 text-black">
+        <div className="mx-auto max-w-[1440px]">
+          <div className="section-heading-row border-black">
+            <p>02 / Market</p>
+            <p>Track the Hood</p>
+          </div>
+
+          <div className="mt-12 grid gap-10 lg:grid-cols-[0.7fr_1.3fr]">
+            <div>
+              <h2 className="section-title">
+                Culture lives.
+                <br />
+                Markets move.
+              </h2>
+
+              <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-75 md:text-xl">
+                Follow floor, sales and volume directly from the
+                OnChainHoodies market layer.
+              </p>
+
+              <div className="mt-9 grid grid-cols-2 border-l-2 border-t-2 border-black">
+                {[
+                  {
+                    label: "Floor",
+                    value: marketLoading
+                      ? "..."
+                      : `${compactNumber(marketSummary.floor, 4)} ${
+                          marketSummary.floorCurrency
+                        }`,
+                  },
+                  {
+                    label: "Best offer",
+                    value: marketLoading
+                      ? "..."
+                      : `${compactNumber(marketSummary.bestOffer, 4)} ${
+                          marketSummary.bestOfferCurrency
+                        }`,
+                  },
+                  {
+                    label: "Owners",
+                    value: marketLoading
+                      ? "..."
+                      : compactNumber(marketSummary.owners, 0),
+                  },
+                  {
+                    label: "Total volume",
+                    value: marketLoading
+                      ? "..."
+                      : `${compactNumber(
+                          marketSummary.totalVolume,
+                          2,
+                        )} ETH`,
+                  },
+                ].map((stat) => (
+                  <div
+                    key={stat.label}
+                    className="border-b-2 border-r-2 border-black p-4"
+                  >
+                    <p className="text-[8px] uppercase tracking-[0.15em] opacity-55">
+                      {stat.label}
+                    </p>
+                    <p className="mt-3 text-xl leading-none">
+                      {stat.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <a
+                href={siteConfig.openSeaUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-5 inline-block text-[10px] uppercase tracking-[0.15em] underline underline-offset-4"
+              >
+                Trade on OpenSea ↗
+              </a>
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex flex-col gap-3 border-2 border-black bg-black p-3 text-[#ccff00] md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-wrap">
+                  {(
+                    ["floor", "sales", "volume", "holders"] as MarketMetric[]
+                  ).map((metric) => (
+                    <button
+                      key={metric}
+                      type="button"
+                      onClick={() => setMarketMetric(metric)}
+                      className={`border border-[#ccff00] px-4 py-3 text-[9px] uppercase tracking-[0.14em] ${
+                        marketMetric === metric
+                          ? "bg-[#ccff00] text-black"
+                          : ""
+                      }`}
+                    >
+                      {metricLabels[metric]}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex">
+                  {(["7D", "30D", "ALL"] as MarketRange[]).map(
+                    (range) => (
+                      <button
+                        key={range}
+                        type="button"
+                        onClick={() => setMarketRange(range)}
+                        className={`border border-[#ccff00] px-4 py-3 text-[9px] uppercase tracking-[0.14em] ${
+                          marketRange === range
+                            ? "bg-[#ccff00] text-black"
+                            : ""
+                        }`}
+                      >
+                        {range}
+                      </button>
+                    ),
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-black p-4 text-[#ccff00] md:p-6">
+                <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-55">
+                      {metricLabels[marketMetric]} · {marketRange} ·{" "}
+                      {marketMetric === "sales" || marketMetric === "volume"
+                        ? "Period total"
+                        : "Latest"}
+                    </p>
+                    <p className="mt-2 text-4xl leading-none tracking-[-0.05em]">
+                      {marketLoading
+                        ? "..."
+                        : compactNumber(
+                            selectedMetricValue,
+                            marketMetric === "floor" ? 4 : 2,
+                          )}
+                      {!marketLoading &&
+                      (marketMetric === "floor" || marketMetric === "volume")
+                        ? " ETH"
+                        : ""}
+                    </p>
+                  </div>
+
+                  <p className="text-[8px] uppercase tracking-[0.13em] opacity-50">
+                    Source · OpenSea via OCH API
+                  </p>
+                </div>
+
+                {(marketMetric === "floor" ||
+                  marketMetric === "holders") &&
+                activePoints.length > 0 ? (
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border border-[#ccff00] px-3 py-3 text-[8px] uppercase tracking-[0.13em]">
+                    <span className="opacity-55">
+                      Auto-zoomed to visible range
+                    </span>
+                    <span>
+                      {marketMetric === "floor"
+                        ? `${compactNumber(
+                            Math.min(
+                              ...activePoints
+                                .map((point) => point.floor)
+                                .filter((value) => value > 0),
+                            ),
+                            4,
+                          )} — ${compactNumber(
+                            Math.max(
+                              ...activePoints.map((point) => point.floor),
+                            ),
+                            4,
+                          )} ETH`
+                        : `${compactNumber(
+                            Math.min(
+                              ...activePoints
+                                .map((point) => point.owners)
+                                .filter(
+                                  (value): value is number =>
+                                    value !== null,
+                                ),
+                            ),
+                            0,
+                          )} — ${compactNumber(
+                            Math.max(
+                              ...activePoints
+                                .map((point) => point.owners)
+                                .filter(
+                                  (value): value is number =>
+                                    value !== null,
+                                ),
+                            ),
+                            0,
+                          )} holders`}
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="mb-4 grid grid-cols-2 border-l border-t border-[#ccff00] md:grid-cols-4">
+                  {[
+                    {
+                      label: "Average sale",
+                      value:
+                        selectedMarketStats.weightedAverageSale === null
+                          ? "—"
+                          : `${compactNumber(
+                              selectedMarketStats.weightedAverageSale,
+                              4,
+                            )} ETH`,
+                    },
+                    {
+                      label: "Highest sale",
+                      value: `${compactNumber(
+                        selectedMarketStats.highestSale,
+                        4,
+                      )} ETH`,
+                    },
+                    {
+                      label: "Buyers",
+                      value: compactNumber(
+                        selectedMarketStats.totalBuyers,
+                        0,
+                      ),
+                    },
+                    {
+                      label: "Sellers",
+                      value: compactNumber(
+                        selectedMarketStats.totalSellers,
+                        0,
+                      ),
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      className="border-b border-r border-[#ccff00] p-3"
+                    >
+                      <p className="text-[7px] uppercase tracking-[0.14em] opacity-50">
+                        {item.label}
+                      </p>
+                      <p className="mt-2 text-sm">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {marketMetric === "holders" &&
+                activePoints.every((point) => point.owners === null) ? (
+                  <p className="mb-4 border border-[#ccff00] p-3 text-[8px] uppercase leading-relaxed tracking-[0.12em] opacity-60">
+                    Holder history is recorded from API v1.5 onward. Earlier
+                    daily owner counts are intentionally left blank rather
+                    than estimated.
+                  </p>
+                ) : null}
+
+                {marketError ? (
+                  <div className="grid min-h-[390px] place-items-center border-2 border-[#ccff00] p-8 text-center">
+                    Market data is temporarily unavailable.
+                  </div>
+                ) : (
+                  <MarketChart
+                    points={activePoints}
+                    metric={marketMetric}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section id="builds" className="px-6 py-24">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>02 / Builds</p>
+            <p>03 / Builds</p>
             <p>Built in the Hood</p>
           </div>
 
@@ -367,18 +1277,12 @@ export default function Home() {
                   </p>
                 </div>
 
-                {build.href === "#" ? (
-                  <span className="mt-10 text-xs uppercase tracking-[0.18em] opacity-50">
-                    {build.action} →
-                  </span>
-                ) : (
-                  <Link
-                    href={build.href}
-                    className="mt-10 text-xs uppercase tracking-[0.18em] underline underline-offset-4"
-                  >
-                    {build.action} →
-                  </Link>
-                )}
+                <Link
+                  href={build.href}
+                  className="mt-10 text-xs uppercase tracking-[0.18em] underline underline-offset-4"
+                >
+                  {build.action} →
+                </Link>
               </article>
             ))}
           </div>
@@ -389,7 +1293,7 @@ export default function Home() {
         <div className="mx-auto grid max-w-[1440px] gap-12 lg:grid-cols-2">
           <div>
             <div className="section-heading-row">
-              <p>03 / Agents</p>
+              <p>04 / Agents</p>
               <p>Humans + machines</p>
             </div>
 
@@ -403,16 +1307,16 @@ export default function Home() {
           <div className="flex flex-col justify-end">
             <p className="max-w-2xl text-lg leading-relaxed opacity-80 md:text-2xl">
               Fully on-chain data gives collectors, builders and agents an open
-              foundation to inspect traits, interpret artwork and create new
-              ways to explore the collection.
+              foundation to inspect traits, interpret artwork, read markets and
+              create new ways to explore the collection.
             </p>
 
             <div className="mt-10 grid grid-cols-2 border-l border-t border-[#ccff00] text-[10px] uppercase tracking-[0.14em]">
               {[
                 "On-chain metadata",
-                "Trait inspection",
+                "Market intelligence",
                 "Machine-readable artwork",
-                "Agent tools",
+                "Builder API",
               ].map((item) => (
                 <div
                   key={item}
@@ -429,7 +1333,7 @@ export default function Home() {
       <section id="contracts" className="px-6 py-24">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>04 / On-chain</p>
+            <p>05 / On-chain</p>
             <p>Verify everything</p>
           </div>
 

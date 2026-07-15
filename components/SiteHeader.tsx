@@ -10,7 +10,7 @@ const links = [
   { href: "/#builds", label: "Builds" },
   { href: "/tools/explorer", label: "Explorer" },
   { href: "/cam", label: "Cam" },
-  { href: "/#contracts", label: "Contracts" },
+  { href: "/api", label: "Api" },
 ];
 
 export default function SiteHeader() {

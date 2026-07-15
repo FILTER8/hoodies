@@ -13,7 +13,7 @@ export default function SiteFooter() {
         </div>
 
         <div className="flex flex-wrap gap-x-6 gap-y-3 text-[11px] uppercase tracking-[0.16em]">
-          <Link href="/tools/export">Exporter</Link>
+          <Link href="/api">API</Link>
           <Link href="/cam">Cam</Link>
           <a href={siteConfig.openSeaUrl} target="_blank" rel="noreferrer">
             OpenSea
