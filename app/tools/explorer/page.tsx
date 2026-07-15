@@ -151,6 +151,28 @@ type SimilarHoodie = SearchResult & {
   inkDifference: number;
 };
 
+
+
+type GalleryCardSettings = {
+  inverted: boolean;
+  showNeighborhood: boolean;
+  showCollectionRank: boolean;
+  showNeighborhoodRank: boolean;
+  showInk: boolean;
+  showTraits: boolean;
+  showProvenance: boolean;
+};
+
+const defaultGalleryCardSettings: GalleryCardSettings = {
+  inverted: false,
+  showNeighborhood: true,
+  showCollectionRank: true,
+  showNeighborhoodRank: false,
+  showInk: false,
+  showTraits: false,
+  showProvenance: true,
+};
+
 type WalletProfile = {
   total: number;
   averageCollectionRank: number;
@@ -461,6 +483,596 @@ function TraitCard({
 }
 
 
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function drawTrackedCanvasText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  fontSize: number,
+  tracking: number,
+  align: "left" | "center" | "right" = "left",
+) {
+  context.font = `${fontSize}px DepartureMono, monospace`;
+  context.textBaseline = "alphabetic";
+
+  const characters = Array.from(text);
+  const widths = characters.map((character) =>
+    context.measureText(character).width,
+  );
+  const totalWidth =
+    widths.reduce((sum, width) => sum + width, 0) +
+    tracking * Math.max(0, characters.length - 1);
+
+  let cursor =
+    align === "center" ? x - totalWidth / 2 : align === "right" ? x - totalWidth : x;
+
+  characters.forEach((character, index) => {
+    context.fillText(character, cursor, y);
+    cursor += widths[index] + tracking;
+  });
+}
+
+function GalleryCardModal({
+  token,
+  open,
+  onClose,
+}: {
+  token: TokenApiResponse;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [settings, setSettings] = useState<GalleryCardSettings>(
+    defaultGalleryCardSettings,
+  );
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose, open]);
+
+  if (!open) return null;
+
+  const cardBackground = settings.inverted ? "#000000" : "#ccff00";
+  const cardForeground = settings.inverted ? "#ccff00" : "#000000";
+  const visibleTraits = traitKeys
+    .map((key) => ({
+      layer: key,
+      value: displayTraitValue(token.traits[key]),
+      percent: token.traits[key].withinHoodiePercent,
+    }))
+    .filter(
+      (trait) =>
+        trait.value !== "None" && trait.value !== "Covered by full hood",
+    );
+
+  const toggleSetting = (key: keyof GalleryCardSettings) => {
+    setSettings((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  const exportGalleryCard = async () => {
+    if (exporting) return;
+
+    setExporting(true);
+    setExportError(null);
+
+    try {
+      if (document.fonts?.ready) await document.fonts.ready;
+
+      const size = 2400;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Canvas is unavailable.");
+
+      context.imageSmoothingEnabled = false;
+      context.fillStyle = cardBackground;
+      context.fillRect(0, 0, size, size);
+      context.strokeStyle = cardForeground;
+      context.lineWidth = 4;
+      context.strokeRect(82, 82, size - 164, size - 164);
+
+      const imageResponse = await fetch(
+        absoluteApiUrl(
+          token.image.svg,
+          `${API_BASE}/images/${token.token.id}.svg`,
+        ),
+        { cache: "no-store" },
+      );
+
+      if (!imageResponse.ok) {
+        throw new Error("Unable to load the Hoodie artwork.");
+      }
+
+      const svgText = await imageResponse.text();
+      const svgBlob = new Blob([svgText], {
+        type: "image/svg+xml;charset=utf-8",
+      });
+      const artworkUrl = URL.createObjectURL(svgBlob);
+
+      try {
+        const artwork = new window.Image();
+        artwork.decoding = "sync";
+
+        await new Promise<void>((resolve, reject) => {
+          artwork.onload = () => resolve();
+          artwork.onerror = () =>
+            reject(new Error("Unable to render the Hoodie."));
+          artwork.src = artworkUrl;
+        });
+
+        const artworkSize = 1320;
+        const artworkX = Math.round((size - artworkSize) / 2);
+        const artworkY = 280;
+        context.drawImage(artwork, artworkX, artworkY, artworkSize, artworkSize);
+      } finally {
+        URL.revokeObjectURL(artworkUrl);
+      }
+
+      context.fillStyle = cardForeground;
+      drawTrackedCanvasText(
+        context,
+        `ONCHAINHOODIES #${String(token.token.id).padStart(4, "0")}`,
+        130,
+        184,
+        34,
+        7,
+      );
+
+      let contentY = 1688;
+
+      if (settings.showNeighborhood) {
+        drawTrackedCanvasText(
+          context,
+          `${token.traits.hoodie.toUpperCase()} NEIGHBORHOOD`,
+          size / 2,
+          contentY,
+          42,
+          5,
+          "center",
+        );
+        contentY += 94;
+      }
+
+      if (settings.showTraits && visibleTraits.length > 0) {
+        const traitText = visibleTraits
+          .map((trait) => {
+            const percent =
+              typeof trait.percent === "number" && Number.isFinite(trait.percent)
+                ? ` ${Math.round(trait.percent)}%`
+                : "";
+            return `${trait.value.toUpperCase()}${percent}`;
+          })
+          .join("  ·  ");
+
+        context.font = "26px DepartureMono, monospace";
+        context.textAlign = "center";
+        context.textBaseline = "alphabetic";
+        context.fillText(traitText.slice(0, 135), size / 2, contentY);
+        contentY += 76;
+      }
+
+      const rankBoxes: Array<{ label: string; value: string; detail: string }> = [];
+
+      if (settings.showCollectionRank) {
+        rankBoxes.push({
+          label: "COLLECTION RANK",
+          value: formatRank(
+            token.rarity.collection.rank,
+            token.rarity.collection.outOf,
+          ),
+          detail: `TOP ${topPercent(token.rarity.collection.rarerThanPercent)}`,
+        });
+      }
+
+      if (settings.showNeighborhoodRank) {
+        rankBoxes.push({
+          label: "NEIGHBORHOOD RANK",
+          value: formatRank(
+            token.rarity.neighborhood.rank,
+            token.rarity.neighborhood.outOf,
+          ),
+          detail: `TOP ${topPercent(token.rarity.neighborhood.rarerThanPercent)}`,
+        });
+      }
+
+      if (rankBoxes.length > 0) {
+        const gap = 24;
+        const totalWidth = size - 260;
+        const boxWidth =
+          rankBoxes.length === 1 ? totalWidth : (totalWidth - gap) / 2;
+        const boxHeight = 205;
+
+        rankBoxes.forEach((box, index) => {
+          const x = 130 + index * (boxWidth + gap);
+          context.strokeStyle = cardForeground;
+          context.lineWidth = 4;
+          context.strokeRect(x, contentY, boxWidth, boxHeight);
+          drawTrackedCanvasText(context, box.label, x + 34, contentY + 52, 22, 3);
+          context.font = "55px DepartureMono, monospace";
+          context.textAlign = "left";
+          context.fillText(box.value, x + 34, contentY + 126);
+          drawTrackedCanvasText(context, box.detail, x + 34, contentY + 174, 20, 3);
+        });
+
+        contentY += boxHeight + 30;
+      }
+
+      if (settings.showInk) {
+        const inkWidth = size - 260;
+        const inkHeight = 132;
+        const barX = 130;
+        const barY = contentY + 58;
+        const barWidth = inkWidth;
+        const barHeight = 28;
+        const fillPercent = Math.max(
+          0,
+          Math.min(100, token.ink.moreInkThanPercent),
+        );
+
+        drawTrackedCanvasText(context, "INK", 130, contentY + 26, 24, 4);
+        drawTrackedCanvasText(
+          context,
+          `${token.ink.blackPixels} BLACK PIXELS`,
+          size - 130,
+          contentY + 26,
+          24,
+          3,
+          "right",
+        );
+
+        context.strokeStyle = cardForeground;
+        context.lineWidth = 4;
+        context.strokeRect(barX, barY, barWidth, barHeight);
+        context.fillStyle = cardForeground;
+        context.fillRect(
+          barX + 6,
+          barY + 6,
+          Math.max(8, Math.round((barWidth - 12) * (fillPercent / 100))),
+          barHeight - 12,
+        );
+
+        drawTrackedCanvasText(
+          context,
+          `INK RANK #${token.ink.rank} · MORE INK THAN ${Math.round(fillPercent)}%`,
+          130,
+          contentY + inkHeight,
+          20,
+          3,
+        );
+      }
+
+      if (settings.showProvenance) {
+        drawTrackedCanvasText(
+          context,
+          "FULLY ON-CHAIN · CC0 · ROBINHOOD CHAIN",
+          130,
+          size - 130,
+          25,
+          3,
+        );
+        drawTrackedCanvasText(
+          context,
+          "ONCHAINHOODIES.XYZ",
+          size - 130,
+          size - 130,
+          25,
+          3,
+          "right",
+        );
+      }
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((result) => {
+          if (result) resolve(result);
+          else reject(new Error("Unable to create the gallery card."));
+        }, "image/png");
+      });
+
+      downloadBlob(blob, `onchainhoodies-${token.token.id}-gallery-card.png`);
+    } catch (error) {
+      setExportError(
+        error instanceof Error ? error.message : "Unable to export the card.",
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const controlItems: Array<{
+    key: keyof GalleryCardSettings;
+    label: string;
+  }> = [
+    { key: "showNeighborhood", label: "Neighborhood" },
+    { key: "showCollectionRank", label: "Collection rank" },
+    { key: "showNeighborhoodRank", label: "Neighborhood rank" },
+    { key: "showInk", label: "Ink data" },
+    { key: "showTraits", label: "Traits" },
+    { key: "showProvenance", label: "On-chain footer" },
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] overflow-y-auto bg-black/80 p-3 md:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Gallery Card Studio"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="mx-auto flex min-h-full max-w-[1440px] items-center justify-center">
+        <div className="w-full border border-[#ccff00] bg-[#ccff00] text-black">
+          <div className="flex items-center justify-between border-b border-black px-4 py-3">
+            <div>
+              <p className="text-[8px] uppercase tracking-[0.17em] opacity-60">
+                Holder tool
+              </p>
+              <h2 className="mt-1 text-xl uppercase tracking-[-0.04em] md:text-3xl">
+                Gallery Card Studio
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="border border-black px-4 py-3 text-[10px] uppercase tracking-[0.14em]"
+            >
+              Close ×
+            </button>
+          </div>
+
+          <div className="grid lg:grid-cols-[300px_minmax(0,1fr)]">
+            <aside className="border-b border-black p-4 lg:border-b-0 lg:border-r">
+              <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
+                Color mode
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings((current) => ({ ...current, inverted: false }))
+                  }
+                  className={`border border-black px-3 py-3 text-[9px] uppercase tracking-[0.13em] ${
+                    !settings.inverted ? "bg-black text-[#ccff00]" : ""
+                  }`}
+                >
+                  Lime
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings((current) => ({ ...current, inverted: true }))
+                  }
+                  className={`border border-black px-3 py-3 text-[9px] uppercase tracking-[0.13em] ${
+                    settings.inverted ? "bg-black text-[#ccff00]" : ""
+                  }`}
+                >
+                  Black
+                </button>
+              </div>
+
+              <p className="mt-7 text-[8px] uppercase tracking-[0.16em] opacity-60">
+                Information
+              </p>
+              <div className="mt-3 grid gap-2">
+                {controlItems.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => toggleSetting(item.key)}
+                    className={`flex items-center justify-between border border-black px-3 py-3 text-left text-[9px] uppercase tracking-[0.12em] ${
+                      settings[item.key] ? "bg-black text-[#ccff00]" : ""
+                    }`}
+                  >
+                    <span>{item.label}</span>
+                    <span>{settings[item.key] ? "■" : "□"}</span>
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSettings(defaultGalleryCardSettings)}
+                className="mt-7 w-full border border-black px-3 py-3 text-[9px] uppercase tracking-[0.13em]"
+              >
+                Reset card
+              </button>
+            </aside>
+
+            <div className="min-w-0 bg-black p-3 md:p-6">
+              <div
+                className="mx-auto aspect-square w-full max-w-[780px] border p-[3.4%]"
+                style={{
+                  backgroundColor: cardBackground,
+                  color: cardForeground,
+                  borderColor: cardForeground,
+                }}
+              >
+                <div className="flex h-full flex-col">
+                  <div className="text-[clamp(6px,1.15vw,12px)] uppercase tracking-[0.24em]">
+                    OnChainHoodies #{String(token.token.id).padStart(4, "0")}
+                  </div>
+
+                  <div className="mx-auto mt-[4.5%] aspect-square w-[64%] overflow-hidden bg-[#ccff00]">
+                    <ApiArtwork
+                      src={absoluteApiUrl(
+                        token.image.svg,
+                        `${API_BASE}/images/${token.token.id}.svg`,
+                      )}
+                      alt={token.token.name}
+                    />
+                  </div>
+
+                  {settings.showNeighborhood && (
+                    <p className="mt-[2.7%] text-center text-[clamp(8px,1.55vw,17px)] uppercase tracking-[0.18em]">
+                      {token.traits.hoodie} Neighborhood
+                    </p>
+                  )}
+
+                  <div className="mt-auto">
+                    {settings.showTraits && visibleTraits.length > 0 && (
+                      <div className="flex flex-wrap justify-center gap-x-[2.4%] gap-y-1 text-center text-[clamp(5px,0.93vw,10px)] uppercase tracking-[0.1em]">
+                        {visibleTraits.map((trait) => (
+                          <span key={trait.layer}>
+                            {trait.value}
+                            {typeof trait.percent === "number" &&
+                            Number.isFinite(trait.percent)
+                              ? ` ${Math.round(trait.percent)}%`
+                              : ""}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {(settings.showCollectionRank ||
+                      settings.showNeighborhoodRank) && (
+                      <div
+                        className={`mt-[3%] grid gap-[1.2%] ${
+                          settings.showCollectionRank &&
+                          settings.showNeighborhoodRank
+                            ? "grid-cols-2"
+                            : "grid-cols-1"
+                        }`}
+                      >
+                        {settings.showCollectionRank && (
+                          <div
+                            className="border p-[2.4%]"
+                            style={{ borderColor: cardForeground }}
+                          >
+                            <p className="text-[clamp(5px,0.82vw,9px)] uppercase tracking-[0.13em] opacity-60">
+                              Collection rank
+                            </p>
+                            <p className="mt-[3%] text-[clamp(12px,2.4vw,27px)] leading-none tracking-[-0.04em]">
+                              {formatRank(
+                                token.rarity.collection.rank,
+                                token.rarity.collection.outOf,
+                              )}
+                            </p>
+                            <p className="mt-[3%] text-[clamp(5px,0.78vw,8px)] uppercase tracking-[0.11em] opacity-65">
+                              Top {topPercent(
+                                token.rarity.collection.rarerThanPercent,
+                              )}
+                            </p>
+                          </div>
+                        )}
+
+                        {settings.showNeighborhoodRank && (
+                          <div
+                            className="border p-[2.4%]"
+                            style={{ borderColor: cardForeground }}
+                          >
+                            <p className="text-[clamp(5px,0.82vw,9px)] uppercase tracking-[0.13em] opacity-60">
+                              Neighborhood rank
+                            </p>
+                            <p className="mt-[3%] text-[clamp(12px,2.4vw,27px)] leading-none tracking-[-0.04em]">
+                              {formatRank(
+                                token.rarity.neighborhood.rank,
+                                token.rarity.neighborhood.outOf,
+                              )}
+                            </p>
+                            <p className="mt-[3%] text-[clamp(5px,0.78vw,8px)] uppercase tracking-[0.11em] opacity-65">
+                              Top {topPercent(
+                                token.rarity.neighborhood.rarerThanPercent,
+                              )}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {settings.showInk && (
+                      <div className="mt-[3%]">
+                        <div className="flex items-center justify-between gap-3 text-[clamp(5px,0.86vw,9px)] uppercase tracking-[0.11em]">
+                          <span>Ink</span>
+                          <span>{token.ink.blackPixels} black pixels</span>
+                        </div>
+                        <div
+                          className="mt-[1.4%] h-[clamp(7px,1.3vw,14px)] border p-[2px]"
+                          style={{ borderColor: cardForeground }}
+                        >
+                          <div
+                            className="h-full"
+                            style={{
+                              width: `${Math.max(
+                                1,
+                                Math.min(100, token.ink.moreInkThanPercent),
+                              )}%`,
+                              backgroundColor: cardForeground,
+                            }}
+                          />
+                        </div>
+                        <p className="mt-[1.2%] text-[clamp(5px,0.74vw,8px)] uppercase tracking-[0.1em] opacity-65">
+                          Ink rank #{token.ink.rank} · More ink than {Math.round(
+                            token.ink.moreInkThanPercent,
+                          )}%
+                        </p>
+                      </div>
+                    )}
+
+                    {settings.showProvenance && (
+                      <div
+                        className="mt-[3.5%] flex items-center justify-between border-t pt-[2.2%] text-[clamp(5px,0.78vw,8px)] uppercase tracking-[0.1em]"
+                        style={{ borderColor: cardForeground }}
+                      >
+                        <span>Fully On-Chain · CC0 · Robinhood Chain</span>
+                        <span>onchainhoodies.xyz</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {exportError && (
+                <div className="mx-auto mt-3 max-w-[780px] border border-[#ccff00] bg-[#ccff00] p-3 text-xs text-black">
+                  {exportError}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => void exportGalleryCard()}
+                disabled={exporting}
+                className="mx-auto mt-3 block w-full max-w-[780px] border border-[#ccff00] px-4 py-4 text-[10px] uppercase tracking-[0.16em] text-[#ccff00] disabled:opacity-40"
+              >
+                {exporting
+                  ? "Creating gallery card"
+                  : "Export gallery card / 2400 × 2400"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function openSeaTokenUrl(contract: string, tokenId: number) {
   return `https://opensea.io/item/robinhood/${contract}/${tokenId}`;
 }
@@ -648,6 +1260,7 @@ export default function HoodieExplorerPage() {
   const [ownershipNote, setOwnershipNote] = useState("");
   const [searchId, setSearchId] = useState("");
   const [downloadingPng, setDownloadingPng] = useState(false);
+  const [galleryCardOpen, setGalleryCardOpen] = useState(false);
   const [darkHood, setDarkHood] = useState(false);
   const [walletProfile, setWalletProfile] = useState<WalletProfile | null>(null);
   const [walletProfileLoading, setWalletProfileLoading] = useState(false);
@@ -1254,12 +1867,19 @@ export default function HoodieExplorerPage() {
                       />
                     </div>
 
-                    <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setGalleryCardOpen(true)}
+                        className="border border-[var(--hood-fg)] px-3 py-3 text-center text-[8px] uppercase tracking-[0.12em] underline underline-offset-4 sm:text-[9px]"
+                      >
+                        Gallery Card
+                      </button>
                       <button
                         type="button"
                         onClick={() => void downloadPng()}
                         disabled={downloadingPng}
-                        className="border border-[var(--hood-fg)] px-4 py-3 text-center text-[9px] uppercase tracking-[0.14em] underline underline-offset-4 disabled:opacity-40"
+                        className="border border-[var(--hood-fg)] px-3 py-3 text-center text-[8px] uppercase tracking-[0.12em] underline underline-offset-4 disabled:opacity-40 sm:text-[9px]"
                       >
                         {downloadingPng ? "Creating PNG" : "Download PNG"}
                       </button>
@@ -1270,9 +1890,9 @@ export default function HoodieExplorerPage() {
                         )}
                         target="_blank"
                         rel="noreferrer"
-                        className="border border-[var(--hood-fg)] px-4 py-3 text-center text-[9px] uppercase tracking-[0.14em] underline underline-offset-4"
+                        className="border border-[var(--hood-fg)] px-3 py-3 text-center text-[8px] uppercase tracking-[0.12em] underline underline-offset-4 sm:text-[9px]"
                       >
-                        View on OpenSea ↗
+                        OpenSea ↗
                       </a>
                     </div>
                   </div>
@@ -1502,6 +2122,14 @@ export default function HoodieExplorerPage() {
           </div>
         </div>
       </section>
+
+      {token && (
+        <GalleryCardModal
+          token={token}
+          open={galleryCardOpen}
+          onClose={() => setGalleryCardOpen(false)}
+        />
+      )}
 
       <SiteFooter />
     </main>
