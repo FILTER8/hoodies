@@ -30,6 +30,8 @@ type HolderOverlapCollection = {
   name: string;
   sharedWallets: number;
   totalOCHHeldBySharedWallets: number;
+  previousSharedWallets?: number | null;
+  changeSincePrevious?: number | null;
 };
 
 type HolderOverlapResponse = {
@@ -378,7 +380,7 @@ export default function ApiPage() {
               <div className="border-b border-r border-black p-4">
                 Version
                 <br />
-                <span className="mt-2 block text-base">v1.4</span>
+                <span className="mt-2 block text-base">v1.5</span>
               </div>
               <div className="border-b border-black p-4">
                 Access
@@ -522,9 +524,19 @@ export default function ApiPage() {
                         {String(index + 1).padStart(2, "0")}
                       </span>
                       <span className="text-sm">{collection.name}</span>
-                      <span className="text-xl">
-                        {collection.sharedWallets}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">
+                          {collection.sharedWallets}
+                        </span>
+
+                        {typeof collection.changeSincePrevious === "number" &&
+                        collection.changeSincePrevious !== 0 ? (
+                          <span className="border border-[#ccff00] px-2 py-1 text-[8px] uppercase tracking-[0.12em]">
+                            {collection.changeSincePrevious > 0 ? "+" : ""}
+                            {collection.changeSincePrevious}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   ))
                 ) : (

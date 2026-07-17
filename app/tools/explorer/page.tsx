@@ -1163,6 +1163,17 @@ async function fetchOwnedTokenData(
   return results;
 }
 
+function normalizeNeighborhoodName(value: string) {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "builder") return "Builder";
+  if (normalized === "collector") return "Collector";
+  if (normalized === "flipper") return "Flipper";
+  if (normalized === "hodler") return "HODLer";
+
+  return value;
+}
+
 function buildWalletProfile(tokens: TokenApiResponse[]): WalletProfile | null {
   if (tokens.length === 0) return null;
 
@@ -1174,12 +1185,14 @@ function buildWalletProfile(tokens: TokenApiResponse[]): WalletProfile | null {
   let bestRankToken: TokenApiResponse | null = null;
   let mostInkToken: TokenApiResponse | null = null;
 
-  for (const token of tokens) {
-    const hoodie = token.traits.hoodie;
-    neighborhoodCounts[hoodie] = (neighborhoodCounts[hoodie] ?? 0) + 1;
+for (const token of tokens) {
+  const hoodie = normalizeNeighborhoodName(token.traits.hoodie);
 
-    totalRank += token.rarity.collection.rank;
-    totalInk += token.ink.blackPixels;
+  neighborhoodCounts[hoodie] =
+    (neighborhoodCounts[hoodie] ?? 0) + 1;
+
+  totalRank += token.rarity.collection.rank;
+  totalInk += token.ink.blackPixels;
 
     if (
       !bestRankToken ||
