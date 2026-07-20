@@ -6,6 +6,7 @@ export const siteConfig = {
   xUrl: "https://x.com/OnChainHoodies",
   githubUrl: "https://github.com/FILTER8/hoodies",
   mintbayUrl: "https://mintbay.xyz",
+  discordUrl: "https://discord.gg/onchainhood",
   openSeaUrl: process.env.NEXT_PUBLIC_OPENSEA_URL || "#",
   explorerUrl: process.env.NEXT_PUBLIC_EXPLORER_URL || "#",
   collectionAddress: process.env.NEXT_PUBLIC_COLLECTION_ADDRESS || "",

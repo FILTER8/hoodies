@@ -1386,6 +1386,35 @@ export default function Home() {
         </div>
       </section>
 
+            <section className="bg-black px-6 py-7 text-[#ccff00]">
+        <div className="mx-auto flex max-w-[1440px] flex-col gap-5 border-y border-[#ccff00] py-6 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
+              Community / Discord
+            </p>
+
+            <h2 className="mt-2 text-2xl leading-none tracking-[-0.04em] md:text-3xl">
+              Build with your neighbors.
+            </h2>
+
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed opacity-70 md:text-base">
+              Meet builders, collectors and holders inside the Hood. Share what
+              you are working on, find collaborators and stay close to what
+              ships next.
+            </p>
+          </div>
+
+          <a
+            href="https://discord.gg/onchainhood"
+            target="_blank"
+            rel="noreferrer"
+            className="pixel-cta shrink-0 border-[#ccff00]"
+          >
+            Join the Hood →
+          </a>
+        </div>
+      </section>
+
       <SiteFooter />
     </main>
   );

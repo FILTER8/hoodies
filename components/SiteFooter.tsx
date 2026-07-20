@@ -14,7 +14,9 @@ export default function SiteFooter() {
 
         <div className="flex flex-wrap gap-x-6 gap-y-3 text-[11px] uppercase tracking-[0.16em]">
           <Link href="/api">API</Link>
-          <Link href="/cam">Cam</Link>
+                   <a href={siteConfig.discordUrl} target="_blank" rel="noreferrer">
+            Discord
+          </a>
           <a href={siteConfig.openSeaUrl} target="_blank" rel="noreferrer">
             OpenSea
           </a>
