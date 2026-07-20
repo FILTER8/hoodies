@@ -1,6 +1,5 @@
 "use client";
 
-import NextImage from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import SiteHeader from "../../../components/SiteHeader";
@@ -32,9 +31,10 @@ const MAX_SPACE_BETWEEN = 60;
 const REFERENCE_OUTPUT_SIZE = 1200;
 const GREEN = "#ccff00";
 const BLACK = "#000000";
+const HOODIES_API = "https://api.onchainhoodies.xyz";
 
 function artworkUrl(hoodie: Hoodie) {
-  return hoodie.image || `/api/hoodies/image?tokenId=${hoodie.tokenId}`;
+  return `${HOODIES_API}/images/${hoodie.tokenId}.svg`;
 }
 
 function getGridShape(count: number): GridShape {
@@ -64,6 +64,7 @@ function downloadBlob(blob: Blob, filename: string) {
 async function loadArtwork(source: string) {
   const image = new Image();
   image.decoding = "async";
+  image.crossOrigin = "anonymous";
 
   await new Promise<void>((resolve, reject) => {
     image.onload = () => resolve();
@@ -115,14 +116,14 @@ function HoodieArtwork({ hoodie }: { hoodie: Hoodie }) {
 
   return (
     <div className="relative h-full w-full">
-      <NextImage
+      <img
         src={artworkUrl(hoodie)}
         alt={hoodie.name || `OnChainHoodie #${hoodie.tokenId}`}
-        fill
-        unoptimized
-        sizes="(max-width: 768px) 100vw, 760px"
+        loading="lazy"
+        decoding="async"
+        crossOrigin="anonymous"
         onError={() => setFailed(true)}
-        className="image-render-pixel object-cover"
+        className="image-render-pixel h-full w-full object-cover"
       />
     </div>
   );
@@ -840,10 +841,12 @@ function SquarePreview({
         {hoodies.map((hoodie) => (
           <div
             key={hoodie.tokenId}
-            className="flex min-h-0 min-w-0 flex-col items-center justify-center"
+            className="flex min-h-0 min-w-0 flex-col items-center overflow-hidden"
           >
-            <div className="aspect-square min-h-0 w-full overflow-hidden bg-black">
-              <HoodieArtwork hoodie={hoodie} />
+            <div className="flex min-h-0 w-full flex-1 items-center justify-center">
+              <div className="aspect-square h-full max-h-full max-w-full overflow-hidden bg-black">
+                <HoodieArtwork hoodie={hoodie} />
+              </div>
             </div>
             {showTokenIds && (
               <p className="shrink-0 pt-[0.5cqw] text-center text-[clamp(5px,0.9cqw,9px)] leading-none uppercase tracking-[0.08em]">
