@@ -16,7 +16,7 @@ function passthroughImageLoader({ src }: { src: string }) {
 type OwnedHoodie = {
   tokenId: string;
   name: string;
-  image: string;
+  image?: string;
 };
 
 type OwnershipResponse = {
@@ -219,10 +219,7 @@ function absoluteApiUrl(value: string | undefined, fallback: string) {
 }
 
 function ownedArtworkUrl(hoodie: OwnedHoodie) {
-  return absoluteApiUrl(
-    hoodie.image,
-    tokenArtworkFallback(hoodie.tokenId),
-  );
+  return tokenArtworkFallback(hoodie.tokenId);
 }
 
 function displayTraitValue(trait: TraitDetail) {
