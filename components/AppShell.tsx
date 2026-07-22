@@ -12,7 +12,9 @@ import {
 } from "@tanstack/react-query";
 import { useState } from "react";
 import { WagmiProvider } from "wagmi";
-import { robinhoodChain, wagmiConfig } from "../lib/wagmi";
+
+import { wagmiConfig } from "../lib/wagmi";
+import { activeChain } from "../lib/network";
 import { WalletProvider } from "./WalletProvider";
 
 export default function AppShell({
@@ -30,14 +32,14 @@ export default function AppShell({
             staleTime: 15_000,
           },
         },
-      })
+      }),
   );
 
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider
-          initialChain={robinhoodChain}
+          initialChain={activeChain}
           modalSize="compact"
           theme={lightTheme({
             accentColor: "#000000",

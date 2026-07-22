@@ -1,6 +1,7 @@
 "use client";
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { siteConfig } from "../lib/config";
 import { walletConnectConfigured } from "../lib/wagmi";
 
 export default function WalletButton() {
@@ -17,12 +18,16 @@ export default function WalletButton() {
       }) => {
         const ready =
           mounted && authenticationStatus !== "loading";
+
         const connected =
           ready &&
           account &&
           chain &&
           (!authenticationStatus ||
             authenticationStatus === "authenticated");
+
+        const wrongActiveNetwork =
+          connected && chain.id !== siteConfig.chainId;
 
         return (
           <div
@@ -61,7 +66,20 @@ export default function WalletButton() {
                   aria-hidden="true"
                   className="h-2 w-2 bg-red-500"
                 />
-                Wrong network
+                Unsupported network
+              </button>
+            ) : wrongActiveNetwork ? (
+              <button
+                type="button"
+                onClick={openChainModal}
+                className="flex min-h-10 items-center gap-2 border-2 border-black bg-black px-4 py-2 text-[10px] uppercase tracking-[0.14em] text-[#ccff00]"
+                aria-label={`Switch to ${siteConfig.chainName}`}
+              >
+                <span
+                  aria-hidden="true"
+                  className="h-2 w-2 bg-red-500"
+                />
+                Switch to {siteConfig.network}
               </button>
             ) : (
               <div className="flex items-stretch">

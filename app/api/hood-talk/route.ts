@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Contract, JsonRpcProvider, Wallet, getAddress, keccak256, toUtf8Bytes } from "ethers";
+import { ERC721_OWNER_ABI, HOOD_TALK_REGISTRY_ABI, ROBINHOOD_TESTNET_CHAIN_ID } from "../../../lib/hoodTalkRegistry";
 
 const API_BASE = "https://api.onchainhoodies.xyz";
 const OPENAI_API_URL = "https://api.openai.com/v1/responses";
@@ -12,6 +14,20 @@ type RequestBody = {
   imageDataUrl?: string;
   previousQuotes?: string[];
   previousAngles?: string[];
+};
+
+type RegistryState = {
+  quote: string;
+  author: string;
+  updatedAt: number;
+  count: number;
+  nextUpdateAt: number;
+};
+
+type HoodTalkAuthorization = {
+  deadline: string;
+  signature: string;
+  nextCount: number;
 };
 
 type OwnedHoodie = {
@@ -281,18 +297,128 @@ function limitHistory(
     .slice(-maxItems);
 }
 
+function getRegistryConfig() {
+  const rpcUrl = process.env.ROBINHOOD_TESTNET_RPC_URL;
+  const registryAddress = process.env.HOOD_TALK_REGISTRY_TESTNET_ADDRESS;
+
+  if (!rpcUrl) throw new Error("ROBINHOOD_TESTNET_RPC_URL is not configured.");
+  if (!registryAddress || !validWalletAddress(registryAddress)) {
+    throw new Error("HOOD_TALK_REGISTRY_TESTNET_ADDRESS is not configured.");
+  }
+
+  return {
+    rpcUrl,
+    registryAddress: getAddress(registryAddress),
+  };
+}
+
+async function readRegistryState(tokenId: number): Promise<RegistryState> {
+  const { rpcUrl, registryAddress } = getRegistryConfig();
+  const provider = new JsonRpcProvider(rpcUrl, ROBINHOOD_TESTNET_CHAIN_ID);
+  const registry = new Contract(registryAddress, HOOD_TALK_REGISTRY_ABI, provider);
+
+  const [talk, nextUpdateAt] = await Promise.all([
+    registry.getHoodTalk(tokenId),
+    registry.nextUpdateAt(tokenId),
+  ]);
+
+  return {
+    quote: String(talk.quote || ""),
+    author: String(talk.author),
+    updatedAt: Number(talk.updatedAt),
+    count: Number(talk.count),
+    nextUpdateAt: Number(nextUpdateAt),
+  };
+}
+
+async function verifyOnChainOwner(tokenId: number, walletAddress: string) {
+  const { rpcUrl, registryAddress } = getRegistryConfig();
+  const provider = new JsonRpcProvider(rpcUrl, ROBINHOOD_TESTNET_CHAIN_ID);
+  const registry = new Contract(registryAddress, HOOD_TALK_REGISTRY_ABI, provider);
+  const hoodiesAddress = await registry.hoodies();
+  const hoodies = new Contract(hoodiesAddress, ERC721_OWNER_ABI, provider);
+  const owner = await hoodies.ownerOf(tokenId);
+
+  return getAddress(owner) === getAddress(walletAddress);
+}
+
+async function signHoodTalkAuthorization({
+  tokenId,
+  holder,
+  quote,
+  nextCount,
+}: {
+  tokenId: number;
+  holder: string;
+  quote: string;
+  nextCount: number;
+}): Promise<HoodTalkAuthorization> {
+  const privateKey = process.env.HOOD_TALK_SIGNER_PRIVATE_KEY;
+  const expectedSigner = process.env.HOOD_TALK_SIGNER_ADDRESS;
+  const { rpcUrl, registryAddress } = getRegistryConfig();
+
+  if (!privateKey) throw new Error("HOOD_TALK_SIGNER_PRIVATE_KEY is not configured.");
+
+  const provider = new JsonRpcProvider(rpcUrl, ROBINHOOD_TESTNET_CHAIN_ID);
+  const signer = new Wallet(privateKey, provider);
+
+  if (expectedSigner && getAddress(expectedSigner) !== signer.address) {
+    throw new Error("Configured Hood Talk signer does not match HOOD_TALK_SIGNER_ADDRESS.");
+  }
+
+  const registry = new Contract(registryAddress, HOOD_TALK_REGISTRY_ABI, provider);
+  const onChainSigner = getAddress(await registry.authorizedSigner());
+  if (onChainSigner !== signer.address) {
+    throw new Error("Backend signer is not the registry authorized signer.");
+  }
+
+  const deadline = Math.floor(Date.now() / 1000) + 15 * 60;
+  const domain = {
+    name: "OnChainHoodies Hood Talk",
+    version: "1",
+    chainId: ROBINHOOD_TESTNET_CHAIN_ID,
+    verifyingContract: registryAddress,
+  };
+  const types = {
+    HoodTalk: [
+      { name: "tokenId", type: "uint256" },
+      { name: "holder", type: "address" },
+      { name: "quoteHash", type: "bytes32" },
+      { name: "count", type: "uint32" },
+      { name: "deadline", type: "uint256" },
+    ],
+  };
+  const value = {
+    tokenId: BigInt(tokenId),
+    holder: getAddress(holder),
+    quoteHash: keccak256(toUtf8Bytes(quote)),
+    count: nextCount,
+    deadline: BigInt(deadline),
+  };
+
+  const signature = await signer.signTypedData(domain, types, value);
+
+  return {
+    deadline: String(deadline),
+    signature,
+    nextCount,
+  };
+}
+
 function buildPrompt({
   token,
   market,
   previousQuotes,
   previousAngles,
   retryNote,
+  registry,
 }: {
   token: unknown;
   market: unknown;
   previousQuotes: string[];
   previousAngles: string[];
   retryNote?: string;
+  registry: RegistryState;
 }) {
   return `
 You write Hood Talk for OnChainHoodies, the on-chain neighborhood.
@@ -868,6 +994,12 @@ ${retryNote}
     : ""
 }
 
+ON-CHAIN CHARACTER HISTORY
+
+${JSON.stringify(registry)}
+
+Use the count as character history, not status or power. The current quote is part of this Hoodie’s continuity. A higher count should feel more familiar and rooted, never superior.
+
 TOKEN DATA
 
 ${JSON.stringify(token)}
@@ -960,279 +1092,163 @@ async function generateHoodTalk({
   );
 }
 
-export async function POST(
-  request: NextRequest,
-) {
+export async function GET(request: NextRequest) {
   try {
-    const apiKey =
-      process.env.OPENAI_API_KEY;
+    const tokenId = Number(request.nextUrl.searchParams.get("tokenId"));
 
+    if (!Number.isInteger(tokenId) || tokenId < 0 || tokenId > 5999) {
+      return NextResponse.json({ error: "Invalid token ID." }, { status: 400 });
+    }
+
+    const registry = await readRegistryState(tokenId);
+    return NextResponse.json({ registry }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    console.error("Hood Talk registry read failed", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to read Hood Talk registry." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json(
-        {
-          error:
-            "OPENAI_API_KEY is not configured.",
-        },
-        {
-          status: 500,
-        },
-      );
+      return NextResponse.json({ error: "OPENAI_API_KEY is not configured." }, { status: 500 });
     }
 
-    const body =
-      (await request.json()) as RequestBody;
-
+    const body = (await request.json()) as RequestBody;
     const tokenId = Number(body.tokenId);
+    const walletAddress = body.walletAddress?.trim() || "";
+    const imageDataUrl = body.imageDataUrl || "";
+    const previousQuotes = limitHistory(body.previousQuotes, 8);
+    const previousAngles = limitHistory(body.previousAngles, 8);
 
-    const walletAddress =
-      body.walletAddress?.trim() || "";
-
-    const imageDataUrl =
-      body.imageDataUrl || "";
-
-    const previousQuotes = limitHistory(
-      body.previousQuotes,
-      8,
-    );
-
-    const previousAngles = limitHistory(
-      body.previousAngles,
-      8,
-    );
-
-    if (
-      !Number.isInteger(tokenId) ||
-      tokenId < 0 ||
-      tokenId > 5999
-    ) {
-      return NextResponse.json(
-        {
-          error: "Invalid token ID.",
-        },
-        {
-          status: 400,
-        },
-      );
+    if (!Number.isInteger(tokenId) || tokenId < 0 || tokenId > 5999) {
+      return NextResponse.json({ error: "Invalid token ID." }, { status: 400 });
+    }
+    if (!validWalletAddress(walletAddress)) {
+      return NextResponse.json({ error: "Invalid wallet address." }, { status: 400 });
+    }
+    if (!imageDataUrl.startsWith("data:image/png;base64,")) {
+      return NextResponse.json({ error: "Hoodie image is missing." }, { status: 400 });
     }
 
-    if (
-      !validWalletAddress(walletAddress)
-    ) {
-      return NextResponse.json(
-        {
-          error: "Invalid wallet address.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    if (
-      !imageDataUrl.startsWith(
-        "data:image/png;base64,",
-      )
-    ) {
-      return NextResponse.json(
-        {
-          error: "Hoodie image is missing.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    const origin =
-      request.nextUrl.origin;
-
-    const ownershipResponse = await fetch(
-      `${origin}/api/hoodies?${new URLSearchParams(
-        {
-          owner: walletAddress,
-        },
-      )}`,
-      {
-        cache: "no-store",
-      },
-    );
-
-    if (!ownershipResponse.ok) {
-      return NextResponse.json(
-        {
-          error:
-            "Unable to verify Hoodie ownership.",
-        },
-        {
-          status: 403,
-        },
-      );
-    }
-
-    const ownership =
-      (await ownershipResponse.json()) as OwnershipResponse;
-
-    const ownsToken = (
-      ownership.items || []
-    ).some(
-      (item) =>
-        String(item.tokenId) ===
-        String(tokenId),
-    );
-
+    const ownsToken = await verifyOnChainOwner(tokenId, walletAddress);
     if (!ownsToken) {
       return NextResponse.json(
-        {
-          error:
-            "This Hoodie is not in the connected wallet.",
-        },
-        {
-          status: 403,
-        },
+        { error: "This Hoodie is not in the connected wallet." },
+        { status: 403 },
       );
     }
 
-    const [
-      tokenResponse,
-      marketResponse,
-    ] = await Promise.all([
-      fetch(
-        `${API_BASE}/v1/token/${tokenId}`,
+    const registry = await readRegistryState(tokenId);
+    const now = Math.floor(Date.now() / 1000);
+    if (registry.nextUpdateAt > now) {
+      return NextResponse.json(
         {
-          cache: "no-store",
+          error: "This Hoodie is resting before its next on-chain talk.",
+          registry,
         },
-      ),
-      fetch(
-        `${API_BASE}/v1/market/token/${tokenId}`,
-        {
-          cache: "no-store",
-        },
-      ),
+        { status: 429 },
+      );
+    }
+
+    const [tokenResponse, marketResponse] = await Promise.all([
+      fetch(`${API_BASE}/v1/token/${tokenId}`, { cache: "no-store" }),
+      fetch(`${API_BASE}/v1/market/token/${tokenId}`, { cache: "no-store" }),
     ]);
 
     if (!tokenResponse.ok) {
-      return NextResponse.json(
-        {
-          error:
-            "Unable to load token data.",
-        },
-        {
-          status: 502,
-        },
-      );
+      return NextResponse.json({ error: "Unable to load token data." }, { status: 502 });
     }
 
-    const token =
-      await tokenResponse.json();
+    const token = await tokenResponse.json();
+    const market = marketResponse.ok ? await marketResponse.json() : null;
 
-    const market = marketResponse.ok
-      ? await marketResponse.json()
-      : null;
+    const continuityQuotes = registry.quote
+      ? [...previousQuotes, registry.quote].slice(-8)
+      : previousQuotes;
 
-    let result =
-      await generateHoodTalk({
+    let result = await generateHoodTalk({
+      apiKey,
+      imageDataUrl,
+      prompt: buildPrompt({
+        token,
+        market,
+        registry,
+        previousQuotes: continuityQuotes,
+        previousAngles,
+      }),
+    });
+
+    if (
+      !result ||
+      !isValidQuote(result.quote) ||
+      !isFreshEnough(result, continuityQuotes, previousAngles)
+    ) {
+      result = await generateHoodTalk({
         apiKey,
         imageDataUrl,
         prompt: buildPrompt({
           token,
           market,
-          previousQuotes,
+          registry,
+          previousQuotes: continuityQuotes,
           previousAngles,
-        }),
-      });
-
-    if (
-      !result ||
-      !isValidQuote(result.quote) ||
-      !isFreshEnough(
-        result,
-        previousQuotes,
-        previousAngles,
-      )
-    ) {
-      result =
-        await generateHoodTalk({
-          apiKey,
-          imageDataUrl,
-          prompt: buildPrompt({
-            token,
-            market,
-            previousQuotes,
-            previousAngles,
-            retryNote: `
+          retryNote: `
 The first attempt was rejected.
 
 Rebuild the character from the visual traits before writing again.
-
-The new attempt must:
-- use the native archetype only as the foundation
-- interpret at least two meaningful visual signals
-- merge those signals into one coherent personality
-- let the facial expression influence the emotional tone
-- reveal a habit, moment, belief, responsibility or observation
-- feel specific to this exact Hoodie
-- avoid a generic line that could fit any token of the same archetype
-- avoid merely naming or describing visible traits
-- avoid superiority or comparison
-- avoid cynical crypto-Twitter commentary
-- avoid self-deprecation
-- avoid repeating a recent idea, opening or construction
-
-Do not merely paraphrase the first attempt.
-Choose a genuinely different side of the character.
-            `.trim(),
-          }),
-        });
-
+The new attempt must use a genuinely different character moment, remain warm,
+avoid superiority, and continue the Hoodie’s on-chain history without paraphrasing it.
+          `.trim(),
+        }),
+      });
     }
 
     if (
       !result ||
       !isValidQuote(result.quote) ||
-      !isFreshEnough(
-        result,
-        previousQuotes,
-        previousAngles,
-      )
+      !isFreshEnough(result, continuityQuotes, previousAngles)
     ) {
       return NextResponse.json(
-        {
-          error:
-            "The Hoodie needs a new angle. Try again.",
-        },
-        {
-          status: 502,
-        },
+        { error: "The Hoodie needs a new angle. Try again." },
+        { status: 502 },
       );
     }
+
+    // Re-read immediately before signing so the signed count cannot be stale.
+    const latestRegistry = await readRegistryState(tokenId);
+    if (latestRegistry.count !== registry.count) {
+      return NextResponse.json(
+        { error: "The Hood Talk changed while generating. Please try again.", registry: latestRegistry },
+        { status: 409 },
+      );
+    }
+
+    const authorization = await signHoodTalkAuthorization({
+      tokenId,
+      holder: walletAddress,
+      quote: result.quote,
+      nextCount: latestRegistry.count + 1,
+    });
 
     return NextResponse.json(
       {
         quote: result.quote,
         angle: result.angle,
+        authorization,
+        registry: latestRegistry,
       },
-      {
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      },
+      { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
-    console.error(
-      "Hood Talk generation failed",
-      error,
-    );
-
+    console.error("Hood Talk generation failed", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to generate Hood Talk.",
-      },
-      {
-        status: 500,
-      },
+      { error: error instanceof Error ? error.message : "Unable to generate Hood Talk." },
+      { status: 500 },
     );
   }
 }

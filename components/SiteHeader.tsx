@@ -6,10 +6,10 @@ import { siteConfig } from "../lib/config";
 import WalletButton from "./WalletButton";
 
 const links = [
+   { href: "/och", label: "$OCH" },
   { href: "/#collection", label: "Collection" },
   { href: "/#builds", label: "Builds" },
   { href: "/tools/explorer", label: "Explorer" },
-  { href: "/cam", label: "Cam" },
   { href: "/api", label: "Api" },
 ];
 
@@ -38,16 +38,16 @@ export default function SiteHeader() {
             </Link>
           ))}
 
-          <a
-            href={siteConfig.openSeaUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-[11px] uppercase tracking-[0.16em] hover:underline hover:underline-offset-4"
-          >
-            OpenSea
-          </a>
+         <a
+  href={siteConfig.openSeaUrl}
+  target="_blank"
+  rel="noreferrer"
+  className="text-[11px] uppercase tracking-[0.16em] hover:underline hover:underline-offset-4"
+>
+  OpenSea
+</a>
 
-          <WalletButton />
+<WalletButton />
         </nav>
 
         <button
@@ -85,7 +85,12 @@ export default function SiteHeader() {
             </a>
 
             <div className="border-2 border-[var(--hood-fg)] p-3">
+              <p className="mb-3 text-[8px] uppercase tracking-[0.12em] opacity-65">
+                Active network / {siteConfig.chainName}
+              </p>
+
               <WalletButton />
+
               <p className="mt-3 text-[8px] uppercase leading-relaxed tracking-[0.11em] opacity-65">
                 Secure wallet connection through RainbowKit and WalletConnect.
                 We never request seed phrases or private keys.

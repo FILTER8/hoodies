@@ -1244,10 +1244,151 @@ export default function Home() {
         </div>
       </section>
 
+      <section id="och" className="bg-black px-6 py-24 text-[#ccff00]">
+  <div className="mx-auto max-w-[1440px]">
+    <div className="section-heading-row">
+      <p>03 / The Hood Economy</p>
+      <p>OCH / Coming Soon</p>
+    </div>
+
+    <div className="mt-12 grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+      <div>
+        <img
+          src="/coin1.gif"
+          alt="Animated OCH coin"
+          className="image-render-pixel h-36 w-36 object-contain md:h-52 md:w-52"
+        />
+
+        <p className="mt-8 text-[10px] uppercase tracking-[0.18em] opacity-60">
+          The Currency of the Hood
+        </p>
+
+        <h2 className="section-title mt-4">
+          $OCH
+          <br />
+          Built for the Hood.
+        </h2>
+
+        <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-75 md:text-xl">
+          A fixed-supply ERC-20 planned for citizens, contributors and the
+          wider OnChainHoodies ecosystem.
+        </p>
+
+        <Link
+          href="/och"
+          className="mt-10 inline-block text-xs uppercase tracking-[0.18em] underline underline-offset-4"
+        >
+          Explore the Economy →
+        </Link>
+      </div>
+
+      <div className="grid gap-10 md:grid-cols-[0.75fr_1.25fr] md:items-center">
+        <div className="mx-auto aspect-square w-full max-w-[260px]">
+          <svg
+            viewBox="0 0 240 240"
+            role="img"
+            aria-label="Proposed OCH allocation chart"
+            className="h-full w-full"
+          >
+            <circle
+              cx="120"
+              cy="120"
+              r="86"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="30"
+              opacity="0.12"
+            />
+
+            <g transform="rotate(-90 120 120)">
+              {[
+                { dash: "30 70", offset: 0, opacity: 1 },
+                { dash: "35 65", offset: -30, opacity: 0.82 },
+                { dash: "15 85", offset: -65, opacity: 0.64 },
+                { dash: "10 90", offset: -80, opacity: 0.48 },
+                { dash: "5 95", offset: -90, opacity: 0.34 },
+                { dash: "5 95", offset: -95, opacity: 0.22 },
+              ].map((segment, index) => (
+                <circle
+                  key={index}
+                  cx="120"
+                  cy="120"
+                  r="86"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="30"
+                  pathLength="100"
+                  strokeDasharray={segment.dash}
+                  strokeDashoffset={segment.offset}
+                  strokeLinecap="butt"
+                  opacity={segment.opacity}
+                />
+              ))}
+            </g>
+
+            <circle
+              cx="120"
+              cy="120"
+              r="58"
+              fill="black"
+              stroke="currentColor"
+              strokeWidth="1"
+            />
+
+            <text
+              x="120"
+              y="111"
+              textAnchor="middle"
+              fill="currentColor"
+              fontSize="10"
+              letterSpacing="2"
+            >
+              PROPOSED
+            </text>
+
+            <text
+              x="120"
+              y="137"
+              textAnchor="middle"
+              fill="currentColor"
+              fontSize="24"
+            >
+              100M
+            </text>
+          </svg>
+        </div>
+
+        <div className="border-l-2 border-t-2 border-[#ccff00]">
+          {[
+            ["Citizens", "30%"],
+            ["Community Fund", "35%"],
+            ["Liquidity", "15%"],
+            ["Treasury", "10%"],
+            ["Robinhood Ecosystem", "5%"],
+            ["Team", "5%"],
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              className="flex items-center justify-between gap-4 border-b-2 border-r-2 border-[#ccff00] p-4"
+            >
+              <span className="text-sm md:text-base">{label}</span>
+              <span className="text-xl leading-none md:text-2xl">{value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <div className="mt-10 border border-[#ccff00] px-4 py-3 text-center text-[8px] uppercase leading-relaxed tracking-[0.14em] opacity-70">
+      No OCH contract has been deployed. Beware of fake tokens and links.
+    </div>
+  </div>
+</section>
+
       <section id="builds" className="px-6 py-24">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>03 / Builds</p>
+            <p>04 / Builds</p>
             <p>Built in the Hood</p>
           </div>
 
@@ -1293,7 +1434,7 @@ export default function Home() {
         <div className="mx-auto grid max-w-[1440px] gap-12 lg:grid-cols-2">
           <div>
             <div className="section-heading-row">
-              <p>04 / Agents</p>
+              <p>05 / Agents</p>
               <p>Humans + machines</p>
             </div>
 
@@ -1333,7 +1474,7 @@ export default function Home() {
       <section id="contracts" className="px-6 py-24">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>05 / On-chain</p>
+            <p>06 / On-chain</p>
             <p>Verify everything</p>
           </div>
 

@@ -4,7 +4,9 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type AlchemyNft = {
-  contract?: { address?: string };
+  contract?: {
+    address?: string;
+  };
   tokenId?: string;
   balance?: string;
 };
@@ -21,11 +23,28 @@ type Hoodie = {
   image: string;
 };
 
+type NetworkName = "mainnet" | "testnet";
+
+type NetworkConfiguration = {
+  apiKey: string;
+  apiBaseUrl: string;
+  contractAddress: string;
+};
+
 const MAX_PAGES = 100;
 const PAGE_SIZE = 100;
 
+const network: NetworkName =
+  process.env.NEXT_PUBLIC_NETWORK?.trim().toLowerCase() === "mainnet"
+    ? "mainnet"
+    : "testnet";
+
 function isAddress(value: string) {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
+}
+
+function normalizeAddress(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function normalizeTokenId(value: string | undefined) {
@@ -38,8 +57,42 @@ function normalizeTokenId(value: string | undefined) {
   }
 }
 
+function getNetworkConfiguration(): NetworkConfiguration {
+  const apiKey = process.env.ALCHEMY_API_KEY?.trim() || "";
+
+  if (network === "mainnet") {
+    return {
+      apiKey,
+
+      apiBaseUrl:
+        process.env.ALCHEMY_NFT_API_BASE_URL_MAINNET?.trim() ||
+        process.env.ALCHEMY_NFT_API_BASE_URL?.trim() ||
+        "",
+
+      contractAddress:
+        process.env.NEXT_PUBLIC_COLLECTION_MAINNET_ADDRESS?.trim() ||
+        process.env.NEXT_PUBLIC_COLLECTION_ADDRESS?.trim() ||
+        "",
+    };
+  }
+
+  return {
+    apiKey,
+
+    apiBaseUrl:
+      process.env.ALCHEMY_NFT_API_BASE_URL_TESTNET?.trim() ||
+      process.env.ALCHEMY_NFT_API_BASE_URL?.trim() ||
+      "",
+
+    contractAddress:
+      process.env.NEXT_PUBLIC_COLLECTION_TESTNET_ADDRESS?.trim() ||
+      process.env.NEXT_PUBLIC_COLLECTION_ADDRESS?.trim() ||
+      "",
+  };
+}
+
 function buildAlchemyEndpoint(apiBaseUrl: string, apiKey: string) {
-  let base = apiBaseUrl.trim().replace(/\/$/, "");
+  let base = apiBaseUrl.trim().replace(/\/+$/, "");
 
   if (base.includes("{apiKey}")) {
     base = base.replace("{apiKey}", apiKey);
@@ -47,9 +100,13 @@ function buildAlchemyEndpoint(apiBaseUrl: string, apiKey: string) {
     base = `${base}/${apiKey}`;
   }
 
-  // Also supports a complete value such as:
-  // https://network.g.alchemy.com/nft/v3/API_KEY
   return new URL(`${base}/getNFTsForOwner`);
+}
+
+function hideApiKey(value: string, apiKey: string) {
+  if (!apiKey) return value;
+
+  return value.replaceAll(apiKey, "[HIDDEN]");
 }
 
 async function fetchAlchemyPage(
@@ -57,20 +114,26 @@ async function fetchAlchemyPage(
   owner: string,
   contractAddress: string,
   pageKey: string | null,
-  apiKey: string
+  apiKey: string,
 ) {
   const endpoint = new URL(endpointBase.toString());
+
   endpoint.searchParams.set("owner", owner);
   endpoint.searchParams.set("withMetadata", "false");
   endpoint.searchParams.set("pageSize", String(PAGE_SIZE));
-  endpoint.searchParams.append("contractAddresses[]", contractAddress);
+  endpoint.searchParams.append(
+    "contractAddresses[]",
+    contractAddress,
+  );
 
-  if (pageKey) endpoint.searchParams.set("pageKey", pageKey);
+  if (pageKey) {
+    endpoint.searchParams.set("pageKey", pageKey);
+  }
 
   const response = await fetch(endpoint, {
+    method: "GET",
     headers: {
       accept: "application/json",
-      // Harmless when the key is already in the URL and useful for older setups.
       "X-Alchemy-Token": apiKey,
     },
     cache: "no-store",
@@ -78,39 +141,112 @@ async function fetchAlchemyPage(
 
   if (!response.ok) {
     const body = await response.text();
-    console.error("Alchemy getNFTsForOwner failed", response.status, body);
-    throw new Error(`Alchemy returned HTTP ${response.status}.`);
+
+    console.error("Alchemy getNFTsForOwner failed", {
+      network,
+      status: response.status,
+      contractAddress,
+      endpoint: hideApiKey(endpoint.toString(), apiKey),
+      body,
+    });
+
+    throw new Error(
+      `Alchemy returned HTTP ${response.status}.`,
+    );
   }
 
   return (await response.json()) as AlchemyResponse;
 }
 
 export async function GET(request: NextRequest) {
-  const owner = request.nextUrl.searchParams.get("owner")?.trim() || "";
-  const apiKey = process.env.ALCHEMY_API_KEY?.trim() || "";
-  const apiBaseUrl = process.env.ALCHEMY_NFT_API_BASE_URL?.trim() || "";
-  const contractAddress =
-    process.env.NEXT_PUBLIC_COLLECTION_ADDRESS?.trim() || "";
+  const owner =
+    request.nextUrl.searchParams.get("owner")?.trim() || "";
+
+  const {
+    apiKey,
+    apiBaseUrl,
+    contractAddress,
+  } = getNetworkConfiguration();
 
   if (!isAddress(owner)) {
     return NextResponse.json(
-      { error: "Invalid wallet address." },
-      { status: 400 }
+      {
+        error: "Invalid wallet address.",
+      },
+      {
+        status: 400,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
     );
   }
 
-  if (!apiKey || !apiBaseUrl || !isAddress(contractAddress)) {
+  if (!apiKey) {
+    return NextResponse.json(
+      {
+        error: "ALCHEMY_API_KEY is not configured.",
+        debug: {
+          network,
+        },
+      },
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
+
+  if (!apiBaseUrl) {
     return NextResponse.json(
       {
         error:
-          "Missing or invalid ALCHEMY_API_KEY, ALCHEMY_NFT_API_BASE_URL, or NEXT_PUBLIC_COLLECTION_ADDRESS.",
+          network === "mainnet"
+            ? "ALCHEMY_NFT_API_BASE_URL_MAINNET is not configured."
+            : "ALCHEMY_NFT_API_BASE_URL_TESTNET is not configured.",
+        debug: {
+          network,
+          contractAddress,
+        },
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
+
+  if (!isAddress(contractAddress)) {
+    return NextResponse.json(
+      {
+        error:
+          network === "mainnet"
+            ? "NEXT_PUBLIC_COLLECTION_MAINNET_ADDRESS is missing or invalid."
+            : "NEXT_PUBLIC_COLLECTION_TESTNET_ADDRESS is missing or invalid.",
+        debug: {
+          network,
+          contractAddress,
+        },
+      },
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
     );
   }
 
   try {
-    const endpoint = buildAlchemyEndpoint(apiBaseUrl, apiKey);
+    const endpoint = buildAlchemyEndpoint(
+      apiBaseUrl,
+      apiKey,
+    );
+
     const byTokenId = new Map<string, Hoodie>();
 
     let pageKey: string | null = null;
@@ -123,45 +259,72 @@ export async function GET(request: NextRequest) {
         owner,
         contractAddress,
         pageKey,
-        apiKey
+        apiKey,
       );
 
       pagesRead += 1;
-      if (typeof data.totalCount === "number") indexedTotal = data.totalCount;
+
+      if (typeof data.totalCount === "number") {
+        indexedTotal = data.totalCount;
+      }
 
       for (const nft of data.ownedNfts || []) {
-        const tokenId = normalizeTokenId(nft.tokenId);
-        if (!tokenId) continue;
+        const returnedContract =
+          nft.contract?.address?.trim() || "";
 
-        // ERC-721 balances are normally 1. This also keeps the route safe if
-        // the indexer ever returns a zero-balance record.
+        if (
+          returnedContract &&
+          normalizeAddress(returnedContract) !==
+            normalizeAddress(contractAddress)
+        ) {
+          continue;
+        }
+
+        const tokenId = normalizeTokenId(nft.tokenId);
+
+        if (!tokenId) {
+          continue;
+        }
+
         if (nft.balance !== undefined) {
           try {
-            if (BigInt(nft.balance) <= BigInt(0)) continue;
+            if (BigInt(nft.balance) <= BigInt(0)) {
+              continue;
+            }
           } catch {
-            // Keep the token when an indexer omits or formats balance oddly.
+            // Keep the NFT if Alchemy returns an unusual balance format.
           }
         }
 
         byTokenId.set(tokenId, {
           tokenId,
           name: `OnChainHoodies #${tokenId}`,
-          image: `/api/hoodies/image?tokenId=${encodeURIComponent(tokenId)}`,
+          image: `/api/hoodies/image?tokenId=${encodeURIComponent(
+            tokenId,
+          )}`,
         });
       }
 
       pageKey = data.pageKey || null;
 
       if (pagesRead >= MAX_PAGES && pageKey) {
-        throw new Error("Ownership pagination exceeded the safety limit.");
+        throw new Error(
+          "Ownership pagination exceeded the safety limit.",
+        );
       }
     } while (pageKey);
 
-    const items = Array.from(byTokenId.values()).sort((a, b) => {
-      const left = BigInt(a.tokenId);
-      const right = BigInt(b.tokenId);
-      return left < right ? -1 : left > right ? 1 : 0;
-    });
+    const items = Array.from(byTokenId.values()).sort(
+      (left, right) => {
+        const leftId = BigInt(left.tokenId);
+        const rightId = BigInt(right.tokenId);
+
+        if (leftId < rightId) return -1;
+        if (leftId > rightId) return 1;
+
+        return 0;
+      },
+    );
 
     return NextResponse.json(
       {
@@ -169,15 +332,32 @@ export async function GET(request: NextRequest) {
         count: items.length,
         indexedTotal,
         pagesRead,
+
+        debug: {
+          network,
+          owner,
+          contractAddress,
+          apiEndpoint: hideApiKey(
+            endpoint.toString(),
+            apiKey,
+          ),
+        },
       },
       {
+        status: 200,
         headers: {
-          "Cache-Control": "no-store, max-age=0",
+          "Cache-Control":
+            "no-store, no-cache, must-revalidate, max-age=0",
         },
-      }
+      },
     );
   } catch (error) {
-    console.error("Unable to load Hoodie ownership", error);
+    console.error("Unable to load Hoodie ownership", {
+      network,
+      owner,
+      contractAddress,
+      error,
+    });
 
     return NextResponse.json(
       {
@@ -185,8 +365,23 @@ export async function GET(request: NextRequest) {
           error instanceof Error
             ? error.message
             : "Unable to reach the NFT indexer.",
+
+        debug: {
+          network,
+          owner,
+          contractAddress,
+          apiBaseUrl: hideApiKey(
+            apiBaseUrl,
+            apiKey,
+          ),
+        },
       },
-      { status: 502 }
+      {
+        status: 502,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
     );
   }
 }

@@ -7,8 +7,7 @@ import SiteHeader from "../../../components/SiteHeader";
 import SiteFooter from "../../../components/SiteFooter";
 import { useWallet } from "../../../components/WalletProvider";
 import { siteConfig } from "../../../lib/config";
-
-const API_BASE = "https://api.onchainhoodies.xyz";
+import { apiConfig, collectionApiUrl } from "../../../lib/api";
 
 function passthroughImageLoader({ src }: { src: string }) {
   return src;
@@ -191,16 +190,38 @@ type WalletProfile = {
 const traitKeys = ["dress", "mouth", "top", "eyes"] as const;
 type TraitKey = (typeof traitKeys)[number];
 
+function tokenArtworkFallback(tokenId: string | number) {
+  if (apiConfig.isMainnet) {
+    return collectionApiUrl(
+      `/images/${encodeURIComponent(String(tokenId))}.svg`,
+    );
+  }
+
+  return `/api/hoodies/image?tokenId=${encodeURIComponent(String(tokenId))}`;
+}
+
 function absoluteApiUrl(value: string | undefined, fallback: string) {
   if (!value) return fallback;
-  if (value.startsWith("http://") || value.startsWith("https://")) return value;
-  return `${API_BASE}${value.startsWith("/") ? value : `/${value}`}`;
+
+  if (
+    value.startsWith("http://") ||
+    value.startsWith("https://") ||
+    value.startsWith("data:")
+  ) {
+    return value;
+  }
+
+  if (value.startsWith("/")) {
+    return value;
+  }
+
+  return apiConfig.isMainnet ? collectionApiUrl(value) : fallback;
 }
 
 function ownedArtworkUrl(hoodie: OwnedHoodie) {
-  return (
-    hoodie.image ||
-    `${API_BASE}/images/${encodeURIComponent(hoodie.tokenId)}.svg`
+  return absoluteApiUrl(
+    hoodie.image,
+    tokenArtworkFallback(hoodie.tokenId),
   );
 }
 
@@ -265,25 +286,34 @@ async function fetchToken(
   tokenId: string,
   signal?: AbortSignal,
 ): Promise<TokenApiResponse> {
-  const response = await fetch(
-    `${API_BASE}/v1/token/${encodeURIComponent(tokenId)}`,
-    {
-      signal,
-      cache: "no-store",
-    },
-  );
+  const url = apiConfig.isMainnet
+    ? collectionApiUrl(`/v1/token/${encodeURIComponent(tokenId)}`)
+    : `/api/hoodies/token?${new URLSearchParams({ tokenId }).toString()}`;
+
+  const response = await fetch(url, {
+    signal,
+    cache: "no-store",
+  });
+
+  const data = (await response.json()) as TokenApiResponse & {
+    error?: string;
+  };
 
   if (!response.ok) {
-    throw new Error(`Unable to load Hoodie #${tokenId}.`);
+    throw new Error(data.error || `Unable to load Hoodie #${tokenId}.`);
   }
 
-  return (await response.json()) as TokenApiResponse;
+  return data;
 }
 
 async function fetchSimilarHoodies(
   token: TokenApiResponse,
   signal?: AbortSignal,
 ): Promise<SimilarHoodie[]> {
+  if (!apiConfig.isMainnet) {
+    return [];
+  }
+
   const params = new URLSearchParams({
     hoodie: token.traits.hoodie,
     limit: "250",
@@ -291,7 +321,7 @@ async function fetchSimilarHoodies(
   });
 
   const response = await fetch(
-    `${API_BASE}/v1/search?${params.toString()}`,
+    collectionApiUrl(`/v1/search?${params.toString()}`),
     {
       signal,
       cache: "no-store",
@@ -602,7 +632,7 @@ function GalleryCardModal({
       const imageResponse = await fetch(
         absoluteApiUrl(
           token.image.svg,
-          `${API_BASE}/images/${token.token.id}.svg`,
+          tokenArtworkFallback(token.token.id),
         ),
         { cache: "no-store" },
       );
@@ -924,7 +954,7 @@ function GalleryCardModal({
                     <ApiArtwork
                       src={absoluteApiUrl(
                         token.image.svg,
-                        `${API_BASE}/images/${token.token.id}.svg`,
+                        tokenArtworkFallback(token.token.id),
                       )}
                       alt={token.token.name}
                     />
@@ -1352,8 +1382,6 @@ export default function HoodieExplorerPage() {
   }, [loadOwnership]);
 
   useEffect(() => {
-    if (!isHolder) return;
-
     let active = true;
 
     async function loadWalletProfile() {
@@ -1378,10 +1406,19 @@ export default function HoodieExplorerPage() {
       }
     }
 
-    void loadWalletProfile();
+    const timeoutId = window.setTimeout(() => {
+      if (!isHolder || !apiConfig.isMainnet) {
+        setWalletProfile(null);
+        setWalletProfileLoading(false);
+        return;
+      }
+
+      void loadWalletProfile();
+    }, 0);
 
     return () => {
       active = false;
+      window.clearTimeout(timeoutId);
     };
   }, [isHolder, ownedHoodies]);
 
@@ -1494,7 +1531,7 @@ export default function HoodieExplorerPage() {
       await svgToPngDownload(
         absoluteApiUrl(
           token.image.svg,
-          `${API_BASE}/images/${token.token.id}.svg`,
+          tokenArtworkFallback(token.token.id),
         ),
         token.token.id,
       );
@@ -1815,7 +1852,7 @@ export default function HoodieExplorerPage() {
                       <ApiArtwork
                         src={absoluteApiUrl(
                           token.image.svg,
-                          `${API_BASE}/images/${token.token.id}.svg`,
+                          tokenArtworkFallback(token.token.id),
                         )}
                         alt={token.token.name}
                       />
@@ -1834,60 +1871,75 @@ export default function HoodieExplorerPage() {
                         OCH #{token.token.id}
                       </h2>
 
-                      <div className="mt-8 grid grid-cols-2 gap-2">
+                      {apiConfig.isMainnet ? (
+                        <div className="mt-8 grid grid-cols-2 gap-2">
+                          <Stat
+                            label="Neighborhood Rank"
+                            value={formatRank(
+                              token.rarity.neighborhood.rank,
+                              token.rarity.neighborhood.outOf,
+                            )}
+                            detail={`Top ${topPercent(
+                              token.rarity.neighborhood.rarerThanPercent,
+                            )} of ${token.traits.hoodie} Hoodies`}
+                          />
+                          <Stat
+                            label="Collection Rank"
+                            value={formatRank(
+                              token.rarity.collection.rank,
+                              token.rarity.collection.outOf,
+                            )}
+                            detail={`Top ${topPercent(
+                              token.rarity.collection.rarerThanPercent,
+                            )} of the Hood`}
+                          />
+                        </div>
+                      ) : (
+                        <div className="mt-8 border border-[var(--hood-fg)] p-4 text-[9px] uppercase leading-relaxed tracking-[0.12em] opacity-65">
+                          Testnet preview · rarity and ink analytics are available on mainnet.
+                        </div>
+                      )}
+                    </div>
+
+                    {apiConfig.isMainnet && (
+                      <div className="mt-2 grid grid-cols-2 gap-2">
                         <Stat
-                          label="Neighborhood Rank"
-                          value={formatRank(
-                            token.rarity.neighborhood.rank,
-                            token.rarity.neighborhood.outOf,
-                          )}
-                          detail={`Top ${topPercent(
-                            token.rarity.neighborhood.rarerThanPercent,
-                          )} of ${token.traits.hoodie} Hoodies`}
+                          label="Ink"
+                          value={`${token.ink.blackPixels} black pixels`}
+                          detail={`${Math.round(
+                            token.ink.canvasCoveragePercent,
+                          )}% coverage`}
+                          dark
                         />
                         <Stat
-                          label="Collection Rank"
+                          label="Ink Rank"
                           value={formatRank(
-                            token.rarity.collection.rank,
-                            token.rarity.collection.outOf,
+                            token.ink.rank,
+                            token.collection.supply,
                           )}
-                          detail={`Top ${topPercent(
-                            token.rarity.collection.rarerThanPercent,
-                          )} of the Hood`}
+                          detail={`More ink than ${formatPercent(
+                            token.ink.moreInkThanPercent,
+                          )} of Hoodies`}
+                          dark
                         />
                       </div>
-                    </div>
+                    )}
 
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <Stat
-                        label="Ink"
-                        value={`${token.ink.blackPixels} black pixels`}
-                        detail={`${Math.round(
-                          token.ink.canvasCoveragePercent,
-                        )}% coverage`}
-                        dark
-                      />
-                      <Stat
-                        label="Ink Rank"
-                        value={formatRank(
-                          token.ink.rank,
-                          token.collection.supply,
-                        )}
-                        detail={`More ink than ${formatPercent(
-                          token.ink.moreInkThanPercent,
-                        )} of Hoodies`}
-                        dark
-                      />
-                    </div>
+                    <div
+                      className={`mt-2 grid gap-2 ${
+                        apiConfig.isMainnet ? "grid-cols-3" : "grid-cols-1"
+                      }`}
+                    >
+                      {apiConfig.isMainnet && (
+                        <button
+                          type="button"
+                          onClick={() => setGalleryCardOpen(true)}
+                          className="border border-[var(--hood-fg)] px-3 py-3 text-center text-[8px] uppercase tracking-[0.12em] underline underline-offset-4 sm:text-[9px]"
+                        >
+                          Gallery Card
+                        </button>
+                      )}
 
-                    <div className="mt-2 grid grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setGalleryCardOpen(true)}
-                        className="border border-[var(--hood-fg)] px-3 py-3 text-center text-[8px] uppercase tracking-[0.12em] underline underline-offset-4 sm:text-[9px]"
-                      >
-                        Gallery Card
-                      </button>
                       <button
                         type="button"
                         onClick={() => void downloadPng()}
@@ -1896,17 +1948,20 @@ export default function HoodieExplorerPage() {
                       >
                         {downloadingPng ? "Creating PNG" : "Download PNG"}
                       </button>
-                      <a
-                        href={openSeaTokenUrl(
-                          token.collection.contract,
-                          token.token.id,
-                        )}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="border border-[var(--hood-fg)] px-3 py-3 text-center text-[8px] uppercase tracking-[0.12em] underline underline-offset-4 sm:text-[9px]"
-                      >
-                        OpenSea ↗
-                      </a>
+
+                      {apiConfig.isMainnet && (
+                        <a
+                          href={openSeaTokenUrl(
+                            token.collection.contract,
+                            token.token.id,
+                          )}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="border border-[var(--hood-fg)] px-3 py-3 text-center text-[8px] uppercase tracking-[0.12em] underline underline-offset-4 sm:text-[9px]"
+                        >
+                          OpenSea ↗
+                        </a>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1928,6 +1983,7 @@ export default function HoodieExplorerPage() {
                   </div>
                 </section>
 
+                {apiConfig.isMainnet && (
                 <section className="mt-12">
                   <div className="section-heading-row border-[var(--hood-fg)]">
                     <p>Ink</p>
@@ -1981,7 +2037,9 @@ export default function HoodieExplorerPage() {
                     </div>
                   </div>
                 </section>
+                )}
 
+                {apiConfig.isMainnet && (
                 <section className="mt-12">
                   <div className="section-heading-row border-[var(--hood-fg)]">
                     <p>Wallet Inspect</p>
@@ -2041,7 +2099,7 @@ export default function HoodieExplorerPage() {
                               <ApiArtwork
                                 src={absoluteApiUrl(
                                   walletProfile.bestRankToken.image.svg,
-                                  `${API_BASE}/images/${walletProfile.bestRankToken.token.id}.svg`,
+                                  tokenArtworkFallback(walletProfile.bestRankToken.token.id),
                                 )}
                                 alt={walletProfile.bestRankToken.token.name}
                               />
@@ -2066,7 +2124,9 @@ export default function HoodieExplorerPage() {
                     </div>
                   )}
                 </section>
+                )}
 
+                {apiConfig.isMainnet && (
                 <section className="mt-12">
                   <div className="section-heading-row border-[var(--hood-fg)]">
                     <p>Nearby in the Hood</p>
@@ -2097,7 +2157,7 @@ export default function HoodieExplorerPage() {
                             <ApiArtwork
                               src={absoluteApiUrl(
                                 hoodie.image,
-                                `${API_BASE}/images/${hoodie.tokenId}.svg`,
+                                tokenArtworkFallback(hoodie.tokenId),
                               )}
                               alt={hoodie.name}
                             />
@@ -2129,6 +2189,7 @@ export default function HoodieExplorerPage() {
                     </div>
                   )}
                 </section>
+                )}
 
               </div>
             )}
@@ -2136,7 +2197,7 @@ export default function HoodieExplorerPage() {
         </div>
       </section>
 
-      {token && (
+      {token && apiConfig.isMainnet && (
         <GalleryCardModal
           token={token}
           open={galleryCardOpen}

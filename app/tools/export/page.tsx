@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import SiteHeader from "../../../components/SiteHeader";
 import SiteFooter from "../../../components/SiteFooter";
 import { useWallet } from "../../../components/WalletProvider";
+import { apiConfig, collectionApiUrl } from "../../../lib/api";
 
 type Hoodie = {
   tokenId: string;
@@ -31,10 +32,17 @@ const MAX_SPACE_BETWEEN = 60;
 const REFERENCE_OUTPUT_SIZE = 1200;
 const GREEN = "#ccff00";
 const BLACK = "#000000";
-const HOODIES_API = "https://api.onchainhoodies.xyz";
-
 function artworkUrl(hoodie: Hoodie) {
-  return `${HOODIES_API}/images/${hoodie.tokenId}.svg`;
+  if (apiConfig.isMainnet) {
+    return collectionApiUrl(
+      `/images/${encodeURIComponent(hoodie.tokenId)}.svg`,
+    );
+  }
+
+  return (
+    hoodie.image ||
+    `/api/hoodies/image?tokenId=${encodeURIComponent(hoodie.tokenId)}`
+  );
 }
 
 function getGridShape(count: number): GridShape {
