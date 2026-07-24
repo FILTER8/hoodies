@@ -2,20 +2,35 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { BrowserProvider, Contract } from "ethers";
-import SiteHeader from "../../../components/SiteHeader";
-import SiteFooter from "../../../components/SiteFooter";
-import { useWallet } from "../../../components/WalletProvider";
-import { siteConfig } from "../../../lib/config";
 import {
-  collectionApiUrl,
-  hoodTalkApiUrl,
-} from "../../../lib/api";
-import { HOOD_TALK_REGISTRY_ABI } from "../../../lib/hoodTalkRegistry";
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
+import { BrowserProvider, Contract } from "ethers";
+import SiteHeader from "../../components/SiteHeader";
+import SiteFooter from "../../components/SiteFooter";
+import HoodieSpeakButton from "../../components/HoodieSpeakButton";
+import { useWallet } from "../../components/WalletProvider";
+import { siteConfig } from "../../lib/config";
+import { apiConfig, collectionApiUrl } from "../../lib/api";
+import {
+  HOOD_TALK_REGISTRY_ABI,
+  ROBINHOOD_TESTNET_CHAIN_HEX,
+  ROBINHOOD_TESTNET_EXPLORER_URL,
+  ROBINHOOD_TESTNET_RPC_URL,
+} from "../../lib/hoodTalkRegistry";
 
-const BRAND_NAME = "ONCHAINHOODIES";
 const BRAND_URL = "ONCHAINHOODIES.XYZ";
+
+const ROBINHOOD_MAINNET_CHAIN_HEX = "0x1237";
+const ROBINHOOD_MAINNET_RPC_URL = "https://rpc.mainnet.chain.robinhood.com";
+const ROBINHOOD_MAINNET_EXPLORER_URL =
+  "https://robinhoodchain.blockscout.com";
+
+
 
 function passthroughImageLoader({ src }: { src: string }) {
   return src;
@@ -90,6 +105,16 @@ type TalkHistory = {
   angles: string[];
 };
 
+function tokenArtworkFallback(tokenId: string | number) {
+  if (apiConfig.isMainnet) {
+    return collectionApiUrl(
+      `/images/${encodeURIComponent(String(tokenId))}.svg`,
+    );
+  }
+
+  return `/api/hoodies/image?tokenId=${encodeURIComponent(String(tokenId))}`;
+}
+
 function absoluteApiUrl(value: string | undefined, fallback: string) {
   if (!value) return fallback;
 
@@ -102,7 +127,23 @@ function absoluteApiUrl(value: string | undefined, fallback: string) {
     return value;
   }
 
-  return collectionApiUrl(value.startsWith("/") ? value : `/${value}`);
+  if (apiConfig.isMainnet) {
+    return collectionApiUrl(value.startsWith("/") ? value : `/${value}`);
+  }
+
+  return value.startsWith("/") ? value : fallback;
+}
+
+function formatCountdown(totalSeconds: number) {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+
+  return `${String(hours).padStart(2, "0")}H ${String(minutes).padStart(
+    2,
+    "0",
+  )}M ${String(remainingSeconds).padStart(2, "0")}S`;
 }
 
 
@@ -112,6 +153,7 @@ function formatArchetype(value: string) {
   if (normalized === "builder") return "BUILDER";
   if (normalized === "collector") return "COLLECTOR";
   if (normalized === "flipper") return "FLIPPER";
+  if (!normalized || normalized === "unknown") return "HOODIE";
   return value.trim().toUpperCase();
 }
 
@@ -121,34 +163,19 @@ function normalizeOwnedHoodies(items: OwnedHoodie[]) {
   ).sort((left, right) => Number(left.tokenId) - Number(right.tokenId));
 }
 
-async function fetchToken(
-  tokenId: string,
-  signal?: AbortSignal,
-) {
-  const response = await fetch(
-    `/api/hoodies/token?${new URLSearchParams({
-      tokenId,
-    }).toString()}`,
-    {
-      cache: "no-store",
-      signal,
-    },
-  );
+async function fetchToken(tokenId: string, signal?: AbortSignal) {
+  const url = apiConfig.isMainnet
+    ? collectionApiUrl(`/v1/token/${encodeURIComponent(tokenId)}`)
+    : `/api/hoodies/token?${new URLSearchParams({ tokenId }).toString()}`;
 
-  const data =
-    (await response.json()) as
-      | TokenApiResponse
-      | { error?: string };
+  const response = await fetch(url, { cache: "no-store", signal });
+  const data = (await response.json()) as TokenApiResponse & { error?: string };
 
   if (!response.ok) {
-    throw new Error(
-      "error" in data && data.error
-        ? data.error
-        : `Unable to load Hoodie #${tokenId}.`,
-    );
+    throw new Error(data.error || `Unable to load Hoodie #${tokenId}.`);
   }
 
-  return data as TokenApiResponse;
+  return data;
 }
 
 async function artworkToPngDataUrl(svgUrl: string, size = 1024) {
@@ -221,16 +248,56 @@ function downloadBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function OwnedArtwork({ hoodie }: { hoodie: OwnedHoodie }) {
-  const src =
-    hoodie.image ||
-    collectionApiUrl(`/images/${encodeURIComponent(hoodie.tokenId)}.svg`);
+type FallbackImageProps = {
+  preferred: string;
+  fallback: string;
+  alt: string;
+  width: number;
+  height: number;
+  sizes: string;
+  className: string;
+  priority?: boolean;
+};
+
+function FallbackImage({
+  preferred,
+  fallback,
+  alt,
+  width,
+  height,
+  sizes,
+  className,
+  priority = false,
+}: FallbackImageProps) {
+  const [src, setSrc] = useState(preferred);
 
   return (
     <Image
       loader={passthroughImageLoader}
       unoptimized
       src={src}
+      alt={alt}
+      width={width}
+      height={height}
+      sizes={sizes}
+      onError={() => {
+        if (src !== fallback) setSrc(fallback);
+      }}
+      className={className}
+      priority={priority}
+    />
+  );
+}
+
+function OwnedArtwork({ hoodie }: { hoodie: OwnedHoodie }) {
+  const fallback = tokenArtworkFallback(hoodie.tokenId);
+  const preferred = absoluteApiUrl(hoodie.image, fallback);
+
+  return (
+    <FallbackImage
+      key={preferred}
+      preferred={preferred}
+      fallback={fallback}
       alt={hoodie.name || `OnChainHoodies #${hoodie.tokenId}`}
       width={96}
       height={96}
@@ -240,13 +307,33 @@ function OwnedArtwork({ hoodie }: { hoodie: OwnedHoodie }) {
   );
 }
 
+function HoodieArtwork({
+  token,
+  priority = false,
+}: {
+  token: TokenApiResponse;
+  priority?: boolean;
+}) {
+  const fallback = tokenArtworkFallback(token.token.id);
+  const preferred = absoluteApiUrl(token.image.svg, fallback);
+
+  return (
+    <FallbackImage
+      key={preferred}
+      preferred={preferred}
+      fallback={fallback}
+      alt={token.token.name}
+      width={1200}
+      height={1200}
+      sizes="(max-width: 1024px) 100vw, 50vw"
+      className="image-render-pixel block h-full w-full object-contain"
+      priority={priority}
+    />
+  );
+}
+
 export default function HoodTalkPage() {
-  const {
-    address,
-    connect,
-    ensureRequiredNetwork,
-    switchingNetwork,
-  } = useWallet();
+  const { address, connect } = useWallet();
   const [ownedHoodies, setOwnedHoodies] = useState<OwnedHoodie[]>([]);
   const [selectedTokenId, setSelectedTokenId] = useState("");
   const [token, setToken] = useState<TokenApiResponse | null>(null);
@@ -260,43 +347,43 @@ export default function HoodTalkPage() {
   const [tokenLoading, setTokenLoading] = useState(false);
   const [talkLoading, setTalkLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [clockNow, setClockNow] = useState(() => Math.floor(Date.now() / 1000));
   const [pickerOpen, setPickerOpen] = useState(true);
+  const [darkHood, setDarkHood] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const talkHistoryRef = useRef<Record<string, TalkHistory>>({});
   const generationRef = useRef(0);
 
-  const [currentUnixTime, setCurrentUnixTime] = useState<number | null>(null);
+  const activeChainHex = apiConfig.isMainnet
+    ? ROBINHOOD_MAINNET_CHAIN_HEX
+    : ROBINHOOD_TESTNET_CHAIN_HEX;
+  const activeRpcUrl = apiConfig.isMainnet
+    ? ROBINHOOD_MAINNET_RPC_URL
+    : ROBINHOOD_TESTNET_RPC_URL;
+  const activeExplorerUrl = apiConfig.isMainnet
+    ? ROBINHOOD_MAINNET_EXPLORER_URL
+    : ROBINHOOD_TESTNET_EXPLORER_URL;
+  const activeChainName = apiConfig.isMainnet
+    ? "Robinhood Chain"
+    : "Robinhood Chain Testnet";
 
   useEffect(() => {
-    talkHistoryRef.current = {};
-    generationRef.current += 1;
+    const intervalId = window.setInterval(() => {
+      setClockNow(Math.floor(Date.now() / 1000));
+    }, 1000);
 
-    const timeoutId = window.setTimeout(() => {
-      setRegistryTalk(null);
-      setAuthorization(null);
-      setTransactionHash(null);
-    }, 0);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [address]);
-
-  useEffect(() => {
-    const updateCurrentTime = () => {
-      setCurrentUnixTime(Math.floor(Date.now() / 1000));
-    };
-
-    const timeoutId = window.setTimeout(updateCurrentTime, 0);
-    const intervalId = window.setInterval(updateCurrentTime, 1000);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      window.clearInterval(intervalId);
-    };
+    return () => window.clearInterval(intervalId);
   }, []);
 
   const isHolder = ownedHoodies.length > 0;
 
   const loadOwnership = useCallback(async (signal?: AbortSignal) => {
+    talkHistoryRef.current = {};
+    generationRef.current += 1;
+    setRegistryTalk(null);
+    setAuthorization(null);
+    setTransactionHash(null);
+
     if (!address) {
       setOwnedHoodies([]);
       setSelectedTokenId("");
@@ -315,11 +402,10 @@ export default function HoodTalkPage() {
 
     try {
       const response = await fetch(
-        collectionApiUrl(
-          `/api/hoodies?${new URLSearchParams({
-            owner: address,
-          }).toString()}`,
-        ),
+        `/api/hoodies?${new URLSearchParams({
+          owner: address,
+          network: apiConfig.isMainnet ? "mainnet" : "testnet",
+        }).toString()}`,
         { cache: "no-store", signal },
       );
       const data = (await response.json()) as OwnershipResponse;
@@ -375,11 +461,7 @@ export default function HoodTalkPage() {
 
   const loadRegistry = useCallback(async (tokenId: number) => {
     const response = await fetch(
-      hoodTalkApiUrl(
-        `/api/hood-talk?${new URLSearchParams({
-          tokenId: String(tokenId),
-        }).toString()}`,
-      ),
+      `/api/hood-talk?${new URLSearchParams({ tokenId: String(tokenId) }).toString()}`,
       { cache: "no-store" },
     );
     const data = (await response.json()) as RegistryResponse;
@@ -407,7 +489,7 @@ export default function HoodTalkPage() {
       try {
         const artworkUrl = absoluteApiUrl(
           nextToken.image.svg,
-          collectionApiUrl(`/images/${nextToken.token.id}.svg`),
+          tokenArtworkFallback(nextToken.token.id),
         );
         const imageDataUrl = await artworkToPngDataUrl(artworkUrl);
 
@@ -417,7 +499,7 @@ export default function HoodTalkPage() {
           angles: [],
         };
 
-        const response = await fetch(hoodTalkApiUrl(), {
+        const response = await fetch("/api/hood-talk", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -526,12 +608,38 @@ export default function HoodTalkPage() {
     setError(null);
 
     try {
-      await ensureRequiredNetwork();
+      try {
+        await window.ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: activeChainHex }],
+        });
+      } catch (switchError) {
+        const code = (switchError as { code?: number }).code;
+        if (code !== 4902) throw switchError;
 
-      const registryAddress = siteConfig.hoodTalkRegistryAddress;
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [
+            {
+              chainId: activeChainHex,
+              chainName: activeChainName,
+              nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+              rpcUrls: [activeRpcUrl],
+              blockExplorerUrls: [activeExplorerUrl],
+            },
+          ],
+        });
+      }
+
+      const registryAddress = apiConfig.isMainnet
+        ? process.env.NEXT_PUBLIC_HOOD_TALK_REGISTRY_MAINNET_ADDRESS
+        : process.env.NEXT_PUBLIC_HOOD_TALK_REGISTRY_TESTNET_ADDRESS;
+
       if (!registryAddress) {
         throw new Error(
-          `The Hood Talk registry address is not configured for ${siteConfig.network}.`,
+          apiConfig.isMainnet
+            ? "NEXT_PUBLIC_HOOD_TALK_REGISTRY_MAINNET_ADDRESS is not configured."
+            : "NEXT_PUBLIC_HOOD_TALK_REGISTRY_TESTNET_ADDRESS is not configured.",
         );
       }
 
@@ -563,132 +671,215 @@ export default function HoodTalkPage() {
       setCommitting(false);
     }
   }, [
+    activeChainHex,
+    activeChainName,
+    activeExplorerUrl,
+    activeRpcUrl,
     address,
     authorization,
     committing,
-    ensureRequiredNetwork,
     loadRegistry,
     quote,
     token,
   ]);
 
-  const exportCard = useCallback(async () => {
-    if (!token || !quote || exporting) return;
-    setExporting(true);
-    setError(null);
+const exportCard = useCallback(async () => {
+  if (!token || !quote || exporting) return;
+
+  setExporting(true);
+  setError(null);
+
+  try {
+    if (document.fonts?.ready) {
+      await document.fonts.ready;
+    }
+
+    const width = 2400;
+    const height = 1200;
+    const artSize = 1200;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Canvas is unavailable.");
+    }
+
+    const exportBackground = darkHood ? "#000000" : "#ccff00";
+    const exportForeground = darkHood ? "#ccff00" : "#000000";
+
+    context.imageSmoothingEnabled = false;
+
+    // Card background only.
+    context.fillStyle = exportBackground;
+    context.fillRect(0, 0, width, height);
+
+    // Load and draw the original Hoodie artwork without changing its colors.
+    const artworkUrl = absoluteApiUrl(
+      token.image.svg,
+      tokenArtworkFallback(token.token.id),
+    );
+
+    const response = await fetch(artworkUrl, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error("Unable to load Hoodie artwork.");
+    }
+
+    const svg = await response.text();
+
+    const blobUrl = URL.createObjectURL(
+      new Blob([svg], {
+        type: "image/svg+xml;charset=utf-8",
+      }),
+    );
 
     try {
-      if (document.fonts?.ready) await document.fonts.ready;
+      const artwork = new window.Image();
+      artwork.decoding = "sync";
 
-      const width = 2400;
-      const height = 1200;
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Canvas is unavailable.");
-
-      context.imageSmoothingEnabled = false;
-      context.fillStyle = "#ccff00";
-      context.fillRect(0, 0, width, height);
-
-      const artworkUrl = absoluteApiUrl(
-        token.image.svg,
-        collectionApiUrl(`/images/${token.token.id}.svg`),
-      );
-      const response = await fetch(artworkUrl, { cache: "no-store" });
-      if (!response.ok) throw new Error("Unable to load Hoodie artwork.");
-      const svg = await response.text();
-      const blobUrl = URL.createObjectURL(
-        new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
-      );
-
-      try {
-        const artwork = new window.Image();
-        artwork.decoding = "sync";
-        await new Promise<void>((resolve, reject) => {
-          artwork.onload = () => resolve();
-          artwork.onerror = () => reject(new Error("Unable to render Hoodie."));
-          artwork.src = blobUrl;
-        });
-
-        const artSize = 1200;
-        context.drawImage(artwork, 0, 0, artSize, artSize);
-      } finally {
-        URL.revokeObjectURL(blobUrl);
-      }
-
-      context.fillStyle = "#000000";
-      context.textAlign = "center";
-      context.textBaseline = "middle";
-      context.font = "64px DepartureMono, monospace";
-
-      const cleanQuote = quote.replace(/^[“\"]|[”\"]$/g, "").trim();
-      const lines = wrapText(context, `“${cleanQuote}”`, 980);
-      const lineHeight = 92;
-      const startY = height / 2 - ((lines.length - 1) * lineHeight) / 2;
-      lines.forEach((line, index) => {
-        context.fillText(line.toUpperCase(), 1800, startY + index * lineHeight);
+      await new Promise<void>((resolve, reject) => {
+        artwork.onload = () => resolve();
+        artwork.onerror = () =>
+          reject(new Error("Unable to render Hoodie."));
+        artwork.src = blobUrl;
       });
 
-      context.textAlign = "left";
-      context.font = "30px DepartureMono, monospace";
-      context.fillText(
-        `${formatArchetype(token.traits.hoodie)} / #${String(token.token.id).padStart(4, "0")}`,
-        1240,
-        64,
-      );
-      context.fillText(
-        `${BRAND_NAME} #${String(token.token.id).padStart(4, "0")}`,
-        1240,
-        height - 56,
-      );
-
-      context.textAlign = "right";
-      context.fillText(BRAND_URL, width - 80, height - 56);
-
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((result) => {
-          if (result) resolve(result);
-          else reject(new Error("Unable to export the card."));
-        }, "image/png");
-      });
-
-      downloadBlob(blob, `onchainhoodies-${token.token.id}-hood-talk.png`);
-    } catch (exportError) {
-      setError(
-        exportError instanceof Error
-          ? exportError.message
-          : "Unable to export card.",
-      );
+      context.drawImage(artwork, 0, 0, artSize, artSize);
     } finally {
-      setExporting(false);
+      URL.revokeObjectURL(blobUrl);
     }
-  }, [exporting, quote, token]);
 
-  const cooldownActive = Boolean(
-    currentUnixTime !== null &&
-      registryTalk?.nextUpdateAt &&
-      registryTalk.nextUpdateAt > currentUnixTime,
+    // Quote.
+    context.fillStyle = exportForeground;
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.font = "64px DepartureMono, monospace";
+
+    const cleanQuote = quote.replace(/^[“"]|[”"]$/g, "").trim();
+    const lines = wrapText(context, `“${cleanQuote}”`, 980);
+    const lineHeight = 92;
+    const startY =
+      height / 2 - ((lines.length - 1) * lineHeight) / 2;
+
+    lines.forEach((line, index) => {
+      context.fillText(
+        line.toUpperCase(),
+        1800,
+        startY + index * lineHeight,
+      );
+    });
+
+    // Archetype and token ID.
+    context.textAlign = "left";
+    context.textBaseline = "middle";
+    context.font = "30px DepartureMono, monospace";
+
+    context.fillText(
+      `${formatArchetype(token.traits.hoodie)} / #${String(
+        token.token.id,
+      ).padStart(4, "0")}`,
+      1240,
+      64,
+    );
+
+    // Hood Talk count.
+    context.font = "28px DepartureMono, monospace";
+
+    context.fillText(
+      `HOOD TALK #${
+        authorization?.nextCount ?? registryTalk?.count ?? 0
+      }`,
+      1240,
+      height - 56,
+    );
+
+    // Brand.
+    context.textAlign = "right";
+    context.font = "20px DepartureMono, monospace";
+
+    context.fillText(
+      BRAND_URL.toLowerCase(),
+      width - 80,
+      height - 56,
+    );
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((result) => {
+        if (result) {
+          resolve(result);
+        } else {
+          reject(new Error("Unable to export the card."));
+        }
+      }, "image/png");
+    });
+
+    downloadBlob(
+      blob,
+      `onchainhoodies-${token.token.id}-hood-talk${
+        darkHood ? "-dark" : ""
+      }.png`,
+    );
+  } catch (exportError) {
+    setError(
+      exportError instanceof Error
+        ? exportError.message
+        : "Unable to export card.",
+    );
+  } finally {
+    setExporting(false);
+  }
+}, [
+  authorization,
+  darkHood,
+  exporting,
+  quote,
+  registryTalk,
+  token,
+]);
+
+  const cooldownSeconds = Math.max(
+    0,
+    (registryTalk?.nextUpdateAt || 0) - clockNow,
   );
+  const cooldownActive = cooldownSeconds > 0;
   const isPreview = Boolean(authorization);
-  const explorerBaseUrl = siteConfig.explorerUrl.replace(/\/$/, "");
-  const registryExplorerUrl = siteConfig.hoodTalkRegistryAddress
-    ? `${explorerBaseUrl}/address/${siteConfig.hoodTalkRegistryAddress}`
-    : explorerBaseUrl;
 
   return (
-    <main className="min-h-screen bg-[#ccff00] text-black">
+    <main
+      className="min-h-screen bg-[var(--hood-bg)] text-[var(--hood-fg)]"
+      style={
+        {
+          "--hood-bg": darkHood ? "#000000" : "#ccff00",
+          "--hood-fg": darkHood ? "#ccff00" : "#000000",
+        } as CSSProperties
+      }
+    >
       <SiteHeader />
 
       <section className="mx-auto max-w-[1700px] px-4 pb-16 pt-20 md:px-6 md:pt-24">
-        <div className="section-heading-row border-black">
+        <div className="section-heading-row border-[var(--hood-fg)]">
           <p>Build 04 / Holder access</p>
-          <Link href="/">Back to the Hood</Link>
+
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setDarkHood((current) => !current)}
+              className="uppercase"
+            >
+              {darkHood ? "Lights on" : "Lights off"}
+            </button>
+
+            <Link href="/">Back to the Hood</Link>
+          </div>
         </div>
 
         {!address ? (
-          <div className="grid min-h-[72vh] place-items-center border border-black p-6 text-center">
+          <div className="grid min-h-[72vh] place-items-center border border-[var(--hood-fg)] p-6 text-center">
             <div className="max-w-2xl">
               <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
                 Visual personality
@@ -711,11 +902,11 @@ export default function HoodTalkPage() {
             </div>
           </div>
         ) : ownershipLoading ? (
-          <div className="grid min-h-[72vh] place-items-center border border-black text-[10px] uppercase tracking-[0.18em]">
+          <div className="grid min-h-[72vh] place-items-center border border-[var(--hood-fg)] text-[10px] uppercase tracking-[0.18em]">
             Reading your Hoodies
           </div>
         ) : ownershipChecked && !isHolder ? (
-          <div className="grid min-h-[72vh] place-items-center border border-black bg-black p-6 text-center text-[#ccff00]">
+          <div className="grid min-h-[72vh] place-items-center border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-6 text-center text-[var(--hood-bg)]">
             <div className="max-w-xl">
               <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
                 Holder access
@@ -729,7 +920,7 @@ export default function HoodTalkPage() {
                 href={siteConfig.openSeaUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="pixel-cta mt-8 inline-block border-[#ccff00]"
+                className="pixel-cta mt-8 inline-block border-[var(--hood-bg)]"
               >
                 Get a Hoodie
               </a>
@@ -751,7 +942,7 @@ export default function HoodTalkPage() {
                 character. The market only enters when it has something worth saying.
               </p>
 
-              <div className="mt-6 border border-black">
+              <div className="mt-6 border border-[var(--hood-fg)]">
                 <button
                   type="button"
                   onClick={() => setPickerOpen((current) => !current)}
@@ -762,7 +953,7 @@ export default function HoodTalkPage() {
                 </button>
 
                 {pickerOpen && (
-                  <div className="border-t border-black">
+                  <div className="border-t border-[var(--hood-fg)]">
                     <div className="max-h-[390px] overflow-y-auto overscroll-contain">
                       {ownedHoodies.map((hoodie) => {
                         const isSelected = hoodie.tokenId === selectedTokenId;
@@ -772,8 +963,8 @@ export default function HoodTalkPage() {
                             key={hoodie.tokenId}
                             type="button"
                             onClick={() => setSelectedTokenId(hoodie.tokenId)}
-                            className={`flex w-full items-center gap-2 border-b border-black/20 p-1.5 text-left last:border-b-0 ${
-                              isSelected ? "bg-black text-[#ccff00]" : ""
+                            className={`flex w-full items-center gap-2 border-b border-[var(--hood-fg)]/20 p-1.5 text-left last:border-b-0 ${
+                              isSelected ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""
                             }`}
                           >
                             <div className="h-12 w-12 shrink-0 overflow-hidden bg-[#ccff00]">
@@ -798,40 +989,51 @@ export default function HoodTalkPage() {
                 type="button"
                 onClick={() => void loadOwnership()}
                 disabled={ownershipLoading}
-                className="mt-2 w-full border border-black px-3 py-2.5 text-[9px] uppercase tracking-[0.13em] disabled:opacity-40"
+                className="mt-2 w-full border border-[var(--hood-fg)] px-3 py-2.5 text-[9px] uppercase tracking-[0.13em] disabled:opacity-40"
               >
                 {ownershipLoading ? "Reading ownership" : "Refresh ownership"}
               </button>
             </aside>
 
             <div className="min-w-0">
-              <div className="mb-3 flex items-center justify-between gap-3 border-b border-black pb-3 text-[9px] uppercase tracking-[0.15em]">
-                <span>{isPreview ? "New talk preview" : "Current on-chain talk"}</span>
-                <span>
-                  {token
-                    ? `#${String(token.token.id).padStart(4, "0")}`
-                    : "Loading"}
-                </span>
+              <div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                <div className="flex items-center justify-between gap-3 border border-[var(--hood-fg)] px-4 py-3 text-[9px] uppercase tracking-[0.15em]">
+                  <span>
+                    {isPreview ? "New talk preview" : "Current on-chain talk"}
+                  </span>
+                  <span>
+                    {token
+                      ? `#${String(token.token.id).padStart(4, "0")}`
+                      : "Loading"}
+                  </span>
+                </div>
+
+                <div className="min-w-[210px] border border-[var(--hood-fg)] bg-[var(--hood-fg)] px-5 py-3 text-[var(--hood-bg)]">
+                  <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
+                    Hood Talks
+                  </p>
+                  <p className="mt-1 text-3xl leading-none tracking-[-0.05em]">
+                    {isPreview && authorization
+                      ? `${registryTalk?.count ?? 0} > ${authorization.nextCount}`
+                      : registryTalk?.count ?? 0}
+                  </p>
+                  {isPreview && authorization ? (
+                    <p className="mt-2 text-[7px] uppercase tracking-[0.12em] opacity-60">
+                      Pending on-chain update
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-[7px] uppercase tracking-[0.12em] opacity-60">
+                      Permanent character history
+                    </p>
+                  )}
+                </div>
               </div>
 
-              <section className="overflow-hidden border border-black">
+              <section className="overflow-hidden border border-[var(--hood-fg)]">
                 <div className="grid lg:grid-cols-2">
-                  <div className="aspect-square overflow-hidden border-b border-black bg-[#ccff00] lg:border-b-0 lg:border-r">
+                  <div className="aspect-square overflow-hidden border-b border-[var(--hood-fg)] bg-[#ccff00] lg:border-b-0 lg:border-r">
                     {token ? (
-                      <Image
-                        loader={passthroughImageLoader}
-                        unoptimized
-                        src={absoluteApiUrl(
-                          token.image.svg,
-                          collectionApiUrl(`/images/${token.token.id}.svg`),
-                        )}
-                        alt={token.token.name}
-                        width={1200}
-                        height={1200}
-                        sizes="(max-width: 1024px) 100vw, 50vw"
-                        className="image-render-pixel block h-full w-full object-contain"
-                        priority
-                      />
+                      <HoodieArtwork token={token} priority />
                     ) : null}
                   </div>
 
@@ -849,14 +1051,23 @@ export default function HoodTalkPage() {
                             ? "Meeting your Hoodie"
                             : "Reading the Hood"}
                         </p>
-                        <div className="mx-auto mt-6 h-[2px] w-40 overflow-hidden bg-black/20">
-                          <div className="h-full w-1/2 animate-pulse bg-black" />
+                        <div className="mx-auto mt-6 h-[2px] w-40 overflow-hidden bg-[var(--hood-fg)]/20">
+                          <div className="h-full w-1/2 animate-pulse bg-[var(--hood-fg)]" />
                         </div>
                       </div>
                     ) : quote ? (
-                      <blockquote className="mx-auto max-w-4xl text-[clamp(1.65rem,3.3vw,4.6rem)] uppercase leading-[1.08] tracking-[0.07em]">
-                        “{quote.replace(/^[“\"]|[”\"]$/g, "")}”
-                      </blockquote>
+                      <div className="mx-auto flex max-w-4xl flex-col items-center">
+                        <blockquote className="text-[clamp(1.65rem,3.3vw,4.6rem)] uppercase leading-[1.08] tracking-[0.07em]">
+                          “{quote.replace(/^[“\"]|[”\"]$/g, "")}”
+                        </blockquote>
+
+                        <HoodieSpeakButton
+                              text={quote}
+                              archetype={token?.traits.hoodie}
+                              mouth={token?.traits.mouth.value}
+                          className="mt-8"
+                        />
+                      </div>
                     ) : (
                       <p className="text-xl uppercase tracking-[0.1em] opacity-55">
                         Your Hoodie stayed quiet.
@@ -865,27 +1076,29 @@ export default function HoodTalkPage() {
 
                     <div className="absolute bottom-5 left-5 right-5 flex items-center justify-between gap-3 text-[8px] uppercase tracking-[0.14em] md:bottom-7 md:left-7 md:right-7">
                       <span>
-                        {token
-                          ? `${BRAND_NAME} #${String(token.token.id).padStart(4, "0")}`
-                          : "ONCHAINHOODIES"}
+                        {isPreview && authorization
+                          ? `Next Hood Talk #${authorization.nextCount}`
+                          : `Hood Talk #${registryTalk?.count ?? 0}`}
                       </span>
-                      <span>{BRAND_URL}</span>
+                      <span className="text-[7px] tracking-[0.1em] opacity-70">
+                        {BRAND_URL.toLowerCase()}
+                      </span>
                     </div>
                   </div>
                 </div>
               </section>
 
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
                 <button
                   type="button"
                   onClick={() => token && void generateTalk(token)}
                   disabled={!token || tokenLoading || talkLoading || committing || cooldownActive}
-                  className="border border-black px-4 py-4 text-[10px] uppercase tracking-[0.16em] disabled:opacity-40"
+                  className="border border-[var(--hood-fg)] px-4 py-4 text-[10px] uppercase tracking-[0.16em] disabled:opacity-40"
                 >
                   {talkLoading
                     ? "Listening"
                     : cooldownActive
-                      ? "Hoodie resting"
+                      ? `Next talk in ${formatCountdown(cooldownSeconds)}`
                       : registryTalk?.quote
                         ? "Generate new talk"
                         : "Let Hoodie talk"}
@@ -895,7 +1108,7 @@ export default function HoodTalkPage() {
                   type="button"
                   onClick={() => void exportCard()}
                   disabled={!token || !quote || exporting || talkLoading || committing}
-                  className="border border-black px-4 py-4 text-[10px] uppercase tracking-[0.16em] disabled:opacity-40"
+                  className="border border-[var(--hood-fg)] px-4 py-4 text-[10px] uppercase tracking-[0.16em] disabled:opacity-40"
                 >
                   {exporting ? "Creating card" : "Export Hood Talk"}
                 </button>
@@ -903,24 +1116,12 @@ export default function HoodTalkPage() {
                 <button
                   type="button"
                   onClick={() => void commitHoodTalk()}
-                  disabled={!token || !quote || !authorization || talkLoading || committing || switchingNetwork || cooldownActive}
-                  className="bg-black px-4 py-4 text-[10px] uppercase tracking-[0.16em] text-[#ccff00] disabled:opacity-40"
+                  disabled={!token || !quote || !authorization || talkLoading || committing || cooldownActive}
+                  className="bg-[var(--hood-fg)] px-4 py-4 text-[10px] uppercase tracking-[0.16em] text-[var(--hood-bg)] disabled:opacity-40"
                 >
-                  {committing || switchingNetwork
-                    ? "Setting on-chain"
-                    : authorization
-                      ? "Set on-chain"
-                      : "Generate first"}
+                  {committing ? "Setting on-chain" : authorization ? "Set on-chain" : "Generate first"}
                 </button>
 
-                <a
-                  href={registryExplorerUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="border border-black px-4 py-4 text-center text-[10px] uppercase tracking-[0.16em]"
-                >
-                  View registry ↗
-                </a>
               </div>
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[8px] uppercase leading-relaxed tracking-[0.12em] opacity-60">
@@ -931,7 +1132,7 @@ export default function HoodTalkPage() {
                 </span>
                 {transactionHash ? (
                   <a
-                    href={`${explorerBaseUrl}/tx/${transactionHash}`}
+                    href={`${activeExplorerUrl}/tx/${transactionHash}`}
                     target="_blank"
                     rel="noreferrer"
                     className="underline"
@@ -949,7 +1150,7 @@ export default function HoodTalkPage() {
         )}
 
         {error && (
-          <div className="mt-3 border border-black bg-black p-3 text-xs text-[#ccff00]">
+          <div className="mt-3 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-3 text-xs text-[var(--hood-bg)]">
             {error}
           </div>
         )}

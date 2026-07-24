@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
@@ -72,13 +71,24 @@ const layers = [
   },
   {
     number: "03",
-    title: "Intelligence",
-    copy: "Transparent discovery signals, holder benchmarks and cross-community ownership overlap.",
+    title: "Ownership",
+    copy: "Current token owners, complete wallet inventories and a paginated holder snapshot.",
     endpoints: [
-      "GET /v1/intelligence/token/{tokenId}",
-      "GET /v1/intelligence/discovery",
+      "GET /v1/token/{tokenId}/owner",
+      "GET /v1/wallet/{address}/hoodies",
+      "GET /v1/holders",
+      "GET /v1/holders?limit=100&offset=0",
+    ],
+  },
+  {
+    number: "04",
+    title: "Hood Talk + Intelligence",
+    copy: "On-chain Hoodie voices alongside discovery signals and cross-community ownership intelligence.",
+    endpoints: [
+      "GET /v1/token/{tokenId}/hood-talk",
+      "GET /v1/hood-talks",
+      "GET /v1/hood-talks/stats",
       "GET /v1/intelligence/holder-overlap",
-      "GET /v1/intelligence/wallet/{address}",
     ],
   },
 ];
@@ -119,6 +129,48 @@ const examples = [
     method: "GET",
     path: "/v1/intelligence/wallet/{address}",
     description: "Check public overlap across OCH and benchmark NFT communities.",
+  },
+  {
+    label: "Find the Owner",
+    method: "GET",
+    path: "/v1/token/125/owner",
+    description: "Resolve the current on-chain owner of any Hoodie.",
+  },
+  {
+    label: "Read a Wallet",
+    method: "GET",
+    path: "/v1/wallet/{address}/hoodies",
+    description: "Return every Hoodie currently held by a wallet.",
+  },
+  {
+    label: "Browse Holders",
+    method: "GET",
+    path: "/v1/holders?limit=100&offset=0",
+    description: "Browse the current holder snapshot with balances and pagination.",
+  },
+  {
+    label: "Hear a Hoodie",
+    method: "GET",
+    path: "/v1/token/120/hood-talk",
+    description: "Read the latest permanent Hood Talk saved by a Hoodie.",
+  },
+  {
+    label: "Hood Talk History",
+    method: "GET",
+    path: "/v1/token/120/hood-talk/history",
+    description: "Read the complete indexed quote history for one Hoodie.",
+  },
+  {
+    label: "Follow the Hood",
+    method: "GET",
+    path: "/v1/hood-talks?limit=25",
+    description: "Read the global Hood Talk feed, newest talks first.",
+  },
+  {
+    label: "Hood Talk Stats",
+    method: "GET",
+    path: "/v1/hood-talks/stats",
+    description: "Track total talks and unique Hoodies that have spoken.",
   },
 ];
 
@@ -308,7 +360,7 @@ export default function ApiPage() {
   const vaultExplorerUrl = `https://explorer.robinhoodchain.com/address/${BUILDER_VAULT_ADDRESS}`;
 
   const shareText = encodeURIComponent(
-    "Building with the OnChainHoodies API — fully on-chain artwork, traits, rarity, ink, market data and holder intelligence. The Hood is built by builders. @OnChainHoodies",
+    "Building with the OnChainHoodies API — fully on-chain artwork, traits, rarity, ink, market data, ownership and Hood Talk. The Hood is built by builders. @OnChainHoodies",
   );
   const shareUrl = `https://x.com/intent/post?text=${shareText}`;
 
@@ -343,7 +395,7 @@ export default function ApiPage() {
 
             <p className="mt-9 max-w-2xl text-lg leading-relaxed md:text-2xl">
               One API for fully on-chain artwork, traits, rarity, ink,
-              market data and collector intelligence.
+              market data, ownership and Hood Talk.
             </p>
 
             <div className="mt-9 flex flex-wrap gap-3">
@@ -380,7 +432,7 @@ export default function ApiPage() {
               <div className="border-b border-r border-black p-4">
                 Version
                 <br />
-                <span className="mt-2 block text-base">v1.5</span>
+                <span className="mt-2 block text-base">v1.6</span>
               </div>
               <div className="border-b border-black p-4">
                 Access
@@ -406,10 +458,10 @@ export default function ApiPage() {
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
             <p>01 / Data layers</p>
-            <p>One Hood · Three layers</p>
+            <p>One Hood · Four layers</p>
           </div>
 
-          <div className="mt-12 grid gap-3 lg:grid-cols-3">
+          <div className="mt-12 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {layers.map((layer) => (
               <article
                 key={layer.number}

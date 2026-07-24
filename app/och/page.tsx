@@ -1,3 +1,4 @@
+import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
 
@@ -104,24 +105,6 @@ const tokenDetails = [
   },
 ];
 
-const passportRows = [
-  {
-    label: "Citizen Reward",
-    title: "Launch Distribution",
-  },
-  {
-    label: "Citizen Reward",
-    title: "Round 02",
-  },
-  {
-    label: "Citizen Reward",
-    title: "Round 03",
-  },
-  {
-    label: "Community Rewards",
-    title: "Season 00",
-  },
-];
 
 export default function OCHPage() {
   return (
@@ -460,7 +443,7 @@ export default function OCHPage() {
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
             <p>05 / Citizen Passport</p>
-            <p>Concept Preview</p>
+            <p>Live Hood Identity</p>
           </div>
 
           <div className="mt-12 grid gap-12 lg:grid-cols-[0.75fr_1.25fr] lg:items-center">
@@ -472,30 +455,30 @@ export default function OCHPage() {
               </h2>
 
               <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                A future home for citizen rewards, contribution seasons and
-                your OCH balance.
+                Your Citizen Passport brings together the Hoodies you hold,
+                their on-chain voices and your future participation in
+                Community Fund seasons.
               </p>
 
-              <span className="mt-10 inline-block border-2 border-[#ccff00] px-6 py-4 text-xs uppercase tracking-[0.2em]">
-                Coming Soon
-              </span>
+              <Link href="/passport" className="pixel-cta mt-10">
+                  Open Citizen Passport
+                </Link>
             </div>
 
             <div className="border-2 border-[#ccff00]">
               <div className="flex items-center justify-between border-b-2 border-[#ccff00] p-4 text-[10px] uppercase tracking-[0.16em] md:p-6">
                 <span>Citizen Passport</span>
-                <span>Concept / TBA</span>
+                <span>Live / v1</span>
               </div>
 
               <div className="p-5 md:p-8">
                 <div className="flex items-start justify-between gap-6">
                   <div>
                     <p className="text-[9px] uppercase tracking-[0.16em] opacity-60">
-                      Citizen
+                      Identity
                     </p>
-
                     <p className="mt-3 text-3xl leading-none md:text-5xl">
-                      Hoodie Holder
+                      Hoodie Citizen
                     </p>
                   </div>
 
@@ -504,34 +487,28 @@ export default function OCHPage() {
                   </div>
                 </div>
 
-                <div className="mt-10 border-l border-t border-[#ccff00]">
-                  {passportRows.map((row) => (
+                <div className="mt-10 grid border-l border-t border-[#ccff00] sm:grid-cols-2">
+                  {[
+                    ["Ownership", "Hoodies held"],
+                    ["Hood Voice", "On-chain talks"],
+                    ["Community", "Season status"],
+                    ["Rewards", "Future claims"],
+                  ].map(([label, title]) => (
                     <div
-                      key={row.title}
-                      className="grid grid-cols-[1fr_auto] gap-4 border-b border-r border-[#ccff00] p-4"
+                      key={label}
+                      className="border-b border-r border-[#ccff00] p-4"
                     >
-                      <div>
-                        <p className="text-[9px] uppercase tracking-[0.14em] opacity-60">
-                          {row.label}
-                        </p>
-
-                        <p className="mt-2 text-xl">{row.title}</p>
-                      </div>
-
-                      <span className="self-center text-xs uppercase tracking-[0.14em] opacity-60">
-                        TBA
-                      </span>
+                      <p className="text-[9px] uppercase tracking-[0.14em] opacity-60">
+                        {label}
+                      </p>
+                      <p className="mt-2 text-xl">{title}</p>
                     </div>
                   ))}
                 </div>
 
-                <button
-                  type="button"
-                  disabled
-                  className="mt-6 w-full cursor-not-allowed border-2 border-[#ccff00] bg-[#ccff00] px-6 py-4 text-xs uppercase tracking-[0.2em] text-black opacity-60"
-                >
-                  Coming Soon
-                </button>
+                <Link href="/passport" className="pixel-cta mt-6 w-full">
+                  Enter the Passport
+                </Link>
               </div>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Contract, JsonRpcProvider, Wallet, getAddress, keccak256, toUtf8Bytes } from "ethers";
-import { ERC721_OWNER_ABI, HOOD_TALK_REGISTRY_ABI, ROBINHOOD_TESTNET_CHAIN_ID } from "../../../lib/hoodTalkRegistry";
+import { ERC721_OWNER_ABI, HOOD_TALK_REGISTRY_ABI } from "../../../lib/hoodTalkRegistry";
+import { appNetwork, activeChainId, activeRpcUrl } from "../../../lib/network";
 
 const API_BASE = "https://api.onchainhoodies.xyz";
 const OPENAI_API_URL = "https://api.openai.com/v1/responses";
@@ -298,23 +299,48 @@ function limitHistory(
 }
 
 function getRegistryConfig() {
-  const rpcUrl = process.env.ROBINHOOD_TESTNET_RPC_URL;
-  const registryAddress = process.env.HOOD_TALK_REGISTRY_TESTNET_ADDRESS;
+  const registryAddress =
+    appNetwork === "mainnet"
+      ? process.env.HOOD_TALK_REGISTRY_MAINNET_ADDRESS?.trim() ||
+        process.env.NEXT_PUBLIC_HOOD_TALK_REGISTRY_MAINNET_ADDRESS?.trim()
+      : process.env.HOOD_TALK_REGISTRY_TESTNET_ADDRESS?.trim() ||
+        process.env.NEXT_PUBLIC_HOOD_TALK_REGISTRY_TESTNET_ADDRESS?.trim();
 
-  if (!rpcUrl) throw new Error("ROBINHOOD_TESTNET_RPC_URL is not configured.");
+  const rpcUrl =
+    appNetwork === "mainnet"
+      ? process.env.ROBINHOOD_MAINNET_RPC_URL?.trim() ||
+        process.env.NEXT_PUBLIC_ROBINHOOD_MAINNET_RPC_URL?.trim() ||
+        activeRpcUrl
+      : process.env.ROBINHOOD_TESTNET_RPC_URL?.trim() ||
+        process.env.NEXT_PUBLIC_ROBINHOOD_TESTNET_RPC_URL?.trim() ||
+        activeRpcUrl;
+
+  if (!rpcUrl) {
+    throw new Error(
+      appNetwork === "mainnet"
+        ? "ROBINHOOD_MAINNET_RPC_URL is not configured."
+        : "ROBINHOOD_TESTNET_RPC_URL is not configured.",
+    );
+  }
+
   if (!registryAddress || !validWalletAddress(registryAddress)) {
-    throw new Error("HOOD_TALK_REGISTRY_TESTNET_ADDRESS is not configured.");
+    throw new Error(
+      appNetwork === "mainnet"
+        ? "HOOD_TALK_REGISTRY_MAINNET_ADDRESS is not configured."
+        : "HOOD_TALK_REGISTRY_TESTNET_ADDRESS is not configured.",
+    );
   }
 
   return {
     rpcUrl,
+    chainId: activeChainId,
     registryAddress: getAddress(registryAddress),
   };
 }
 
 async function readRegistryState(tokenId: number): Promise<RegistryState> {
-  const { rpcUrl, registryAddress } = getRegistryConfig();
-  const provider = new JsonRpcProvider(rpcUrl, ROBINHOOD_TESTNET_CHAIN_ID);
+  const { rpcUrl, registryAddress, chainId } = getRegistryConfig();
+  const provider = new JsonRpcProvider(rpcUrl, chainId);
   const registry = new Contract(registryAddress, HOOD_TALK_REGISTRY_ABI, provider);
 
   const [talk, nextUpdateAt] = await Promise.all([
@@ -332,8 +358,8 @@ async function readRegistryState(tokenId: number): Promise<RegistryState> {
 }
 
 async function verifyOnChainOwner(tokenId: number, walletAddress: string) {
-  const { rpcUrl, registryAddress } = getRegistryConfig();
-  const provider = new JsonRpcProvider(rpcUrl, ROBINHOOD_TESTNET_CHAIN_ID);
+  const { rpcUrl, registryAddress, chainId } = getRegistryConfig();
+  const provider = new JsonRpcProvider(rpcUrl, chainId);
   const registry = new Contract(registryAddress, HOOD_TALK_REGISTRY_ABI, provider);
   const hoodiesAddress = await registry.hoodies();
   const hoodies = new Contract(hoodiesAddress, ERC721_OWNER_ABI, provider);
@@ -355,11 +381,11 @@ async function signHoodTalkAuthorization({
 }): Promise<HoodTalkAuthorization> {
   const privateKey = process.env.HOOD_TALK_SIGNER_PRIVATE_KEY;
   const expectedSigner = process.env.HOOD_TALK_SIGNER_ADDRESS;
-  const { rpcUrl, registryAddress } = getRegistryConfig();
+  const { rpcUrl, registryAddress, chainId } = getRegistryConfig();
 
   if (!privateKey) throw new Error("HOOD_TALK_SIGNER_PRIVATE_KEY is not configured.");
 
-  const provider = new JsonRpcProvider(rpcUrl, ROBINHOOD_TESTNET_CHAIN_ID);
+  const provider = new JsonRpcProvider(rpcUrl, chainId);
   const signer = new Wallet(privateKey, provider);
 
   if (expectedSigner && getAddress(expectedSigner) !== signer.address) {
@@ -376,7 +402,7 @@ async function signHoodTalkAuthorization({
   const domain = {
     name: "OnChainHoodies Hood Talk",
     version: "1",
-    chainId: ROBINHOOD_TESTNET_CHAIN_ID,
+    chainId,
     verifyingContract: registryAddress,
   };
   const types = {
@@ -945,6 +971,16 @@ HARD RULES
 - No hashtags.
 - No emoji.
 - No quotation marks.
+
+PUNCTUATION
+
+- Use only normal keyboard punctuation.
+- Never use the em dash (—).
+- Never use the en dash (–).
+- Never use ellipses (…).
+- Prefer periods, commas, exclamation marks or line breaks.
+- Write like someone posting naturally on X or Discord.
+
 - Do not mention AI, API, metadata, prompts, endpoints, traits or archetypes.
 - Do not list prices, ranks, percentages or raw market numbers.
 - Do not explain the artwork.

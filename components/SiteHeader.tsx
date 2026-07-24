@@ -6,11 +6,11 @@ import { siteConfig } from "../lib/config";
 import WalletButton from "./WalletButton";
 
 const links = [
-   { href: "/och", label: "$OCH" },
-  { href: "/#collection", label: "Collection" },
+  { href: "/och", label: "$OCH" },
+  { href: "/passport", label: "Passport" },
+  { href: "/hood-talk", label: "Hood Talk" },
   { href: "/#builds", label: "Builds" },
-  { href: "/tools/explorer", label: "Explorer" },
-  { href: "/api", label: "Api" },
+  { href: "/api", label: "API" },
 ];
 
 export default function SiteHeader() {
@@ -38,16 +38,16 @@ export default function SiteHeader() {
             </Link>
           ))}
 
-         <a
-  href={siteConfig.openSeaUrl}
-  target="_blank"
-  rel="noreferrer"
-  className="text-[11px] uppercase tracking-[0.16em] hover:underline hover:underline-offset-4"
->
-  OpenSea
-</a>
+          <a
+            href={siteConfig.openSeaUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[11px] uppercase tracking-[0.16em] hover:underline hover:underline-offset-4"
+          >
+            OpenSea
+          </a>
 
-<WalletButton />
+          <WalletButton />
         </nav>
 
         <button

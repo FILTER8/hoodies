@@ -81,6 +81,13 @@ const neighborFallbacks: Record<NeighborName, string> = {
 const builds = [
   {
     label: "Live",
+    title: "Hood Talk",
+    copy: "Give your Hoodie a permanent on-chain voice and build its public history inside the Hood.",
+    href: "/hood-talk",
+    action: "Give your Hoodie a voice",
+  },
+  {
+    label: "Live",
     title: "Grid Exporter",
     copy: "Choose the Hoodies in your wallet and export them as one clean, branded square PNG.",
     href: "/tools/export",
@@ -103,7 +110,7 @@ const builds = [
   {
     label: "Live",
     title: "Builder API",
-    copy: "Build with artwork, traits, rarity, ink, market data and collector intelligence. Good builds can earn from the 150 OCH Builder Treasury.",
+    copy: "Build with artwork, traits, rarity, ink, market data and collector intelligence.",
     href: "/api",
     action: "Build in the Hood",
   },
@@ -113,6 +120,7 @@ const contracts = [
   { label: "Collection", address: siteConfig.collectionAddress },
   { label: "Renderer", address: siteConfig.rendererAddress },
   { label: "Pixel Data", address: siteConfig.pixelDataAddress },
+  { label: "Hood Talk", address: siteConfig.hoodTalkRegistryAddress },
 ];
 
 const metricLabels: Record<MarketMetric, string> = {
