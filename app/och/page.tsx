@@ -74,12 +74,31 @@ const citizenRounds = [
   },
 ];
 
-const contributionTypes = [
-  "Create",
-  "Contribute",
-  "Share",
-  "Organize",
-  "Support",
+const communityRounds = [
+  {
+    number: "01",
+    timing: "Season 01",
+    amount: "15%",
+    label: "Growth Focus",
+    description:
+      "The largest Community Fund release is planned for the opening season, when participation and distribution matter most.",
+  },
+  {
+    number: "02",
+    timing: "+2 Months",
+    amount: "10%",
+    label: "Season 02",
+    description:
+      "The second seasonal allocation is planned for the next set of Passport activities and community contributions.",
+  },
+  {
+    number: "03",
+    timing: "+4 Months",
+    amount: "10%",
+    label: "Season 03",
+    description:
+      "The final Community Fund allocation is planned for the third seasonal reward period.",
+  },
 ];
 
 const tokenDetails = [
@@ -348,7 +367,7 @@ export default function OCHPage() {
         </div>
       </section>
 
-      {/* Contribution Fund */}
+      {/* Community Fund */}
 
       <section className="bg-black px-6 py-24 text-[#ccff00]">
         <div className="mx-auto max-w-[1440px]">
@@ -357,37 +376,55 @@ export default function OCHPage() {
             <p>35% Proposed Allocation</p>
           </div>
 
-          <div className="mt-12 grid gap-12 lg:grid-cols-2 lg:items-end">
+          <div className="mt-12 grid gap-12 lg:grid-cols-[0.7fr_1.3fr]">
             <div>
               <h2 className="section-title">
-                Every two months
+                Growth first.
                 <br />
-                a new season begins.
+                Then keep building.
               </h2>
 
-              <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-75 md:text-xl">
-                OCH is planned to reward the people who create, contribute and
-                help the neighborhood grow.
+              <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
+                The Community Fund is planned across three two-month seasons.
+                Season 01 receives the largest allocation to reward early
+                participation while the Hood is growing fastest.
               </p>
             </div>
 
-            <div className="grid grid-cols-2 border-l-2 border-t-2 border-[#ccff00]">
-              {contributionTypes.map((item, index) => (
-                <div
-                  key={item}
-                  className={[
-                    "flex min-h-[120px] items-end justify-between border-b-2 border-r-2 border-[#ccff00] p-5 md:min-h-[150px] md:p-7",
-                    index === contributionTypes.length - 1
-                      ? "col-span-2"
-                      : "",
-                  ].join(" ")}
+            <div className="border-l-2 border-t-2 border-[#ccff00] md:grid md:grid-cols-3">
+              {communityRounds.map((round) => (
+                <article
+                  key={round.number}
+                  className="flex min-h-[410px] flex-col justify-between border-b-2 border-r-2 border-[#ccff00] p-6 md:p-8"
                 >
-                  <span className="text-[10px] uppercase tracking-[0.16em] opacity-60">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
+                  <div>
+                    <div className="flex items-start justify-between gap-4">
+                      <span className="text-[10px] uppercase tracking-[0.18em] opacity-60">
+                        Round {round.number}
+                      </span>
 
-                  <p className="text-xl leading-none md:text-3xl">{item}</p>
-                </div>
+                      <span className="border border-[#ccff00] px-2 py-1 text-[9px] uppercase tracking-[0.14em]">
+                        {round.number === "01" ? "Growth" : "Planned"}
+                      </span>
+                    </div>
+
+                    <p className="mt-12 text-sm uppercase tracking-[0.18em] opacity-60">
+                      {round.timing}
+                    </p>
+
+                    <p className="mt-3 text-6xl leading-none tracking-[-0.06em] md:text-7xl">
+                      {round.amount}
+                    </p>
+
+                    <p className="mt-5 text-lg uppercase tracking-[0.12em]">
+                      {round.label}
+                    </p>
+                  </div>
+
+                  <p className="mt-10 max-w-xs text-sm leading-relaxed opacity-70">
+                    {round.description}
+                  </p>
+                </article>
               ))}
             </div>
           </div>
@@ -443,71 +480,77 @@ export default function OCHPage() {
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
             <p>05 / Citizen Passport</p>
-            <p>Live Hood Identity</p>
+            <p>Season 01</p>
           </div>
 
-          <div className="mt-12 grid gap-12 lg:grid-cols-[0.75fr_1.25fr] lg:items-center">
+          <div className="mt-12 grid gap-12 lg:grid-cols-[0.7fr_1.3fr] lg:items-center">
             <div>
-              <h2 className="section-title">
-                Your place
+              <p className="text-[10px] uppercase tracking-[0.2em] opacity-60">
+                Grow the Hood
+              </p>
+
+              <h2 className="mt-4 text-[clamp(4rem,9vw,8rem)] leading-[0.78] tracking-[-0.08em]">
+                SEASON
                 <br />
-                in the Hood.
+                01
               </h2>
 
               <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                Your Citizen Passport brings together the Hoodies you hold,
-                their on-chain voices and your future participation in
-                Community Fund seasons.
+                Citizen rewards are automatic for Hoodie holders. Season 01
+                adds participation rewards through Hood Talks and submitted X
+                posts.
               </p>
 
               <Link href="/passport" className="pixel-cta mt-10">
-                  Open Citizen Passport
-                </Link>
+                Open Citizen Passport
+              </Link>
             </div>
 
             <div className="border-2 border-[#ccff00]">
               <div className="flex items-center justify-between border-b-2 border-[#ccff00] p-4 text-[10px] uppercase tracking-[0.16em] md:p-6">
                 <span>Citizen Passport</span>
-                <span>Live / v1</span>
+                <span>Season 01</span>
               </div>
 
               <div className="p-5 md:p-8">
                 <div className="flex items-start justify-between gap-6">
                   <div>
                     <p className="text-[9px] uppercase tracking-[0.16em] opacity-60">
-                      Identity
+                      Current Season
                     </p>
                     <p className="mt-3 text-3xl leading-none md:text-5xl">
-                      Hoodie Citizen
+                      Grow the Hood
                     </p>
                   </div>
 
-                  <div className="h-14 w-14 border-2 border-[#ccff00] p-2">
-                    <div className="h-full w-full bg-[#ccff00]" />
+                  <div className="flex h-16 w-16 items-center justify-center border-2 border-[#ccff00] text-3xl leading-none">
+                    01
                   </div>
                 </div>
 
-                <div className="mt-10 grid border-l border-t border-[#ccff00] sm:grid-cols-2">
+                <div className="mt-10 grid border-l border-t border-[#ccff00] sm:grid-cols-3">
                   {[
-                    ["Ownership", "Hoodies held"],
-                    ["Hood Voice", "On-chain talks"],
-                    ["Community", "Season status"],
-                    ["Rewards", "Future claims"],
-                  ].map(([label, title]) => (
+                    ["01 / Citizen", "Automatic", "Every Hoodie qualifies"],
+                    ["02 / Hood Talk", "1–3", "Counted per Hoodie"],
+                    ["03 / X Posts", "24H", "Tracked after submission"],
+                  ].map(([label, value, description]) => (
                     <div
                       key={label}
-                      className="border-b border-r border-[#ccff00] p-4"
+                      className="border-b border-r border-[#ccff00] p-4 md:min-h-[170px]"
                     >
                       <p className="text-[9px] uppercase tracking-[0.14em] opacity-60">
                         {label}
                       </p>
-                      <p className="mt-2 text-xl">{title}</p>
+                      <p className="mt-5 text-3xl leading-none">{value}</p>
+                      <p className="mt-3 text-xs leading-relaxed opacity-60">
+                        {description}
+                      </p>
                     </div>
                   ))}
                 </div>
 
                 <Link href="/passport" className="pixel-cta mt-6 w-full">
-                  Enter the Passport
+                  Enter Season 01
                 </Link>
               </div>
             </div>
