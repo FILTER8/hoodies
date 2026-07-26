@@ -27,6 +27,13 @@ type MetadataAttribute = {
   value?: unknown;
 };
 
+type HoodTalkMetadata = {
+  quote?: unknown;
+  count?: unknown;
+  total?: unknown;
+  history?: unknown[];
+};
+
 type TokenMetadata = {
   hoodTalkCount?: unknown;
   hood_talk_count?: unknown;
@@ -35,11 +42,12 @@ type TokenMetadata = {
   attributes?: MetadataAttribute[];
   metadata?: TokenMetadata;
   token?: TokenMetadata;
-  hoodTalk?: {
-    count?: unknown;
-    total?: unknown;
-    history?: unknown[];
-  };
+
+  // Previous/custom API format.
+  hoodTalk?: HoodTalkMetadata;
+
+  // New rarity-stable renderer format.
+  hood_talk?: HoodTalkMetadata;
 };
 
 function asNonNegativeInteger(value: unknown): number | null {
@@ -49,7 +57,9 @@ function asNonNegativeInteger(value: unknown): number | null {
 
   if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);
-    if (Number.isFinite(parsed)) return Math.max(0, Math.floor(parsed));
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, Math.floor(parsed));
+    }
   }
 
   return null;
@@ -67,8 +77,14 @@ function extractHoodTalkCount(payload: TokenMetadata): number {
     payload.hood_talk_count,
     payload.talkCount,
     payload.quoteCount,
+
+    // Previous/custom API format.
     payload.hoodTalk?.count,
     payload.hoodTalk?.total,
+
+    // New rarity-stable renderer format.
+    payload.hood_talk?.count,
+    payload.hood_talk?.total,
   ];
 
   for (const candidate of candidates) {
@@ -80,6 +96,12 @@ function extractHoodTalkCount(payload: TokenMetadata): number {
     return payload.hoodTalk.history.length;
   }
 
+  if (Array.isArray(payload.hood_talk?.history)) {
+    return payload.hood_talk.history.length;
+  }
+
+  // Backward compatibility with the old renderer where Hood Talk Count
+  // was included inside the OpenSea attributes array.
   for (const attribute of payload.attributes || []) {
     const label = normalizeLabel(
       attribute.trait_type || attribute.traitType || attribute.name
@@ -96,8 +118,13 @@ function extractHoodTalkCount(payload: TokenMetadata): number {
     }
   }
 
-  if (payload.metadata) return extractHoodTalkCount(payload.metadata);
-  if (payload.token) return extractHoodTalkCount(payload.token);
+  if (payload.metadata) {
+    return extractHoodTalkCount(payload.metadata);
+  }
+
+  if (payload.token) {
+    return extractHoodTalkCount(payload.token);
+  }
 
   return 0;
 }
@@ -110,7 +137,9 @@ function normalizeTokenIds(value: unknown): string[] {
   for (const item of value) {
     const tokenId = String(item ?? "").trim();
     if (!/^\d+$/.test(tokenId)) continue;
+
     unique.add(BigInt(tokenId).toString());
+
     if (unique.size >= MAX_TOKEN_IDS) break;
   }
 
@@ -125,7 +154,10 @@ function encodeTokenUriCall(tokenId: string) {
 
 function decodeAbiString(result: string) {
   const hex = result.startsWith("0x") ? result.slice(2) : result;
-  if (hex.length < 128) throw new Error("Invalid tokenURI response.");
+
+  if (hex.length < 128) {
+    throw new Error("Invalid tokenURI response.");
+  }
 
   const offset = Number.parseInt(hex.slice(0, 64), 16) * 2;
   const length = Number.parseInt(hex.slice(offset, offset + 64), 16) * 2;
@@ -147,7 +179,9 @@ async function rpcCall(method: string, params: unknown[]) {
     cache: "no-store",
   });
 
-  if (!response.ok) throw new Error(`RPC returned ${response.status}.`);
+  if (!response.ok) {
+    throw new Error(`RPC returned ${response.status}.`);
+  }
 
   const payload = (await response.json()) as {
     result?: string;
@@ -184,7 +218,11 @@ async function readMetadataUri(uri: string): Promise<TokenMetadata> {
   }
 
   const response = await fetch(uri, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Metadata returned ${response.status}.`);
+
+  if (!response.ok) {
+    throw new Error(`Metadata returned ${response.status}.`);
+  }
+
   return (await response.json()) as TokenMetadata;
 }
 
@@ -199,6 +237,7 @@ async function fetchTokenCount(tokenId: string) {
 
   const tokenUri = decodeAbiString(result);
   const metadata = await readMetadataUri(tokenUri);
+
   return extractHoodTalkCount(metadata);
 }
 
@@ -221,7 +260,10 @@ async function mapWithConcurrency<T, R>(
           value: await worker(items[index]),
         };
       } catch (reason) {
-        results[index] = { status: "rejected", reason };
+        results[index] = {
+          status: "rejected",
+          reason,
+        };
       }
     }
   }
@@ -246,7 +288,10 @@ export async function POST(request: NextRequest) {
     const tokenIds = normalizeTokenIds(body.tokenIds);
 
     if (tokenIds.length === 0) {
-      return NextResponse.json({ hoodTalkCounts: {}, failedTokenIds: [] });
+      return NextResponse.json({
+        hoodTalkCounts: {},
+        failedTokenIds: [],
+      });
     }
 
     const settled = await mapWithConcurrency(
