@@ -35,6 +35,13 @@ type XAccount = {
   profile_image_url?: string;
 };
 
+type SubmissionLimit = {
+  max: number;
+  used: number;
+  remaining: number;
+  retryAt: string | null;
+};
+
 type Account = {
   wallet: string;
   hoodieBalance: number;
@@ -45,6 +52,7 @@ type Account = {
   pastPosts?: number;
   flaggedPosts?: number;
   pfpStatus?: string | null;
+  submissionLimit?: SubmissionLimit;
 };
 
 type Metrics = {
@@ -154,6 +162,30 @@ function remainingTime(value?: string) {
   const hours = Math.floor(diff / 3_600_000);
   const minutes = Math.floor((diff % 3_600_000) / 60_000);
   return `${hours}H ${minutes}M LEFT`;
+}
+
+function submissionCountdown(retryAt: string | null, now: number) {
+  if (!retryAt) return "";
+
+  const retryAtMs = Date.parse(retryAt);
+  if (!Number.isFinite(retryAtMs)) return "";
+
+  const diff = retryAtMs - now;
+  if (diff <= 0) return "Submission available now";
+
+  const totalMinutes = Math.max(1, Math.ceil(diff / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0 && minutes > 0) {
+    return `Come back in ${hours}h ${minutes}m`;
+  }
+
+  if (hours > 0) {
+    return `Come back in ${hours}h`;
+  }
+
+  return `Come back in ${minutes}m`;
 }
 
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -331,6 +363,7 @@ export default function CommunityPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [refreshResult, setRefreshResult] = useState<RefreshResult | null>(null);
+  const [submissionClock, setSubmissionClock] = useState(() => Date.now());
 
   const isAdmin = Boolean(
     address && ADMIN_WALLET && address.toLowerCase() === ADMIN_WALLET,
@@ -344,6 +377,23 @@ export default function CommunityPage() {
     null;
 
   const signedIn = Boolean(account?.wallet);
+
+  const submissionLimit = account?.submissionLimit;
+  const submissionMax = submissionLimit?.max ?? 5;
+  const submissionUsed = submissionLimit?.used ?? 0;
+  const submissionRemaining = submissionLimit?.remaining ?? submissionMax;
+  const submissionRetryAt = submissionLimit?.retryAt ?? null;
+  const submissionRetryAtMs = submissionRetryAt
+    ? Date.parse(submissionRetryAt)
+    : Number.NaN;
+  const submissionLimitReached =
+    submissionRemaining <= 0 &&
+    Number.isFinite(submissionRetryAtMs) &&
+    submissionRetryAtMs > submissionClock;
+  const submissionWaitMessage = submissionCountdown(
+    submissionRetryAt,
+    submissionClock,
+  );
 
   const loadAccount = useCallback(async () => {
     try {
@@ -518,6 +568,28 @@ export default function CommunityPage() {
     });
   }, [signedIn, passportTab, myPostsTab, loadPosts]);
 
+  useEffect(() => {
+    if (!submissionRetryAt) return;
+
+    const retryAtMs = Date.parse(submissionRetryAt);
+    if (!Number.isFinite(retryAtMs)) return;
+
+    const updateClock = () => setSubmissionClock(Date.now());
+    updateClock();
+
+    const intervalId = window.setInterval(updateClock, 30_000);
+    const delay = Math.max(retryAtMs - Date.now() + 1_000, 1_000);
+    const timeoutId = window.setTimeout(() => {
+      updateClock();
+      void loadAccount();
+    }, Math.min(delay, 2_147_000_000));
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [submissionRetryAt, loadAccount]);
+
   async function createPassportSession() {
     if (!address) {
       await connect();
@@ -585,6 +657,15 @@ export default function CommunityPage() {
 
   async function submitPost(event: FormEvent) {
     event.preventDefault();
+
+    if (submissionLimitReached) {
+      setError(
+        submissionWaitMessage ||
+          "Submission limit reached. Please come back later.",
+      );
+      return;
+    }
+
     setAction("Submitting post...");
     setError("");
     setMessage("");
@@ -887,26 +968,92 @@ export default function CommunityPage() {
                       ) : null}
                     </div>
 
-                    <form onSubmit={submitPost} className="border-2 border-black p-7 md:p-9">
-                      <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Submit post</p>
-                      <h2 className="mt-5 text-4xl leading-none">TRACK FOR 24H</h2>
+                    <form
+                      onSubmit={submitPost}
+                      className="border-2 border-black p-7 md:p-9"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">
+                          Submit post
+                        </p>
+                        <p className="border border-black px-3 py-2 text-[8px] uppercase tracking-[0.14em]">
+                          {submissionUsed} / {submissionMax} used
+                        </p>
+                      </div>
+
+                      <h2 className="mt-5 text-4xl leading-none">
+                        TRACK FOR 24H
+                      </h2>
+
                       <p className="mt-5 text-sm leading-relaxed opacity-70">
-                        Paste the X post URL. The post must come from your connected account and mention @OnChainHoodies.
+                        Paste the X post URL. The post must come from your
+                        connected account and mention @OnChainHoodies.
                       </p>
+
+                      <div className="mt-6 border-2 border-black p-4 text-sm">
+                        <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">
+                          The Hood Rules
+                        </p>
+
+                        <ol className="mt-3 list-decimal space-y-2 pl-5 leading-relaxed">
+                          <li>
+                            Mention <strong>@OnChainHoodies</strong> in your post.
+                          </li>
+                          <li>Create something that adds value to the Hood.</li>
+                          <li>No spam. No farming. Keep it real.</li>
+                        </ol>
+
+                        <p className="mt-4 border-t-2 border-black pt-4 text-xs opacity-70">
+                          Maximum{" "}
+                          <strong>
+                            {submissionMax} submissions per wallet every 24 hours.
+                          </strong>
+                          <br />
+                          Following these rules does not guarantee a reward.
+                          Every submission is reviewed by the Hood.
+                        </p>
+                      </div>
+
+                      {submissionLimitReached ? (
+                        <div className="mt-7 border-2 border-black bg-black p-4 text-[#ccff00]">
+                          <p className="text-[9px] uppercase tracking-[0.16em] opacity-60">
+                            Submission limit reached
+                          </p>
+                          <p className="mt-2 text-sm uppercase tracking-[0.08em]">
+                            {submissionWaitMessage ||
+                              "Please come back when your next submission opens."}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="mt-7 text-[9px] uppercase tracking-[0.14em] opacity-60">
+                          {submissionRemaining} submission
+                          {submissionRemaining === 1 ? "" : "s"} remaining in
+                          your rolling 24-hour window.
+                        </p>
+                      )}
+
                       <input
                         type="url"
                         required
                         value={tweetUrl}
                         onChange={(event) => setTweetUrl(event.target.value)}
                         placeholder="https://x.com/username/status/..."
-                        className="mt-7 w-full border-2 border-black bg-transparent px-4 py-4 text-sm outline-none placeholder:text-black/40"
+                        disabled={submissionLimitReached}
+                        className="mt-5 w-full border-2 border-black bg-transparent px-4 py-4 text-sm outline-none placeholder:text-black/40 disabled:cursor-not-allowed disabled:opacity-40"
                       />
+
                       <button
                         type="submit"
-                        disabled={!xUsername || Boolean(action)}
+                        disabled={
+                          !xUsername ||
+                          Boolean(action) ||
+                          submissionLimitReached
+                        }
                         className="pixel-cta pixel-cta-dark mt-5 w-full disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        Submit post
+                        {submissionLimitReached
+                          ? submissionWaitMessage || "Limit reached"
+                          : "Submit post"}
                       </button>
                     </form>
                   </div>
