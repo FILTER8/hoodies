@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import type { CSSProperties, FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
 import { useWallet } from "../../components/WalletProvider";
@@ -135,6 +136,14 @@ type RefreshResult = {
   pfpsChecked: number;
 };
 
+type CommunityStats = {
+  registeredHoodies: number;
+  totalSubmitted: number;
+  totalInteractions: number;
+  verifiedPfps: number;
+  updatedAt?: string | null;
+};
+
 declare global {
   interface Window {
     twttr?: {
@@ -180,6 +189,13 @@ function remainingTime(value?: string) {
   const hours = Math.floor(diff / 3_600_000);
   const minutes = Math.floor((diff % 3_600_000) / 60_000);
   return `${hours}H ${minutes}M LEFT`;
+}
+
+function formatStat(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    notation: value >= 10_000 ? "compact" : "standard",
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 function submissionCountdown(retryAt: string | null, now: number) {
@@ -278,7 +294,7 @@ function TweetEmbed({
   return (
     <div
       ref={embedRef}
-      className={`flex min-h-[180px] items-start justify-center bg-black [&_.twitter-tweet]:!m-0 [&_iframe]:!max-w-full ${
+      className={`flex min-h-[180px] items-start justify-center bg-[var(--ink)] [&_.twitter-tweet]:!m-0 [&_iframe]:!max-w-full ${
         compact
           ? "max-h-[520px] overflow-y-auto overscroll-contain sm:max-h-[580px]"
           : ""
@@ -299,7 +315,7 @@ function TweetEmbed({
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="border-b border-r border-[#ccff00] p-3">
+    <div className="border-b border-r border-[var(--paper)] p-3">
       <p className="text-[8px] uppercase tracking-[0.14em] opacity-55">{label}</p>
       <p className="mt-2 text-xl leading-none">{value}</p>
     </div>
@@ -358,8 +374,8 @@ function PostCard({
   const status = (post.status || "active").toLowerCase();
 
   return (
-    <article className="border-2 border-black bg-black text-[#ccff00]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#ccff00] p-4 text-[8px] uppercase tracking-[0.14em]">
+    <article className="border-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--paper)] p-4 text-[8px] uppercase tracking-[0.14em]">
         <span>{status}</span>
         <span>
           {status === "active"
@@ -368,11 +384,11 @@ function PostCard({
         </span>
       </div>
 
-      <div className="min-h-[220px] overflow-hidden bg-black p-2 sm:p-3">
+      <div className="min-h-[220px] overflow-hidden bg-[var(--ink)] p-2 sm:p-3">
         <TweetEmbed url={postUrl(post)} compact={compact} />
       </div>
 
-      <div className="grid grid-cols-2 border-l border-t border-[#ccff00] sm:grid-cols-4">
+      <div className="grid grid-cols-2 border-l border-t border-[var(--paper)] sm:grid-cols-4">
         <Metric label="Likes" value={metrics.likes} />
         <Metric label="Replies" value={metrics.replies} />
         <Metric label="Reposts" value={metrics.reposts} />
@@ -380,12 +396,12 @@ function PostCard({
       </div>
 
       {status === "flagged" && (post.flag_reason || post.flagReason) ? (
-        <p className="border-t border-[#ccff00] p-4 text-xs leading-relaxed">
+        <p className="border-t border-[var(--paper)] p-4 text-xs leading-relaxed">
           Rejected: {post.flag_reason || post.flagReason}
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#ccff00] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--paper)] p-4">
         <a
           href={postUrl(post)}
           target="_blank"
@@ -399,7 +415,7 @@ function PostCard({
           <button
             type="button"
             onClick={() => onFlag(post)}
-            className="border border-[#ccff00] px-3 py-2 text-[8px] uppercase tracking-[0.14em]"
+            className="border border-[var(--paper)] px-3 py-2 text-[8px] uppercase tracking-[0.14em]"
           >
             Flag post
           </button>
@@ -432,6 +448,8 @@ export default function CommunityPage() {
   const [error, setError] = useState("");
   const [refreshResult, setRefreshResult] = useState<RefreshResult | null>(null);
   const [submissionClock, setSubmissionClock] = useState(() => Date.now());
+  const [communityStats, setCommunityStats] = useState<CommunityStats | null>(null);
+  const [lightsOff, setLightsOff] = useState(true);
 
   const isAdmin = Boolean(
     address && ADMIN_WALLET && address.toLowerCase() === ADMIN_WALLET,
@@ -471,6 +489,17 @@ export default function CommunityPage() {
     } catch {
       setAccount(null);
       return false;
+    }
+  }, []);
+
+  const loadCommunityStats = useCallback(async () => {
+    try {
+      const data = await apiFetch<CommunityStats & { ok?: boolean }>(
+        "/v1/community/stats",
+      );
+      setCommunityStats(data);
+    } catch {
+      setCommunityStats(null);
     }
   }, []);
 
@@ -583,6 +612,25 @@ export default function CommunityPage() {
   );
 
   useEffect(() => {
+    const savedTheme = window.localStorage.getItem("community-theme");
+
+    queueMicrotask(() => {
+      setLightsOff(savedTheme !== "light");
+    });
+  }, []);
+
+  function toggleLights() {
+    setLightsOff((current) => {
+      const next = !current;
+      window.localStorage.setItem(
+        "community-theme",
+        next ? "dark" : "light",
+      );
+      return next;
+    });
+  }
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const xResult = params.get("x");
     const detail = params.get("detail");
@@ -605,6 +653,12 @@ export default function CommunityPage() {
       void loadAccount();
     });
   }, [loadAccount]);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void loadCommunityStats();
+    });
+  }, [loadCommunityStats]);
 
   useEffect(() => {
     if (!signedIn) return;
@@ -826,6 +880,7 @@ export default function CommunityPage() {
       setRefreshResult(data.result);
       await Promise.all([loadAccount(), loadPosts(myPostsTab)]);
       if (view === "feed") await loadFeed(feedTab);
+      await loadCommunityStats();
       setMessage("Passport refresh complete.");
     } catch (refreshError) {
       setError(
@@ -839,11 +894,19 @@ export default function CommunityPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#ccff00] text-black">
+    <main
+      style={
+        {
+          "--paper": lightsOff ? "#000000" : "#ccff00",
+          "--ink": lightsOff ? "#ccff00" : "#000000",
+        } as CSSProperties
+      }
+      className="min-h-screen bg-[var(--paper)] text-[var(--ink)] transition-colors duration-300"
+    >
       <SiteHeader />
 
       <section className="mx-auto max-w-[1440px] px-4 pb-12 pt-24 sm:px-6 md:pb-16 md:pt-36">
-        <div className="flex flex-col gap-5 border-b-2 border-black pb-5 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-5 border-b-2 border-[var(--ink)] pb-5 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
               Citizen Passport / Season 01
@@ -855,30 +918,62 @@ export default function CommunityPage() {
             </h1>
           </div>
 
-          <div className="flex w-full border-2 border-black sm:w-auto">
-            {(["passport", "feed"] as const).map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setView(item)}
-                className={`flex-1 px-4 py-3 text-[9px] uppercase tracking-[0.14em] first:border-r-2 first:border-black sm:flex-none sm:px-5 sm:text-[10px] sm:tracking-[0.16em] ${
-                  view === item ? "bg-black text-[#ccff00]" : ""
-                }`}
-              >
-                {item}
-              </button>
-            ))}
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <div className="flex border-2 border-[var(--ink)]">
+              {(["feed", "passport"] as const).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setView(item)}
+                  className={`flex-1 px-4 py-3 text-[9px] uppercase tracking-[0.14em] first:border-r-2 first:border-[var(--ink)] sm:flex-none sm:px-5 sm:text-[10px] sm:tracking-[0.16em] ${
+                    view === item ? "bg-[var(--ink)] text-[var(--paper)]" : ""
+                  }`}
+                >
+                  {item === "passport" ? "Submit Post" : "Feed"}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={toggleLights}
+              aria-pressed={lightsOff}
+              className="border-2 border-[var(--ink)] px-4 py-3 text-[9px] uppercase tracking-[0.15em] transition-colors hover:bg-[var(--ink)] hover:text-[var(--paper)] sm:text-[10px]"
+            >
+              {lightsOff ? "Lights On" : "Lights Off"}
+            </button>
           </div>
         </div>
 
+        <section className="mt-5 grid border-l-2 border-t-2 border-[var(--ink)] sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            ["Registered Hoodies", communityStats?.registeredHoodies],
+            ["Total Submitted", communityStats?.totalSubmitted],
+            ["Interactions", communityStats?.totalInteractions],
+            ["Verified PFPs", communityStats?.verifiedPfps],
+          ].map(([label, value]) => (
+            <div
+              key={String(label)}
+              className="border-b-2 border-r-2 border-[var(--ink)] p-4 sm:p-5"
+            >
+              <p className="text-[8px] uppercase tracking-[0.16em] opacity-55">
+                {label}
+              </p>
+              <p className="mt-3 text-3xl leading-none tracking-[-0.04em] md:text-4xl">
+                {typeof value === "number" ? formatStat(value) : "—"}
+              </p>
+            </div>
+          ))}
+        </section>
+
         {message ? (
-          <div className="mt-6 border-2 border-black bg-black p-4 text-sm text-[#ccff00]">
+          <div className="mt-6 border-2 border-[var(--ink)] bg-[var(--ink)] p-4 text-sm text-[var(--paper)]">
             {message}
           </div>
         ) : null}
 
         {error ? (
-          <div className="mt-6 border-2 border-black p-4 text-sm">{error}</div>
+          <div className="mt-6 border-2 border-[var(--ink)] p-4 text-sm">{error}</div>
         ) : null}
 
         {action ? (
@@ -888,7 +983,7 @@ export default function CommunityPage() {
         ) : null}
 
         {isAdmin && signedIn ? (
-          <section className="mt-6 border-2 border-black bg-black p-4 text-[#ccff00] sm:p-5">
+          <section className="mt-6 border-2 border-[var(--ink)] bg-[var(--ink)] p-4 text-[var(--paper)] sm:p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
@@ -903,14 +998,14 @@ export default function CommunityPage() {
                 type="button"
                 onClick={() => void runRefresh()}
                 disabled={Boolean(action)}
-                className="w-full border border-[#ccff00] px-4 py-3 text-[9px] uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
+                className="w-full border border-[var(--paper)] px-4 py-3 text-[9px] uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
               >
                 Refresh Passport
               </button>
             </div>
 
             {refreshResult ? (
-              <div className="mt-5 grid grid-cols-2 border-l border-t border-[#ccff00] sm:grid-cols-5">
+              <div className="mt-5 grid grid-cols-2 border-l border-t border-[var(--paper)] sm:grid-cols-5">
                 {[
                   ["Updated", refreshResult.postsUpdated],
                   ["Deleted", refreshResult.postsDeleted],
@@ -920,7 +1015,7 @@ export default function CommunityPage() {
                 ].map(([label, value]) => (
                   <div
                     key={String(label)}
-                    className="border-b border-r border-[#ccff00] p-3"
+                    className="border-b border-r border-[var(--paper)] p-3"
                   >
                     <p className="text-[7px] uppercase tracking-[0.12em] opacity-55">
                       {label}
@@ -936,7 +1031,7 @@ export default function CommunityPage() {
         {view === "passport" ? (
           <section className="py-12 md:py-16">
             {!address ? (
-              <div className="border-2 border-black p-8 md:p-12">
+              <div className="border-2 border-[var(--ink)] p-8 md:p-12">
                 <p className="text-[10px] uppercase tracking-[0.18em] opacity-60">
                   Step 01
                 </p>
@@ -951,8 +1046,8 @@ export default function CommunityPage() {
                 </button>
               </div>
             ) : !signedIn ? (
-              <div className="grid border-l-2 border-t-2 border-black md:grid-cols-2">
-                <div className="border-b-2 border-r-2 border-black p-8 md:p-12">
+              <div className="grid border-l-2 border-t-2 border-[var(--ink)] md:grid-cols-2">
+                <div className="border-b-2 border-r-2 border-[var(--ink)] p-8 md:p-12">
                   <p className="text-[10px] uppercase tracking-[0.18em] opacity-60">
                     Connected wallet
                   </p>
@@ -960,7 +1055,7 @@ export default function CommunityPage() {
                     {shortWallet(address)}
                   </h2>
                 </div>
-                <div className="border-b-2 border-r-2 border-black p-8 md:p-12">
+                <div className="border-b-2 border-r-2 border-[var(--ink)] p-8 md:p-12">
                   <p className="text-[10px] uppercase tracking-[0.18em] opacity-60">
                     Verify ownership
                   </p>
@@ -979,22 +1074,22 @@ export default function CommunityPage() {
               </div>
             ) : (
               <>
-                <div className="grid border-l-2 border-t-2 border-black sm:grid-cols-3">
-                  <div className="border-b-2 border-r-2 border-black p-5">
+                <div className="grid border-l-2 border-t-2 border-[var(--ink)] sm:grid-cols-3">
+                  <div className="border-b-2 border-r-2 border-[var(--ink)] p-5">
                     <p className="text-[8px] uppercase tracking-[0.14em] opacity-55">Wallet</p>
                     <p className="mt-3 text-lg">{shortWallet(account?.wallet || address)}</p>
                   </div>
-                  <div className="border-b-2 border-r-2 border-black p-5">
+                  <div className="border-b-2 border-r-2 border-[var(--ink)] p-5">
                     <p className="text-[8px] uppercase tracking-[0.14em] opacity-55">Hoodies</p>
                     <p className="mt-3 text-lg">{account?.hoodieBalance ?? 0}</p>
                   </div>
-                  <div className="border-b-2 border-r-2 border-black p-5">
+                  <div className="border-b-2 border-r-2 border-[var(--ink)] p-5">
                     <p className="text-[8px] uppercase tracking-[0.14em] opacity-55">X Account</p>
                     <p className="mt-3 text-lg">{xUsername ? `@${xUsername}` : "Not connected"}</p>
                   </div>
                 </div>
 
-                <div className="mt-10 flex flex-wrap border-2 border-black">
+                <div className="mt-10 flex flex-wrap border-2 border-[var(--ink)]">
                   {(
                     [
                       ["submit", "Submit Post"],
@@ -1006,8 +1101,8 @@ export default function CommunityPage() {
                       key={id}
                       type="button"
                       onClick={() => setPassportTab(id)}
-                      className={`border-r-2 border-black px-5 py-3 text-[9px] uppercase tracking-[0.15em] last:border-r-0 ${
-                        passportTab === id ? "bg-black text-[#ccff00]" : ""
+                      className={`border-r-2 border-[var(--ink)] px-5 py-3 text-[9px] uppercase tracking-[0.15em] last:border-r-0 ${
+                        passportTab === id ? "bg-[var(--ink)] text-[var(--paper)]" : ""
                       }`}
                     >
                       {label}
@@ -1017,7 +1112,7 @@ export default function CommunityPage() {
 
                 {passportTab === "submit" ? (
                   <div className="mt-8 grid gap-8 lg:grid-cols-[0.72fr_1.28fr]">
-                    <div className="border-2 border-black p-7 md:p-9">
+                    <div className="border-2 border-[var(--ink)] p-7 md:p-9">
                       <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">X verification</p>
                       <h2 className="mt-5 text-4xl leading-none">
                         {xUsername ? `@${xUsername}` : "CONNECT X"}
@@ -1038,13 +1133,13 @@ export default function CommunityPage() {
 
                     <form
                       onSubmit={submitPost}
-                      className="border-2 border-black p-7 md:p-9"
+                      className="border-2 border-[var(--ink)] p-7 md:p-9"
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">
                           Submit post
                         </p>
-                        <p className="border border-black px-3 py-2 text-[8px] uppercase tracking-[0.14em]">
+                        <p className="border border-[var(--ink)] px-3 py-2 text-[8px] uppercase tracking-[0.14em]">
                           {submissionUsed} / {submissionMax} used
                         </p>
                       </div>
@@ -1058,7 +1153,7 @@ export default function CommunityPage() {
                         connected account and mention @OnChainHoodies.
                       </p>
 
-                      <div className="mt-6 border-2 border-black p-4 text-sm">
+                      <div className="mt-6 border-2 border-[var(--ink)] p-4 text-sm">
                         <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">
                           The Hood Rules
                         </p>
@@ -1071,7 +1166,7 @@ export default function CommunityPage() {
                           <li>No spam. No farming. Keep it real.</li>
                         </ol>
 
-                        <p className="mt-4 border-t-2 border-black pt-4 text-xs opacity-70">
+                        <p className="mt-4 border-t-2 border-[var(--ink)] pt-4 text-xs opacity-70">
                           Maximum{" "}
                           <strong>
                             {submissionMax} submissions per wallet every 24 hours.
@@ -1083,7 +1178,7 @@ export default function CommunityPage() {
                       </div>
 
                       {submissionLimitReached ? (
-                        <div className="mt-7 border-2 border-black bg-black p-4 text-[#ccff00]">
+                        <div className="mt-7 border-2 border-[var(--ink)] bg-[var(--ink)] p-4 text-[var(--paper)]">
                           <p className="text-[9px] uppercase tracking-[0.16em] opacity-60">
                             Submission limit reached
                           </p>
@@ -1107,7 +1202,7 @@ export default function CommunityPage() {
                         onChange={(event) => setTweetUrl(event.target.value)}
                         placeholder="https://x.com/username/status/..."
                         disabled={submissionLimitReached}
-                        className="mt-5 w-full border-2 border-black bg-transparent px-4 py-4 text-sm outline-none placeholder:text-black/40 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="mt-5 w-full border-2 border-[var(--ink)] bg-transparent px-4 py-4 text-sm outline-none placeholder:text-[var(--ink)] placeholder:opacity-40 disabled:cursor-not-allowed disabled:opacity-40"
                       />
 
                       <button
@@ -1128,7 +1223,7 @@ export default function CommunityPage() {
                 ) : null}
 
                 {passportTab === "pfp" ? (
-                  <form onSubmit={submitPfp} className="mt-8 border-2 border-black p-7 md:p-10">
+                  <form onSubmit={submitPfp} className="mt-8 border-2 border-[var(--ink)] p-7 md:p-10">
                     <div className="grid gap-8 lg:grid-cols-2">
                       <div>
                         <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Hood PFP</p>
@@ -1147,7 +1242,7 @@ export default function CommunityPage() {
                           value={selectedTokenId}
                           onChange={(event) => setSelectedTokenId(event.target.value)}
                           required
-                          className="mt-3 w-full border-2 border-black bg-[#ccff00] px-4 py-4 text-sm outline-none"
+                          className="mt-3 w-full border-2 border-[var(--ink)] bg-[var(--paper)] px-4 py-4 text-sm outline-none"
                         >
                           <option value="">Choose Hoodie</option>
                           {hoodies.map((hoodie) => (
@@ -1170,7 +1265,7 @@ export default function CommunityPage() {
 
                 {passportTab === "posts" ? (
                   <div className="mt-8">
-                    <div className="flex flex-wrap border-2 border-black">
+                    <div className="flex flex-wrap border-2 border-[var(--ink)]">
                       {(
                         [
                           ["active", "Active"],
@@ -1182,8 +1277,8 @@ export default function CommunityPage() {
                           key={id}
                           type="button"
                           onClick={() => setMyPostsTab(id)}
-                          className={`border-r-2 border-black px-5 py-3 text-[9px] uppercase tracking-[0.15em] last:border-r-0 ${
-                            myPostsTab === id ? "bg-black text-[#ccff00]" : ""
+                          className={`border-r-2 border-[var(--ink)] px-5 py-3 text-[9px] uppercase tracking-[0.15em] last:border-r-0 ${
+                            myPostsTab === id ? "bg-[var(--ink)] text-[var(--paper)]" : ""
                           }`}
                         >
                           {label}
@@ -1215,7 +1310,7 @@ export default function CommunityPage() {
                         ) : null}
                       </>
                     ) : (
-                      <div className="mt-8 border-2 border-black p-10 text-center">
+                      <div className="mt-8 border-2 border-[var(--ink)] p-10 text-center">
                         <p className="text-sm uppercase tracking-[0.14em] opacity-60">No {myPostsTab} posts</p>
                       </div>
                     )}
@@ -1232,14 +1327,14 @@ export default function CommunityPage() {
                 <h2 className="mt-4 text-5xl leading-none tracking-[-0.05em] md:text-7xl">FROM THE HOOD</h2>
               </div>
 
-              <div className="flex border-2 border-black">
+              <div className="flex border-2 border-[var(--ink)]">
                 {(["active", "past"] as const).map((item) => (
                   <button
                     key={item}
                     type="button"
                     onClick={() => setFeedTab(item)}
-                    className={`px-5 py-3 text-[9px] uppercase tracking-[0.15em] first:border-r-2 first:border-black ${
-                      feedTab === item ? "bg-black text-[#ccff00]" : ""
+                    className={`px-5 py-3 text-[9px] uppercase tracking-[0.15em] first:border-r-2 first:border-[var(--ink)] ${
+                      feedTab === item ? "bg-[var(--ink)] text-[var(--paper)]" : ""
                     }`}
                   >
                     {item}
@@ -1278,14 +1373,14 @@ export default function CommunityPage() {
                 ) : null}
               </>
             ) : (
-              <div className="mt-10 border-2 border-black p-10 text-center">
+              <div className="mt-10 border-2 border-[var(--ink)] p-10 text-center">
                 <p className="text-sm uppercase tracking-[0.14em] opacity-60">No {feedTab} posts yet</p>
               </div>
             )}
           </section>
         )}
 
-        <div className="mt-8 flex flex-wrap gap-3 border-t-2 border-black pt-6">
+        <div className="mt-8 flex flex-wrap gap-3 border-t-2 border-[var(--ink)] pt-6">
           <Link href="/passport" className="pixel-cta">Back to Passport</Link>
           <Link href="/och" className="pixel-cta pixel-cta-dark">View $OCH</Link>
         </div>

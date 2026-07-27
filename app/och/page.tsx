@@ -4,7 +4,7 @@ import SiteFooter from "../../components/SiteFooter";
 
 const allocations = [
   {
-    label: "Citizens",
+    label: "Hoodies",
     percent: 30,
     amount: "30,000,000 OCH",
     dash: "30 70",
@@ -53,24 +53,24 @@ const allocations = [
   },
 ];
 
-const citizenRounds = [
+const hoodieRounds = [
   {
     number: "01",
     timing: "Launch",
     amount: "10%",
-    description: "Planned citizen distribution.",
+    description: "Planned Hoodie distribution.",
   },
   {
     number: "02",
     timing: "+2 Months",
     amount: "10%",
-    description: "Planned Citizen Passport claim.",
+    description: "Planned Hoodie Passport claim.",
   },
   {
     number: "03",
     timing: "+4 Months",
     amount: "10%",
-    description: "Planned final citizen claim.",
+    description: "Planned final Hoodie claim.",
   },
 ];
 
@@ -164,7 +164,7 @@ export default function OCHPage() {
   </h2>
 
   <p className="mt-8 max-w-2xl text-base leading-relaxed md:text-xl">
-    A fixed-supply ERC-20 planned for citizens, contributors and the wider
+    A fixed-supply ERC-20 planned for Hoodies, contributors and the wider
     Hood.
   </p>
 
@@ -308,12 +308,12 @@ export default function OCHPage() {
         </div>
       </section>
 
-      {/* Citizen Rewards */}
+      {/* Hoodie Rewards */}
 
       <section className="px-6 py-24">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>02 / Citizen Rewards</p>
+            <p>02 / Hoodie Rewards</p>
             <p>30% Proposed Allocation</p>
           </div>
 
@@ -322,17 +322,17 @@ export default function OCHPage() {
               <h2 className="section-title">
                 Every Hoodie.
                 <br />
-                Equal citizens.
+                Equal Hoodies.
               </h2>
 
               <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                Every Hoodie is planned to receive the same citizen allocation.
+                Every Hoodie is planned to receive the same Hoodie allocation.
                 Traits define identity, not value.
               </p>
             </div>
 
             <div className="border-l-2 border-t-2 border-black md:grid md:grid-cols-3">
-              {citizenRounds.map((round) => (
+              {hoodieRounds.map((round) => (
                 <article
                   key={round.number}
                   className="flex min-h-[360px] flex-col justify-between border-b-2 border-r-2 border-black p-6 md:p-8"
@@ -474,12 +474,12 @@ export default function OCHPage() {
         </div>
       </section>
 
-      {/* Citizen Passport */}
+      {/* Hoodie Passport */}
 
       <section className="bg-black px-6 py-24 text-[#ccff00]">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
-            <p>05 / Citizen Passport</p>
+            <p>05 / Hoodie Passport</p>
             <p>Season 01</p>
           </div>
 
@@ -496,19 +496,19 @@ export default function OCHPage() {
               </h2>
 
               <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                Citizen rewards are automatic for Hoodie holders. Season 01
+                Hoodie rewards are automatic for Hoodie holders. Season 01
                 adds participation rewards through Hood Talks and submitted X
                 posts.
               </p>
 
               <Link href="/passport" className="pixel-cta mt-10">
-                Open Citizen Passport
+                Open Hoodie Passport
               </Link>
             </div>
 
             <div className="border-2 border-[#ccff00]">
               <div className="flex items-center justify-between border-b-2 border-[#ccff00] p-4 text-[10px] uppercase tracking-[0.16em] md:p-6">
-                <span>Citizen Passport</span>
+                <span>Hoodie Passport</span>
                 <span>Season 01</span>
               </div>
 
@@ -530,7 +530,7 @@ export default function OCHPage() {
 
                 <div className="mt-10 grid border-l border-t border-[#ccff00] sm:grid-cols-3">
                   {[
-                    ["01 / Citizen", "Automatic", "Every Hoodie qualifies"],
+                    ["01 / Hoodie", "Automatic", "Every Hoodie qualifies"],
                     ["02 / Hood Talk", "1–3", "Counted per Hoodie"],
                     ["03 / X Posts", "24H", "Tracked after submission"],
                   ].map(([label, value, description]) => (
@@ -557,6 +557,46 @@ export default function OCHPage() {
           </div>
         </div>
       </section>
+
+
+      {/* Risk Disclaimer */}
+
+      <section className="border-t-2 border-black bg-[#ccff00] px-6 py-20 md:py-24">
+  <div className="mx-auto max-w-[1440px]">
+    <div className="section-heading-row border-black">
+      <p>06 / Risk Disclosure</p>
+      <p>IMPORTANT</p>
+    </div>
+
+    <div className="mt-12 grid gap-10 lg:grid-cols-[0.75fr_1.25fr]">
+      <h2 className="section-title">
+        Participate
+        <br />
+        responsibly.
+      </h2>
+
+      <div className="border-l-2 border-black pl-6 md:pl-10">
+        <p className="text-xl leading-relaxed md:text-3xl">
+          $OCH is a community token designed to support the OnChainHoodies
+          ecosystem. Participation is entirely voluntary and should not be
+          viewed as an investment or financial product.
+        </p>
+
+        <p className="mt-6 max-w-3xl text-base leading-relaxed opacity-75 md:text-xl">
+          Digital assets are highly volatile and involve significant risk,
+          including the potential loss of your entire purchase price. Nothing
+          presented by OnChainHoodies constitutes financial, investment, legal,
+          or tax advice. Please conduct your own research and only participate
+          with funds you can afford to lose.
+        </p>
+
+        <p className="mt-8 text-[10px] uppercase tracking-[0.2em]">
+          NOT FINANCIAL ADVICE • DO YOUR OWN RESEARCH
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
 
       <SiteFooter />
     </main>
