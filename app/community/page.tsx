@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
 import { useWallet } from "../../components/WalletProvider";
@@ -17,6 +17,7 @@ const ADMIN_WALLET = (
 ).toLowerCase();
 
 const POSTS_PAGE_SIZE = 10;
+const FEED_PAGE_SIZE = 6;
 
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -227,31 +228,68 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return data;
 }
 
-function TweetEmbed({ url }: { url: string }) {
+function TweetEmbed({
+  url,
+  compact = false,
+}: {
+  url: string;
+  compact?: boolean;
+}) {
+  const embedRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
+    let cancelled = false;
+
+    const renderTweet = () => {
+      if (cancelled || !embedRef.current) return;
+      window.twttr?.widgets.load(embedRef.current);
+    };
+
     const existing = document.querySelector<HTMLScriptElement>(
       'script[src="https://platform.twitter.com/widgets.js"]',
     );
 
     if (existing) {
-      window.twttr?.widgets.load();
-      return;
+      if (window.twttr?.widgets) {
+        renderTweet();
+      } else {
+        existing.addEventListener("load", renderTweet, { once: true });
+      }
+
+      return () => {
+        cancelled = true;
+        existing.removeEventListener("load", renderTweet);
+      };
     }
 
     const script = document.createElement("script");
     script.src = "https://platform.twitter.com/widgets.js";
     script.async = true;
     script.charset = "utf-8";
+    script.addEventListener("load", renderTweet, { once: true });
     document.body.appendChild(script);
-  }, [url]);
+
+    return () => {
+      cancelled = true;
+      script.removeEventListener("load", renderTweet);
+    };
+  }, [url, compact]);
 
   return (
-    <div className="flex min-h-[220px] items-start justify-center bg-black [&_.twitter-tweet]:!m-0 [&_iframe]:!max-w-full">
+    <div
+      ref={embedRef}
+      className={`flex min-h-[180px] items-start justify-center bg-black [&_.twitter-tweet]:!m-0 [&_iframe]:!max-w-full ${
+        compact
+          ? "max-h-[520px] overflow-y-auto overscroll-contain sm:max-h-[580px]"
+          : ""
+      }`}
+    >
       <blockquote
         className="twitter-tweet"
         data-theme="dark"
         data-dnt="true"
         data-align="center"
+        data-conversation="none"
       >
         <a href={url}>View post on X</a>
       </blockquote>
@@ -309,10 +347,12 @@ function PostCard({
   post,
   admin,
   onFlag,
+  compact = false,
 }: {
   post: PostRecord;
   admin: boolean;
   onFlag?: (post: PostRecord) => void;
+  compact?: boolean;
 }) {
   const metrics = metricsFor(post);
   const status = (post.status || "active").toLowerCase();
@@ -329,7 +369,7 @@ function PostCard({
       </div>
 
       <div className="min-h-[220px] overflow-hidden bg-black p-2 sm:p-3">
-        <TweetEmbed url={postUrl(post)} />
+        <TweetEmbed url={postUrl(post)} compact={compact} />
       </div>
 
       <div className="grid grid-cols-2 border-l border-t border-[#ccff00] sm:grid-cols-4">
@@ -371,7 +411,7 @@ function PostCard({
 
 export default function CommunityPage() {
   const { address, connect } = useWallet();
-  const [view, setView] = useState<"passport" | "feed">("passport");
+  const [view, setView] = useState<"passport" | "feed">("feed");
   const [passportTab, setPassportTab] = useState<PassportTab>("submit");
   const [myPostsTab, setMyPostsTab] = useState<MyPostsTab>("active");
   const [feedTab, setFeedTab] = useState<FeedTab>("active");
@@ -512,7 +552,7 @@ export default function CommunityPage() {
       setError("");
 
       try {
-        const requestedLimit = POSTS_PAGE_SIZE + 1;
+        const requestedLimit = FEED_PAGE_SIZE + 1;
         const data = await apiFetch<{ posts?: PostRecord[] }>(
           `/v1/feed?${new URLSearchParams({
             status,
@@ -522,7 +562,7 @@ export default function CommunityPage() {
         );
 
         const received = data.posts || [];
-        const nextPosts = received.slice(0, POSTS_PAGE_SIZE);
+        const nextPosts = received.slice(0, FEED_PAGE_SIZE);
 
         setFeed((current) => (append ? [...current, ...nextPosts] : nextPosts));
         setFeedHasMore(received.length > POSTS_PAGE_SIZE);
@@ -1212,13 +1252,14 @@ export default function CommunityPage() {
               <p className="mt-10 text-[9px] uppercase tracking-[0.15em] opacity-60">Loading Feed...</p>
             ) : feed.length ? (
               <>
-                <div className="mt-8 grid gap-4 md:mt-10 md:gap-6 lg:grid-cols-2">
+                <div className="mt-8 grid gap-4 md:mt-10 md:gap-6 lg:grid-cols-2 xl:grid-cols-3">
                   {feed.map((post) => (
                     <PostCard
                       key={postId(post)}
                       post={post}
                       admin={isAdmin}
                       onFlag={flagPost}
+                      compact
                     />
                   ))}
                 </div>
