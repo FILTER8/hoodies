@@ -565,7 +565,7 @@ export default function CommunityPage() {
         const nextPosts = received.slice(0, FEED_PAGE_SIZE);
 
         setFeed((current) => (append ? [...current, ...nextPosts] : nextPosts));
-        setFeedHasMore(received.length > POSTS_PAGE_SIZE);
+        setFeedHasMore(received.length > FEED_PAGE_SIZE);
       } catch (feedError) {
         if (!append) setFeed([]);
         setFeedHasMore(false);
