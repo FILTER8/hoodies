@@ -37,16 +37,46 @@ type PassportStats = {
   hoodTalkCounts: Record<string, number>;
   pfpStatus: PfpStatus;
   pfpTokenId: string | null;
+  pfpHoodieImageUrl: string | null;
+  pfpMatchPercentage: number | null;
   xUsername: string | null;
+  xLikes: number;
+  xReplies: number;
+  xReposts: number;
+  xQuotes: number;
+};
+
+type PassportAccountResponse = {
+  x?: {
+    x_username?: string | null;
+  } | null;
+  posts?: {
+    likes?: number | string | null;
+    replies?: number | string | null;
+    reposts?: number | string | null;
+    quotes?: number | string | null;
+  } | null;
+  pfp?: {
+    token_id?: number | string | null;
+    hoodie_image_url?: string | null;
+    hoodie_similarity?: number | string | null;
+    status?: PfpStatus | string | null;
+  } | null;
 };
 
 const GREEN = "#ccff00";
 const BLACK = "#000000";
 
+const PASSPORT_API_BASE =
+  process.env.NEXT_PUBLIC_PASSPORT_API_URL ||
+  (process.env.NODE_ENV === "development"
+    ? "http://localhost:8787"
+    : "https://passport-api.onchainhoodies.xyz");
+
 const TOTAL_OCH_SUPPLY = 100_000_000;
-const CITIZEN_ROUND_PERCENT = 10;
-const CITIZEN_ROUND_OCH =
-  TOTAL_OCH_SUPPLY * (CITIZEN_ROUND_PERCENT / 100);
+const HOODIE_ROUND_PERCENT = 10;
+const HOODIE_ROUND_OCH =
+  TOTAL_OCH_SUPPLY * (HOODIE_ROUND_PERCENT / 100);
 const ELIGIBLE_HOODIE_ESTIMATE = 6_000;
 const HOOD_TALK_CAP_PER_HOODIE = 3;
 
@@ -65,14 +95,14 @@ function artworkUrl(hoodie: Hoodie) {
 
 
 function hoodieArchetype(hoodie: Hoodie | null) {
-  if (!hoodie) return "CITIZEN";
+  if (!hoodie) return "HOODIE";
 
   const trait = hoodie.attributes?.find((attribute) => {
     const key = attribute.trait_type?.toLowerCase().trim();
     return key === "hoddie" || key === "hoodie" || key === "archetype";
   });
 
-  return trait?.value?.toUpperCase() || "HOODIE CITIZEN";
+  return trait?.value?.toUpperCase() || "HOODIE";
 }
 
 
@@ -84,6 +114,40 @@ function formatNumber(value: number, maximumFractionDigits = 0) {
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits,
   }).format(value);
+}
+
+function safeNumber(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizePfpStatus(value: unknown): PfpStatus {
+  return value === "pending" ||
+    value === "verified" ||
+    value === "rejected" ||
+    value === "revoked"
+    ? value
+    : "not_submitted";
+}
+
+async function passportApiFetch<T>(path: string): Promise<T> {
+  const response = await fetch(`${PASSPORT_API_BASE}${path}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: {
+      "content-type": "application/json",
+    },
+  });
+
+  const data = (await response.json().catch(() => ({}))) as T & {
+    error?: string;
+  };
+
+  if (!response.ok) {
+    throw new Error(data.error || `Passport request failed (${response.status})`);
+  }
+
+  return data;
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -170,13 +234,18 @@ export default function PassportPage() {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Replace this state with the future Passport API response.
   // Hood Talk counts are stored per token so Season 01 can cap each Hoodie at 3.
   const [stats, setStats] = useState<PassportStats>({
     hoodTalkCounts: {},
     pfpStatus: "not_submitted",
     pfpTokenId: null,
+    pfpHoodieImageUrl: null,
+    pfpMatchPercentage: null,
     xUsername: null,
+    xLikes: 0,
+    xReplies: 0,
+    xReposts: 0,
+    xQuotes: 0,
   });
 
   const selectedHoodie = useMemo(
@@ -232,18 +301,38 @@ export default function PassportPage() {
       )
     : 0;
 
-  const estimatedCitizenOCH =
+  const estimatedHoodieOCH =
     hoodieCount > 0
-      ? (CITIZEN_ROUND_OCH / ELIGIBLE_HOODIE_ESTIMATE) * hoodieCount
+      ? (HOODIE_ROUND_OCH / ELIGIBLE_HOODIE_ESTIMATE) * hoodieCount
       : 0;
 
-  const hasCitizenReward = hoodieCount > 0;
+  const hasHoodieReward = hoodieCount > 0;
+  const isPfpVerified = stats.pfpStatus === "verified";
+  const pfpStatusLabel = isPfpVerified
+    ? "VERIFIED"
+    : stats.pfpStatus === "not_submitted"
+      ? "NOT VERIFIED"
+      : stats.pfpStatus.toUpperCase();
+  const pfpExportLabel = isPfpVerified
+    ? `VERIFIED #${stats.pfpTokenId || "—"}`
+    : pfpStatusLabel;
 
   const loadHoodies = useCallback(async () => {
     if (!address) {
       setHoodies([]);
       setSelectedTokenId("");
-      setStats({ hoodTalkCounts: {}, pfpStatus: "not_submitted", pfpTokenId: null, xUsername: null });
+      setStats({
+        hoodTalkCounts: {},
+        pfpStatus: "not_submitted",
+        pfpTokenId: null,
+        pfpHoodieImageUrl: null,
+        pfpMatchPercentage: null,
+        xUsername: null,
+        xLikes: 0,
+        xReplies: 0,
+        xReposts: 0,
+        xQuotes: 0,
+      });
       setError(null);
       return;
     }
@@ -300,6 +389,38 @@ export default function PassportPage() {
         ...current,
         hoodTalkCounts: talkData.hoodTalkCounts || {},
       }));
+
+      // The Community Passport API uses the authenticated wallet session.
+      // If no session exists yet, the on-chain Passport still loads normally
+      // and the user can sign in on /community to activate X statistics.
+      try {
+        const passport = await passportApiFetch<PassportAccountResponse>(
+          "/v1/account"
+        );
+        const pfpSimilarity = passport.pfp?.hoodie_similarity;
+
+        setStats((current) => ({
+          ...current,
+          xUsername: passport.x?.x_username || null,
+          xLikes: safeNumber(passport.posts?.likes),
+          xReplies: safeNumber(passport.posts?.replies),
+          xReposts: safeNumber(passport.posts?.reposts),
+          xQuotes: safeNumber(passport.posts?.quotes),
+          pfpStatus: normalizePfpStatus(passport.pfp?.status),
+          pfpTokenId:
+            passport.pfp?.token_id === null ||
+            passport.pfp?.token_id === undefined
+              ? null
+              : String(passport.pfp.token_id),
+          pfpHoodieImageUrl: passport.pfp?.hoodie_image_url || null,
+          pfpMatchPercentage:
+            pfpSimilarity === null || pfpSimilarity === undefined
+              ? null
+              : Math.max(0, Math.min(100, safeNumber(pfpSimilarity) * 100)),
+        }));
+      } catch {
+        // No Passport session yet. The Community page handles wallet signing.
+      }
     } catch (loadError) {
       setHoodies([]);
       setSelectedTokenId("");
@@ -357,22 +478,38 @@ export default function PassportPage() {
 
       context.textAlign = "left";
       context.font = "92px DepartureMono, monospace";
-      context.fillText("CITIZEN", padding, 150);
+      context.fillText("HOODIE", padding, 150);
       context.fillText("PASSPORT", padding, 238);
 
       context.font = "24px DepartureMono, monospace";
       context.fillText("GROW THE HOOD", padding, 338);
 
-      const artwork = await loadCanvasImage(
-        artworkUrl(selectedHoodie)
-      );
       const artX = padding;
       const artY = 420;
       const artSize = 690;
 
       context.fillStyle = BLACK;
       context.fillRect(artX, artY, artSize, artSize);
-      context.drawImage(artwork, artX, artY, artSize, artSize);
+
+      if (isPfpVerified && stats.pfpHoodieImageUrl) {
+        const verifiedArtwork = await loadCanvasImage(stats.pfpHoodieImageUrl);
+        context.drawImage(verifiedArtwork, artX, artY, artSize, artSize);
+      } else {
+        context.strokeStyle = GREEN;
+        context.lineWidth = 5;
+        context.beginPath();
+        context.moveTo(artX + 72, artY + 72);
+        context.lineTo(artX + artSize - 72, artY + artSize - 72);
+        context.moveTo(artX + artSize - 72, artY + 72);
+        context.lineTo(artX + 72, artY + artSize - 72);
+        context.stroke();
+
+        context.fillStyle = GREEN;
+        context.textAlign = "center";
+        context.font = "34px DepartureMono, monospace";
+        context.fillText("VERIFY YOUR X PFP", artX + artSize / 2, artY + artSize / 2 - 22);
+      }
+
       context.strokeStyle = BLACK;
       context.lineWidth = 7;
       context.strokeRect(artX, artY, artSize, artSize);
@@ -381,17 +518,21 @@ export default function PassportPage() {
       context.textAlign = "left";
       context.font = "28px DepartureMono, monospace";
       context.fillText(
-        `HOODIE #${selectedHoodie.tokenId}`,
+        isPfpVerified ? `HOODIE #${stats.pfpTokenId || "—"}` : "PFP NOT VERIFIED",
         artX,
         artY + artSize + 24
       );
       context.font = "20px DepartureMono, monospace";
-      context.fillText(selectedArchetype, artX, artY + artSize + 62);
+      context.fillText(
+        isPfpVerified ? "VERIFIED HOODIE" : "IMAGE UNLOCKS AFTER VERIFICATION",
+        artX,
+        artY + artSize + 62
+      );
 
       const panelX = 840;
       const panelWidth = size - padding - panelX;
-      const rowHeight = 154;
-      const rowGap = 18;
+      const rowHeight = 72;
+      const rowGap = 10;
 
       const drawStatRow = (
         y: number,
@@ -405,50 +546,28 @@ export default function PassportPage() {
 
         context.fillStyle = BLACK;
         context.textAlign = "left";
-        context.font = "19px DepartureMono, monospace";
-        context.fillText(label.toUpperCase(), panelX + 26, y + 24);
+        context.font = "14px DepartureMono, monospace";
+        context.fillText(label.toUpperCase(), panelX + 20, y + 12);
 
         const fittedSize = fitText(
           context,
           value,
-          panelWidth - 52,
+          panelWidth - 44,
           valueSize,
-          23
+          17
         );
         context.font = `${fittedSize}px DepartureMono, monospace`;
-        context.fillText(value.toUpperCase(), panelX + 26, y + 72);
+        context.fillText(value.toUpperCase(), panelX + 20, y + 35);
       };
 
-      drawStatRow(
-        artY,
-        "Citizen Round 01",
-        hasCitizenReward ? `${hoodieCount} ELIGIBLE` : "NOT ELIGIBLE",
-        40
-      );
-      drawStatRow(
-        artY + (rowHeight + rowGap),
-        "Current Hoodie",
-        `${selectedHoodTalkCount} / ${HOOD_TALK_CAP_PER_HOODIE}`,
-        54
-      );
-      drawStatRow(
-        artY + (rowHeight + rowGap) * 2,
-        "Activated Hoodies",
-        `${activatedHoodies} / ${hoodieCount}`,
-        48
-      );
-      drawStatRow(
-        artY + (rowHeight + rowGap) * 3,
-        "Counted Hood Talks",
-        `${countedHoodTalks} / ${maximumCountedTalks}`,
-        44
-      );
-      drawStatRow(
-        artY + (rowHeight + rowGap) * 4,
-        "Verified X PFP",
-        "TBA",
-        34
-      );
+      drawStatRow(artY, "Hoodie Round 01", hasHoodieReward ? `${hoodieCount} ELIGIBLE` : "NOT ELIGIBLE", 28);
+      drawStatRow(artY + (rowHeight + rowGap), "Activated Hoodies", `${activatedHoodies} / ${hoodieCount}`, 30);
+      drawStatRow(artY + (rowHeight + rowGap) * 2, "Counted Hood Talks", `${countedHoodTalks} / ${maximumCountedTalks}`, 28);
+      drawStatRow(artY + (rowHeight + rowGap) * 3, "Likes", String(stats.xLikes), 32);
+      drawStatRow(artY + (rowHeight + rowGap) * 4, "Comments", String(stats.xReplies), 32);
+      drawStatRow(artY + (rowHeight + rowGap) * 5, "Reshares", String(stats.xReposts), 32);
+      drawStatRow(artY + (rowHeight + rowGap) * 6, "Quotes", String(stats.xQuotes), 32);
+      drawStatRow(artY + (rowHeight + rowGap) * 7, "Verified X PFP", pfpExportLabel, 24);
 
       const footerY = 1325;
       context.strokeStyle = BLACK;
@@ -467,10 +586,10 @@ export default function PassportPage() {
 
       context.textAlign = "center";
       context.font = "19px DepartureMono, monospace";
-      context.fillText("EST. CITIZEN ROUND 01", size / 2, footerY + 34);
+      context.fillText("EST. HOODIE ROUND 01", size / 2, footerY + 34);
       context.font = "32px DepartureMono, monospace";
       context.fillText(
-        `~${formatNumber(estimatedCitizenOCH)} OCH`,
+        `~${formatNumber(estimatedHoodieOCH)} OCH`,
         size / 2,
         footerY + 74
       );
@@ -497,7 +616,7 @@ export default function PassportPage() {
 
       downloadBlob(
         blob,
-        `onchainhoodies-passport-season-01-${selectedHoodie.tokenId}.png`
+        `onchainhoodies-hoodie-passport-season-01-${stats.pfpTokenId || shortWallet(address)}.png`
       );
     } catch (exportError) {
       setError(
@@ -512,13 +631,18 @@ export default function PassportPage() {
     activatedHoodies,
     address,
     countedHoodTalks,
-    estimatedCitizenOCH,
-    hasCitizenReward,
+    estimatedHoodieOCH,
+    hasHoodieReward,
     hoodieCount,
     maximumCountedTalks,
     selectedHoodie,
     selectedHoodTalkCount,
     selectedArchetype,
+    stats.xLikes,
+    stats.xReplies,
+    stats.xReposts,
+    stats.xQuotes,
+    pfpExportLabel,
   ]);
 
   return (
@@ -533,7 +657,7 @@ export default function PassportPage() {
             </p>
 
             <h1 className="mt-7 text-[clamp(4rem,10vw,9rem)] leading-[0.78] tracking-[-0.08em]">
-              CITIZEN
+              HOODIE
               <br />
               PASSPORT
             </h1>
@@ -553,13 +677,13 @@ export default function PassportPage() {
 
         <div className="mt-14 grid gap-8 border-t-2 border-black pt-8 lg:grid-cols-[1fr_auto] lg:items-end">
           <p className="max-w-3xl text-lg leading-relaxed md:text-2xl">
-            Every Hoodie automatically qualifies for Citizen Round 01. Season
+            Every Hoodie automatically qualifies for Hoodie Round 01. Season
             01 adds three simple ways to earn Community Fund rewards: give each
             Hoodie a voice, share X posts and represent the Hood with a verified X PFP.
           </p>
 
           <div className="flex flex-wrap gap-2 text-[9px] uppercase tracking-[0.15em] lg:max-w-[420px] lg:justify-end">
-            <StatusPill>10% Citizen round</StatusPill>
+            <StatusPill>10% Hoodie round</StatusPill>
             <StatusPill>Hood Talk 1–3 per Hoodie</StatusPill>
             <StatusPill>X posts tracked 24H</StatusPill>
             <StatusPill>Hood PFP</StatusPill>
@@ -596,7 +720,7 @@ export default function PassportPage() {
               <div className="flex flex-col justify-between gap-5 border-b border-[#ccff00] pb-5 md:flex-row md:items-end">
                 <div>
                   <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
-                    Connected citizen
+                    Connected holder
                   </p>
                   <p className="mt-2 text-lg md:text-2xl">
                     {shortWallet(address)}
@@ -619,13 +743,13 @@ export default function PassportPage() {
               {!loadingHoodies && hoodieCount === 0 ? (
                 <div className="mt-12 border-2 border-[#ccff00] p-8 md:p-12">
                   <p className="text-[10px] uppercase tracking-[0.18em] opacity-60">
-                    Citizen status
+                    Hoodie status
                   </p>
                   <h2 className="mt-5 text-4xl leading-none md:text-6xl">
                     NO HOODIE FOUND
                   </h2>
                   <p className="mt-6 max-w-xl text-base leading-relaxed opacity-75">
-                    Citizen rewards are connected to Hoodie ownership. Connect a
+                    Hoodie rewards are connected to Hoodie ownership. Connect a
                     wallet holding at least one OnChainHoodie.
                   </p>
                 </div>
@@ -637,7 +761,7 @@ export default function PassportPage() {
                     <div>
                       <div className="flex items-start justify-between gap-4">
                         <p className="text-[10px] uppercase tracking-[0.18em] opacity-60">
-                          01 / Citizen Reward
+                          01 / Hoodie Reward
                         </p>
                         <span className="border border-[#ccff00] px-2 py-1 text-[8px] uppercase tracking-[0.14em]">
                           Automatic
@@ -650,7 +774,7 @@ export default function PassportPage() {
 
                       <p className="mt-6 max-w-sm text-sm leading-relaxed opacity-75 md:text-base">
                         Every Hoodie receives an equal share of the first 10%
-                        Citizen round. No task or engagement is required.
+                        Hoodie round. No task or engagement is required.
                       </p>
 
                       <div className="mt-8 grid border-l border-t border-[#ccff00] sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
@@ -676,7 +800,7 @@ export default function PassportPage() {
                         Estimated allocation
                       </p>
                       <p className="mt-2 text-4xl leading-none">
-                        ~{formatNumber(estimatedCitizenOCH)} OCH
+                        ~{formatNumber(estimatedHoodieOCH)} OCH
                       </p>
 
                     </div>
@@ -735,28 +859,39 @@ export default function PassportPage() {
                           03 / X Posts
                         </p>
                         <span className="border border-[#ccff00] px-2 py-1 text-[8px] uppercase tracking-[0.14em]">
-                          Coming Soon
+                          Track 24H
                         </span>
                       </div>
 
                       <p className="mt-12 text-[9px] uppercase tracking-[0.16em] opacity-60">
-                        Community participation
+                        Tracked engagement
                       </p>
-                      <h2 className="mt-3 text-4xl leading-none tracking-[-0.04em] md:text-5xl">
-                        TWEETS
-                      </h2>
 
-                      <div className="mt-8 border border-[#ccff00] p-5">
-                        <p className="text-[9px] uppercase tracking-[0.15em] opacity-60">
-                          Season 01 flow
-                        </p>
-                        <p className="mt-3 text-lg leading-relaxed">
-                          Verify your wallet with X, submit an X post URL and let the Hood track its engagement for 24 hours.
-                        </p>
+                      <div className="mt-5 grid grid-cols-2 border-l border-t border-[#ccff00]">
+                        {[
+                          ["Likes", stats.xLikes],
+                          ["Comments", stats.xReplies],
+                          ["Reshares", stats.xReposts],
+                          ["Quotes", stats.xQuotes],
+                        ].map(([label, value]) => (
+                          <div
+                            key={String(label)}
+                            className="border-b border-r border-[#ccff00] p-4"
+                          >
+                            <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
+                              {label}
+                            </p>
+                            <p className="mt-3 text-3xl leading-none">
+                              {formatNumber(Number(value))}
+                            </p>
+                          </div>
+                        ))}
                       </div>
 
                       <p className="mt-7 max-w-sm text-sm leading-relaxed opacity-75 md:text-base">
-                        The submission page, scoring rules and daily snapshot process will be published soon.
+                        {stats.xUsername
+                          ? `Connected as @${stats.xUsername}. Each submitted post is tracked for 24 hours.`
+                          : "Connect and verify X on the Community page to submit posts and track participation."}
                       </p>
                     </div>
 
@@ -764,7 +899,7 @@ export default function PassportPage() {
                       href="/community"
                       className="mt-10 text-xs uppercase tracking-[0.18em] underline underline-offset-4"
                     >
-                      View X Posts →
+                      Open Community →
                     </Link>
                   </article>
 
@@ -775,39 +910,65 @@ export default function PassportPage() {
                           04 / Verified X PFP
                         </p>
                         <span className="border border-[#ccff00] px-2 py-1 text-[8px] uppercase tracking-[0.14em]">
-                          TBA
+                          {pfpStatusLabel}
                         </span>
                       </div>
 
-                      <div className="mt-12 flex justify-center">
-                        <div
-                          aria-label="Future selected Hoodie profile picture"
-                          className="relative aspect-square w-full max-w-[220px] overflow-hidden border-2 border-[#ccff00]"
-                        >
-                          <span
-                            aria-hidden="true"
-                            className="absolute left-1/2 top-1/2 h-px w-[142%] -translate-x-1/2 -translate-y-1/2 rotate-45 bg-[#ccff00]"
-                          />
-                          <span
-                            aria-hidden="true"
-                            className="absolute left-1/2 top-1/2 h-px w-[142%] -translate-x-1/2 -translate-y-1/2 -rotate-45 bg-[#ccff00]"
-                          />
+                      <div className="mt-10 flex justify-center">
+                        <div className="relative aspect-square w-full max-w-[220px] overflow-hidden border-2 border-[#ccff00] bg-[#ccff00]">
+                          {isPfpVerified && stats.pfpHoodieImageUrl ? (
+                            // The image comes from the Passport API record and is
+                            // intentionally rendered without Next image optimization.
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={stats.pfpHoodieImageUrl}
+                              alt={`Verified OnChainHoodie #${stats.pfpTokenId || ""}`}
+                              className="h-full w-full object-cover [image-rendering:pixelated]"
+                            />
+                          ) : (
+                            <>
+                              <span
+                                aria-hidden="true"
+                                className="absolute left-1/2 top-1/2 h-px w-[142%] -translate-x-1/2 -translate-y-1/2 rotate-45 bg-black"
+                              />
+                              <span
+                                aria-hidden="true"
+                                className="absolute left-1/2 top-1/2 h-px w-[142%] -translate-x-1/2 -translate-y-1/2 -rotate-45 bg-black"
+                              />
+                            </>
+                          )}
                         </div>
                       </div>
 
                       <div className="mt-7 text-center">
                         <p className="text-[9px] uppercase tracking-[0.16em] opacity-60">
-                          Selected Hoodie
+                          {isPfpVerified ? "Verified Hoodie" : "Hood PFP"}
                         </p>
                         <p className="mt-3 text-2xl leading-none tracking-[-0.04em]">
-                          TBA
+                          {isPfpVerified
+                            ? `HOODIE #${stats.pfpTokenId || "—"}`
+                            : pfpStatusLabel}
                         </p>
+                        {isPfpVerified && stats.pfpMatchPercentage !== null ? (
+                          <p className="mt-3 text-[9px] uppercase tracking-[0.14em] opacity-60">
+                            Pixel match {formatNumber(stats.pfpMatchPercentage, 2)}%
+                          </p>
+                        ) : null}
                       </div>
 
-                      <p className="mx-auto mt-7 max-w-sm text-center text-sm leading-relaxed opacity-75 md:text-base">
-                        Choose one Hoodie you own to represent the Hood as your X profile picture.
+                      <p className="mx-auto mt-6 max-w-sm text-center text-sm leading-relaxed opacity-75 md:text-base">
+                        {isPfpVerified
+                          ? "Your connected X profile is representing the Hood with a verified OnChainHoodie."
+                          : "Use an owned Hoodie as your X profile picture and verify it instantly on the Community page."}
                       </p>
                     </div>
+
+                    <Link
+                      href="/community"
+                      className="mt-8 text-center text-xs uppercase tracking-[0.18em] underline underline-offset-4"
+                    >
+                      {isPfpVerified ? "View verification →" : "Verify Hood PFP →"}
+                    </Link>
                   </article>
                 </div>
               ) : null}
@@ -842,61 +1003,63 @@ export default function PassportPage() {
                           </p>
                         </div>
                         <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
-                          {selectedIndex + 1} / {hoodieCount}
+                          {isPfpVerified ? "Verified image unlocked" : "Image locked"}
                         </p>
                       </div>
 
                       <div className="mt-6 grid gap-5 md:grid-cols-[1.04fr_0.96fr]">
                         <div>
                           <h2 className="text-[clamp(2.5rem,6vw,5rem)] leading-[0.82] tracking-[-0.07em]">
-                            CITIZEN
+                            HOODIE
                             <br />
                             PASSPORT
                           </h2>
 
-                          <div className="group relative mt-6 aspect-square overflow-hidden border-2 border-black bg-black">
-                            <HoodiePreview hoodie={selectedHoodie} />
-
-                            <button
-                              type="button"
-                              onClick={selectPreviousHoodie}
-                              aria-label="Select previous Hoodie"
-                              className="absolute left-0 top-1/2 z-10 flex h-16 w-12 -translate-y-1/2 items-center justify-center border-y-2 border-r-2 border-black bg-[#ccff00] text-3xl transition-colors hover:bg-black hover:text-[#ccff00] md:h-20 md:w-14 md:text-4xl"
-                            >
-                              ←
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={selectNextHoodie}
-                              aria-label="Select next Hoodie"
-                              className="absolute right-0 top-1/2 z-10 flex h-16 w-12 -translate-y-1/2 items-center justify-center border-y-2 border-l-2 border-black bg-[#ccff00] text-3xl transition-colors hover:bg-black hover:text-[#ccff00] md:h-20 md:w-14 md:text-4xl"
-                            >
-                              →
-                            </button>
+                          <div className="relative mt-6 aspect-square overflow-hidden border-2 border-black bg-black">
+                            {isPfpVerified && stats.pfpHoodieImageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={stats.pfpHoodieImageUrl}
+                                alt={`Verified OnChainHoodie #${stats.pfpTokenId || ""}`}
+                                className="h-full w-full object-cover [image-rendering:pixelated]"
+                              />
+                            ) : (
+                              <div className="flex h-full flex-col items-center justify-center gap-5 p-8 text-center text-[#ccff00]">
+                                <div className="relative h-24 w-24">
+                                  <span className="absolute left-1/2 top-1/2 h-px w-[142%] -translate-x-1/2 -translate-y-1/2 rotate-45 bg-[#ccff00]" />
+                                  <span className="absolute left-1/2 top-1/2 h-px w-[142%] -translate-x-1/2 -translate-y-1/2 -rotate-45 bg-[#ccff00]" />
+                                </div>
+                                <p className="text-xs uppercase tracking-[0.16em]">
+                                  Verify your Hoodie PFP to unlock your Passport image
+                                </p>
+                              </div>
+                            )}
                           </div>
 
                           <div className="mt-3 flex items-center justify-between gap-4 text-[9px] uppercase tracking-[0.14em]">
-                            <div>
-                              <span>Hoodie #{selectedHoodie.tokenId}</span>
-                              <span className="ml-3 opacity-60">{selectedArchetype}</span>
-                            </div>
+                            <span>
+                              {isPfpVerified
+                                ? `Hoodie #${stats.pfpTokenId || "—"}`
+                                : "PFP not verified"}
+                            </span>
                             <span className="opacity-60">
-                              Hood Talk {selectedHoodTalkCount} / 3
+                              {isPfpVerified && stats.pfpMatchPercentage !== null
+                                ? `${formatNumber(stats.pfpMatchPercentage, 2)}% match`
+                                : "Image locked"}
                             </span>
                           </div>
                         </div>
 
                         <div className="grid content-start border-l-2 border-t-2 border-black">
                           {[
-                            ["Citizen Round 01", `${hoodieCount} eligible`],
-                            ["Current Hoodie", `${selectedHoodTalkCount} / 3 talks`],
+                            ["Hoodie Round 01", `${hoodieCount} eligible`],
                             ["Activated Hoodies", `${activatedHoodies} / ${hoodieCount}`],
-                            [
-                              "Counted Hood Talks",
-                              `${countedHoodTalks} / ${maximumCountedTalks}`,
-                            ],
-                            ["Verified X PFP", "TBA"],
+                            ["Counted Hood Talks", `${countedHoodTalks} / ${maximumCountedTalks}`],
+                            ["Likes", String(stats.xLikes)],
+                            ["Comments", String(stats.xReplies)],
+                            ["Reshares", String(stats.xReposts)],
+                            ["Quotes", String(stats.xQuotes)],
+                            ["Verified X PFP", pfpExportLabel],
                           ].map(([label, value]) => (
                             <div
                               key={label}
@@ -921,9 +1084,9 @@ export default function PassportPage() {
                           </p>
                         </div>
                         <div className="sm:text-center">
-                          <p className="opacity-55">Estimated Citizen Round</p>
+                          <p className="opacity-55">Estimated Hoodie Round</p>
                           <p className="mt-2 text-[10px] opacity-100">
-                            ~{formatNumber(estimatedCitizenOCH)} OCH
+                            ~{formatNumber(estimatedHoodieOCH)} OCH
                           </p>
                         </div>
                         <div className="sm:text-right">
@@ -933,9 +1096,11 @@ export default function PassportPage() {
                       </div>
                     </div>
 
-                    <p className="mt-3 text-center text-[8px] uppercase tracking-[0.13em] opacity-55">
-                      Use the arrows to choose the Hoodie. Arrows are not included in the export.
-                    </p>
+                    {!isPfpVerified ? (
+                      <p className="mt-3 text-center text-[8px] uppercase tracking-[0.13em] opacity-55">
+                        Your Hoodie image appears after your X PFP is verified.
+                      </p>
+                    ) : null}
 
                     <button
                       type="button"
@@ -958,7 +1123,7 @@ export default function PassportPage() {
       <section className="border-t-2 border-black px-6 py-14">
         <div className="mx-auto max-w-[980px] text-center">
           <p className="text-sm leading-relaxed opacity-70 md:text-base">
-            Citizen rewards are automatic for Hoodie holders. Season 01
+            Hoodie rewards are automatic for Hoodie holders. Season 01
             participation rewards come from the Community Fund. Final reward
             amounts, allocations and claim information are published on the{" "}
             <Link
