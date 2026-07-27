@@ -80,14 +80,31 @@ type PostRecord = {
   flagReason?: string | null;
   x_username?: string;
   xUsername?: string;
+
   current_like_count?: number;
   current_reply_count?: number;
   current_repost_count?: number;
   current_quote_count?: number;
+
   growth_like_count?: number;
   growth_reply_count?: number;
   growth_repost_count?: number;
   growth_quote_count?: number;
+
+  currentMetrics?: {
+    likes: number;
+    replies: number;
+    reposts: number;
+    quotes: number;
+  };
+
+  trackedMetrics?: {
+    likes: number;
+    replies: number;
+    reposts: number;
+    quotes: number;
+  };
+
   public_metrics?: Metrics;
 };
 
@@ -252,24 +269,35 @@ function Metric({ label, value }: { label: string; value: number }) {
 }
 
 function metricsFor(post: PostRecord) {
+  const metrics =
+    post.trackedMetrics ??
+    post.currentMetrics;
+
   return {
     likes:
+      metrics?.likes ??
       post.growth_like_count ??
       post.current_like_count ??
       post.public_metrics?.like_count ??
       0,
+
     replies:
+      metrics?.replies ??
       post.growth_reply_count ??
       post.current_reply_count ??
       post.public_metrics?.reply_count ??
       0,
+
     reposts:
+      metrics?.reposts ??
       post.growth_repost_count ??
       post.current_repost_count ??
       post.public_metrics?.repost_count ??
       post.public_metrics?.retweet_count ??
       0,
+
     quotes:
+      metrics?.quotes ??
       post.growth_quote_count ??
       post.current_quote_count ??
       post.public_metrics?.quote_count ??
