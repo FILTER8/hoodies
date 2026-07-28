@@ -6,6 +6,7 @@ import SiteHeader from "../../../components/SiteHeader";
 import SiteFooter from "../../../components/SiteFooter";
 import { useWallet } from "../../../components/WalletProvider";
 import { apiConfig, collectionApiUrl } from "../../../lib/api";
+import { siteConfig } from "../../../lib/config";
 
 type Hoodie = {
   tokenId: string;
@@ -247,6 +248,7 @@ export default function ExportPage() {
   const [showBranding, setShowBranding] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [ownershipChecked, setOwnershipChecked] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState("");
@@ -303,10 +305,12 @@ export default function ExportPage() {
       setSelected(new Set());
       setIndexInfo("");
       setError(null);
+      setOwnershipChecked(false);
       return;
     }
 
     setLoading(true);
+    setOwnershipChecked(false);
     setError(null);
     setIndexInfo("");
 
@@ -323,6 +327,7 @@ export default function ExportPage() {
       );
     } finally {
       setLoading(false);
+      setOwnershipChecked(true);
     }
   }, [address, applyLoadedHoodies, requestHoodies]);
 
@@ -339,10 +344,12 @@ export default function ExportPage() {
         setIndexInfo("");
         setError(null);
         setLoading(false);
+        setOwnershipChecked(false);
         return;
       }
 
       setLoading(true);
+      setOwnershipChecked(false);
       setError(null);
       setIndexInfo("");
 
@@ -365,7 +372,10 @@ export default function ExportPage() {
             : "Unable to load your Hoodies."
         );
       } finally {
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+          setOwnershipChecked(true);
+        }
       }
     });
 
@@ -379,6 +389,8 @@ export default function ExportPage() {
     () => hoodies.filter((hoodie) => selected.has(hoodie.tokenId)),
     [hoodies, selected]
   );
+
+  const isHolder = hoodies.length > 0;
 
   const gridShape = useMemo(
     () => getGridShape(selectedHoodies.length),
@@ -617,12 +629,56 @@ export default function ExportPage() {
             </p>
 
             {!address ? (
-              <button type="button" onClick={connect} className="pixel-cta mt-5 w-full">
-                Connect wallet
-              </button>
-            ) : (
+              <div className="mt-6">
+                <button
+                  type="button"
+                  onClick={connect}
+                  className="pixel-cta w-full"
+                >
+                  Connect wallet
+                </button>
+
+                <div className="mt-3 border border-black p-4">
+                  <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
+                    Holder access
+                  </p>
+                  <p className="mt-3 text-sm leading-relaxed">
+                    Connect the wallet holding your OnChainHoodies. The tool only
+                    reads public ownership data and never asks for a signature,
+                    password, seed phrase or private key.
+                  </p>
+                </div>
+              </div>
+            ) : loading ? (
+              <div className="mt-6 border border-black p-4 text-[9px] uppercase tracking-[0.14em]">
+                Reading ownership
+              </div>
+            ) : ownershipChecked && !isHolder ? (
+              <div className="mt-6 border border-black">
+                <div className="bg-black p-5 text-[#ccff00]">
+                  <p className="text-[8px] uppercase tracking-[0.16em] opacity-65">
+                    Access locked
+                  </p>
+                  <h2 className="mt-4 text-3xl leading-none tracking-[-0.04em]">
+                    You&apos;re not in the Hood yet.
+                  </h2>
+                  <p className="mt-4 text-sm leading-relaxed opacity-75">
+                    The Grid Exporter is reserved for OnChainHoodies holders.
+                  </p>
+                </div>
+
+                <a
+                  href={siteConfig.openSeaUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block border-t border-black px-4 py-3 text-center text-[9px] uppercase tracking-[0.14em] underline underline-offset-4"
+                >
+                  Get a Hoodie on OpenSea ↗
+                </a>
+              </div>
+            ) : isHolder ? (
               <>
-                <div className="mt-5 border border-black">
+                <div className="mt-6 border border-black">
                   <button
                     type="button"
                     onClick={() => setPickerOpen((current) => !current)}
@@ -642,7 +698,9 @@ export default function ExportPage() {
                           onClick={toggleAll}
                           className="text-[9px] uppercase tracking-[0.12em] underline underline-offset-4"
                         >
-                          {selected.size === hoodies.length ? "Clear all" : "Select all"}
+                          {selected.size === hoodies.length
+                            ? "Clear all"
+                            : "Select all"}
                         </button>
                         <span className="text-[8px] uppercase tracking-[0.12em] opacity-55">
                           Scroll
@@ -650,33 +708,30 @@ export default function ExportPage() {
                       </div>
 
                       <div className="max-h-[310px] overflow-y-auto overscroll-contain">
-                        {loading ? (
-                          <div className="p-3 text-[9px] uppercase tracking-[0.12em]">
-                            Reading ownership
-                          </div>
-                        ) : (
-                          hoodies.map((hoodie) => {
-                            const isSelected = selected.has(hoodie.tokenId);
-                            return (
-                              <button
-                                key={hoodie.tokenId}
-                                type="button"
-                                onClick={() => toggleToken(hoodie.tokenId)}
-                                className={`flex w-full items-center gap-2 border-b border-black/25 p-1.5 text-left last:border-b-0 ${
-                                  isSelected ? "bg-black text-[#ccff00]" : ""
-                                }`}
-                              >
-                                <div className="h-9 w-9 shrink-0 overflow-hidden bg-black">
-                                  <HoodieArtwork hoodie={hoodie} />
-                                </div>
-                                <span className="min-w-0 flex-1 truncate text-[8px] uppercase tracking-[0.09em]">
-                                  {hoodie.name || `OnChainHoodie #${hoodie.tokenId}`}
-                                </span>
-                                <span className="text-[10px]">{isSelected ? "■" : "□"}</span>
-                              </button>
-                            );
-                          })
-                        )}
+                        {hoodies.map((hoodie) => {
+                          const isSelected = selected.has(hoodie.tokenId);
+                          return (
+                            <button
+                              key={hoodie.tokenId}
+                              type="button"
+                              onClick={() => toggleToken(hoodie.tokenId)}
+                              className={`flex w-full items-center gap-2 border-b border-black/25 p-1.5 text-left last:border-b-0 ${
+                                isSelected ? "bg-black text-[#ccff00]" : ""
+                              }`}
+                            >
+                              <div className="h-9 w-9 shrink-0 overflow-hidden bg-black">
+                                <HoodieArtwork hoodie={hoodie} />
+                              </div>
+                              <span className="min-w-0 flex-1 truncate text-[8px] uppercase tracking-[0.09em]">
+                                {hoodie.name ||
+                                  `OnChainHoodie #${hoodie.tokenId}`}
+                              </span>
+                              <span className="text-[10px]">
+                                {isSelected ? "■" : "□"}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -691,7 +746,7 @@ export default function ExportPage() {
                   {loading ? "Loading ownership" : "Refresh ownership"}
                 </button>
               </>
-            )}
+            ) : null}
 
             {error && (
               <div className="mt-3 border border-black bg-black p-3 text-xs leading-relaxed text-[#ccff00]">
@@ -707,88 +762,151 @@ export default function ExportPage() {
           </aside>
 
           <div className="min-w-0">
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              <ControlSlider
-                label="Space around"
-                value={spaceAround}
-                min={0}
-                max={MAX_SPACE_AROUND}
-                step={1}
-                onChange={setSpaceAround}
-              />
-              <ControlSlider
-                label="Space between"
-                value={spaceBetween}
-                min={0}
-                max={MAX_SPACE_BETWEEN}
-                step={1}
-                onChange={setSpaceBetween}
-              />
-              <CompactOptions
-                label="Output"
-                options={outputSizes}
-                value={outputSize}
-                suffix=""
-                onChange={setOutputSize}
-              />
-            </div>
-
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              <CompactToggle
-                checked={showTokenIds}
-                label="Token IDs"
-                onChange={() => setShowTokenIds((current) => !current)}
-              />
-              <CompactToggle
-                checked={showBranding}
-                label="OnChainHoodies branding"
-                onChange={() => setShowBranding((current) => !current)}
-              />
-            </div>
-
-            <div className="mt-3 flex items-center justify-between gap-3 border-b border-black pb-2 text-[8px] uppercase tracking-[0.12em] opacity-65">
-              <span>
-                Auto grid: {gridShape.columns} × {gridShape.rows}
-              </span>
-              <span>Square output</span>
-            </div>
-
-            <div className="mt-3 flex justify-center">
-              <div className="w-full max-w-[760px] border border-black bg-black p-1.5">
-                <div className="relative aspect-square overflow-hidden bg-[#ccff00]">
-                  {selectedHoodies.length > 0 ? (
-                    <SquarePreview
-                      hoodies={selectedHoodies}
-                      columns={gridShape.columns}
-                      rows={gridShape.rows}
-                      spaceAround={spaceAround}
-                      spaceBetween={spaceBetween}
-                      showTokenIds={showTokenIds}
-                      showBranding={showBranding}
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center px-6 text-center">
-                      <p className="max-w-sm text-[10px] uppercase leading-relaxed tracking-[0.12em] opacity-60">
-                        {address
-                          ? "Choose at least one Hoodie from the menu."
-                          : "Connect the wallet holding your Hoodies."}
-                      </p>
-                    </div>
-                  )}
+            {!address ? (
+              <div className="grid min-h-[680px] place-items-center border border-black p-6 text-center">
+                <div className="max-w-xl">
+                  <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
+                    Private holder tool
+                  </p>
+                  <h2 className="mt-6 text-5xl leading-[0.9] tracking-[-0.06em] md:text-7xl">
+                    BUILD YOUR
+                    <br />
+                    HOOD GRID.
+                  </h2>
+                  <p className="mx-auto mt-6 max-w-md text-sm leading-relaxed opacity-75 md:text-base">
+                    Connect the wallet holding your OnChainHoodies to select
+                    your collection and create a high-resolution square PNG.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={connect}
+                    className="pixel-cta mt-8"
+                  >
+                    Connect wallet
+                  </button>
+                  <p className="mx-auto mt-4 max-w-md text-[9px] uppercase leading-relaxed tracking-[0.12em] opacity-55">
+                    Read-only ownership check. No transaction or signature is
+                    requested.
+                  </p>
                 </div>
               </div>
-            </div>
+            ) : loading ? (
+              <div className="grid min-h-[680px] place-items-center border border-black p-6 text-center text-[10px] uppercase tracking-[0.16em]">
+                Reading the Hood
+              </div>
+            ) : ownershipChecked && !isHolder ? (
+              <div className="grid min-h-[680px] place-items-center border border-black bg-black p-6 text-center text-[#ccff00]">
+                <div className="max-w-xl">
+                  <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
+                    Holder access
+                  </p>
+                  <h2 className="mt-6 text-5xl leading-[0.9] tracking-[-0.06em] md:text-7xl">
+                    GET IN
+                    <br />
+                    THE HOOD.
+                  </h2>
+                  <p className="mx-auto mt-6 max-w-md text-sm leading-relaxed opacity-75 md:text-base">
+                    One Hoodie unlocks the Grid Exporter for every Hoodie in
+                    your connected wallet.
+                  </p>
+                  <a
+                    href={siteConfig.openSeaUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="pixel-cta mt-8 inline-block border-[#ccff00]"
+                  >
+                    View on OpenSea
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  <ControlSlider
+                    label="Space around"
+                    value={spaceAround}
+                    min={0}
+                    max={MAX_SPACE_AROUND}
+                    step={1}
+                    onChange={setSpaceAround}
+                  />
+                  <ControlSlider
+                    label="Space between"
+                    value={spaceBetween}
+                    min={0}
+                    max={MAX_SPACE_BETWEEN}
+                    step={1}
+                    onChange={setSpaceBetween}
+                  />
+                  <CompactOptions
+                    label="Output"
+                    options={outputSizes}
+                    value={outputSize}
+                    suffix=""
+                    onChange={setOutputSize}
+                  />
+                </div>
 
-            <button
-              type="button"
-              onClick={exportGrid}
-              disabled={exporting || selectedHoodies.length === 0}
-              className="mt-3 w-full max-w-[760px] border border-black px-4 py-3 text-[10px] uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-40 xl:mx-auto xl:block"
-            >
-              {exporting
-                ? progress || "Exporting"
-                : `Export square / ${selectedHoodies.length} selected`}
-            </button>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <CompactToggle
+                    checked={showTokenIds}
+                    label="Token IDs"
+                    onChange={() =>
+                      setShowTokenIds((current) => !current)
+                    }
+                  />
+                  <CompactToggle
+                    checked={showBranding}
+                    label="OnChainHoodies branding"
+                    onChange={() =>
+                      setShowBranding((current) => !current)
+                    }
+                  />
+                </div>
+
+                <div className="mt-3 flex items-center justify-between gap-3 border-b border-black pb-2 text-[8px] uppercase tracking-[0.12em] opacity-65">
+                  <span>
+                    Auto grid: {gridShape.columns} × {gridShape.rows}
+                  </span>
+                  <span>Square output</span>
+                </div>
+
+                <div className="mt-3 flex justify-center">
+                  <div className="w-full max-w-[760px] border border-black bg-black p-1.5">
+                    <div className="relative aspect-square overflow-hidden bg-[#ccff00]">
+                      {selectedHoodies.length > 0 ? (
+                        <SquarePreview
+                          hoodies={selectedHoodies}
+                          columns={gridShape.columns}
+                          rows={gridShape.rows}
+                          spaceAround={spaceAround}
+                          spaceBetween={spaceBetween}
+                          showTokenIds={showTokenIds}
+                          showBranding={showBranding}
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center px-6 text-center">
+                          <p className="max-w-sm text-[10px] uppercase leading-relaxed tracking-[0.12em] opacity-60">
+                            Choose at least one Hoodie from the menu.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={exportGrid}
+                  disabled={exporting || selectedHoodies.length === 0}
+                  className="mt-3 w-full max-w-[760px] border border-black px-4 py-3 text-[10px] uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-40 xl:mx-auto xl:block"
+                >
+                  {exporting
+                    ? progress || "Exporting"
+                    : `Export square / ${selectedHoodies.length} selected`}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </section>
