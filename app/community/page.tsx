@@ -475,17 +475,30 @@ export default function CommunityPage() {
   const currentPfpImage =
     pfp?.profile_image_url || pfp?.profileImageUrl || "";
 
+  const selectedHoodie = hoodies.find(
+    (hoodie) => hoodie.tokenId === selectedTokenId,
+  );
+
+  const submittedPfpTokenId = String(
+    pfp?.token_id ?? pfp?.tokenId ?? "",
+  );
+
+  const selectedMatchesSubmittedPfp =
+    Boolean(selectedTokenId) && selectedTokenId === submittedPfpTokenId;
+
   const selectedHoodieImage =
-    pfp?.hoodie_image_url ||
-    pfp?.hoodieImageUrl ||
-    hoodies.find((hoodie) => hoodie.tokenId === selectedTokenId)?.image ||
-    "";
+    selectedHoodie?.image ||
+    (selectedMatchesSubmittedPfp
+      ? pfp?.hoodie_image_url || pfp?.hoodieImageUrl || ""
+      : "");
 
-  const hoodieSimilarity =
-    pfp?.hoodie_similarity ?? pfp?.hoodieSimilarity ?? null;
+  const hoodieSimilarity = selectedMatchesSubmittedPfp
+    ? pfp?.hoodie_similarity ?? pfp?.hoodieSimilarity ?? null
+    : null;
 
-  const colorMatchRatio =
-    pfp?.color_match_ratio ?? pfp?.colorMatchRatio ?? null;
+  const colorMatchRatio = selectedMatchesSubmittedPfp
+    ? pfp?.color_match_ratio ?? pfp?.colorMatchRatio ?? null
+    : null;
 
   const submissionLimit = account?.submissionLimit;
   const submissionMax = submissionLimit?.max ?? 5;
@@ -1263,7 +1276,11 @@ export default function CommunityPage() {
                         <label className="text-[9px] uppercase tracking-[0.15em] opacity-60">Owned Hoodie</label>
                         <select
                           value={selectedTokenId}
-                          onChange={(event) => setSelectedTokenId(event.target.value)}
+                          onChange={(event) => {
+                            setSelectedTokenId(event.target.value);
+                            setMessage("");
+                            setError("");
+                          }}
                           required
                           className="mt-3 w-full border-2 border-[var(--ink)] bg-[var(--paper)] px-4 py-4 text-sm outline-none"
                         >
