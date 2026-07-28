@@ -475,10 +475,6 @@ export default function CommunityPage() {
   const currentPfpImage =
     pfp?.profile_image_url || pfp?.profileImageUrl || "";
 
-  const selectedHoodie = hoodies.find(
-    (hoodie) => hoodie.tokenId === selectedTokenId,
-  );
-
   const submittedPfpTokenId = String(
     pfp?.token_id ?? pfp?.tokenId ?? "",
   );
@@ -486,11 +482,9 @@ export default function CommunityPage() {
   const selectedMatchesSubmittedPfp =
     Boolean(selectedTokenId) && selectedTokenId === submittedPfpTokenId;
 
-  const selectedHoodieImage =
-    selectedHoodie?.image ||
-    (selectedMatchesSubmittedPfp
-      ? pfp?.hoodie_image_url || pfp?.hoodieImageUrl || ""
-      : "");
+  const selectedHoodieImage = selectedTokenId
+    ? `https://api.onchainhoodies.xyz/images/${selectedTokenId}.svg`
+    : "";
 
   const hoodieSimilarity = selectedMatchesSubmittedPfp
     ? pfp?.hoodie_similarity ?? pfp?.hoodieSimilarity ?? null
