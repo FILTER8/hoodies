@@ -116,6 +116,14 @@ type PfpRecord = {
   status?: string;
   review_reason?: string | null;
   reviewReason?: string | null;
+  profile_image_url?: string;
+  profileImageUrl?: string;
+  hoodie_image_url?: string;
+  hoodieImageUrl?: string;
+  color_match_ratio?: number;
+  colorMatchRatio?: number;
+  hoodie_similarity?: number;
+  hoodieSimilarity?: number;
 };
 
 type Hoodie = {
@@ -463,6 +471,21 @@ export default function CommunityPage() {
     null;
 
   const signedIn = Boolean(account?.wallet);
+
+  const currentPfpImage =
+    pfp?.profile_image_url || pfp?.profileImageUrl || "";
+
+  const selectedHoodieImage =
+    pfp?.hoodie_image_url ||
+    pfp?.hoodieImageUrl ||
+    hoodies.find((hoodie) => hoodie.tokenId === selectedTokenId)?.image ||
+    "";
+
+  const hoodieSimilarity =
+    pfp?.hoodie_similarity ?? pfp?.hoodieSimilarity ?? null;
+
+  const colorMatchRatio =
+    pfp?.color_match_ratio ?? pfp?.colorMatchRatio ?? null;
 
   const submissionLimit = account?.submissionLimit;
   const submissionMax = submissionLimit?.max ?? 5;
@@ -1251,6 +1274,79 @@ export default function CommunityPage() {
                             </option>
                           ))}
                         </select>
+
+                        {currentPfpImage || selectedHoodieImage ? (
+                          <div className="mt-5 grid grid-cols-2 border-l-2 border-t-2 border-[var(--ink)]">
+                            <div className="border-b-2 border-r-2 border-[var(--ink)] p-3">
+                              <p className="mb-3 text-[8px] uppercase tracking-[0.14em] opacity-55">
+                                X Profile Picture
+                              </p>
+
+                              {currentPfpImage ? (
+                                <img
+                                  src={currentPfpImage}
+                                  alt="Current X profile picture"
+                                  className="aspect-square w-full bg-[var(--ink)] object-cover [image-rendering:pixelated]"
+                                />
+                              ) : (
+                                <div className="flex aspect-square items-center justify-center border border-[var(--ink)] text-[8px] uppercase">
+                                  No image
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="border-b-2 border-r-2 border-[var(--ink)] p-3">
+                              <p className="mb-3 text-[8px] uppercase tracking-[0.14em] opacity-55">
+                                Selected Hoodie
+                              </p>
+
+                              {selectedHoodieImage ? (
+                                <img
+                                  src={selectedHoodieImage}
+                                  alt={`Selected Hoodie #${selectedTokenId}`}
+                                  className="aspect-square w-full bg-[var(--ink)] object-contain [image-rendering:pixelated]"
+                                />
+                              ) : (
+                                <div className="flex aspect-square items-center justify-center border border-[var(--ink)] text-[8px] uppercase">
+                                  No image
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {hoodieSimilarity !== null || colorMatchRatio !== null ? (
+                          <div className="mt-4 grid grid-cols-2 border-l-2 border-t-2 border-[var(--ink)]">
+                            <div className="border-b-2 border-r-2 border-[var(--ink)] p-3">
+                              <p className="text-[8px] uppercase tracking-[0.14em] opacity-55">
+                                Similarity
+                              </p>
+                              <p className="mt-2 text-xl">
+                                {hoodieSimilarity !== null
+                                  ? `${Math.round(hoodieSimilarity * 100)}%`
+                                  : "—"}
+                              </p>
+                            </div>
+
+                            <div className="border-b-2 border-r-2 border-[var(--ink)] p-3">
+                              <p className="text-[8px] uppercase tracking-[0.14em] opacity-55">
+                                Color Match
+                              </p>
+                              <p className="mt-2 text-xl">
+                                {colorMatchRatio !== null
+                                  ? `${Math.round(colorMatchRatio * 100)}%`
+                                  : "—"}
+                              </p>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {pfp?.review_reason || pfp?.reviewReason ? (
+                          <p className="mt-4 border-2 border-[var(--ink)] p-4 text-xs leading-relaxed">
+                            {pfp.review_reason || pfp.reviewReason}
+                          </p>
+                        ) : null}
+
                         <button
                           type="submit"
                           disabled={!xUsername || !selectedTokenId || Boolean(action)}

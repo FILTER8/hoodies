@@ -1,0 +1,54 @@
+[
+  {
+    "id": "001",
+    "title": "Hoodies Pack Ripper",
+    "creator": "MB Stuart",
+    "xHandle": "@mbstuart",
+    "xUrl": "https://x.com/mbstuart",
+    "websiteUrl": "https://art.stustustudio.com/och/",
+    "featurePostUrl": "https://x.com/OnChainHoodies/status/2078139766902493616?s=20",
+    "image": "/builders/pack-ripper.png",
+    "description": "Turn Hoodies into collectible card packs, posters and explore the full collection.",
+    "tags": ["Collectibles", "Explorer"],
+    "status": "Live"
+  },
+  {
+    "id": "002",
+    "title": "Hoodie Battle Royale",
+    "creator": "Just HODL the Bag",
+    "xHandle": "@justhodlthebag",
+    "xUrl": "https://x.com/justhodlthebag",
+    "websiteUrl": "https://onchainbattleroyale.netlify.app",
+    "featurePostUrl": "https://x.com/OnChainHoodies/status/2078878980929704352?s=20",
+    "image": "/builders/hoodie-battle-royale.png",
+    "description": "Eight random Hoodies enter a rarity-powered tournament where only one survives.",
+    "tags": ["Game", "Rarity"],
+    "status": "Live"
+  },
+  {
+    "id": "003",
+    "title": "Hoodie Achievements",
+    "creator": "Avi Crypto",
+    "xHandle": "@avicrypto770",
+    "xUrl": "https://x.com/avicrypto770",
+    "websiteUrl": "https://build-e633dc402b4c2e241f2cc276.emblem.build/pub/main/hoodies/",
+    "featurePostUrl": "",
+    "image": "/builders/hoodie-achievements.png",
+    "description": "A progression experience that turns collecting into a game with traits, badges and achievements.",
+    "tags": ["Achievements", "Progression"],
+    "status": "Live"
+  },
+  {
+    "id": "004",
+    "title": "Hoodie Social",
+    "creator": "Call me CHEN",
+    "xHandle": "@CallMeChenAgain",
+    "xUrl": "https://x.com/CallMeChenAgain",
+    "websiteUrl": "https://hoodiesocial.xyz",
+    "featurePostUrl": "",
+    "image": "/builders/hoodie-social.png",
+    "description": "Give every Hoodie a personality, House, soulmate, rival and a deeper social identity.",
+    "tags": ["Identity", "Social" ],
+    "status": "Live"
+  }
+]
