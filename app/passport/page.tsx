@@ -907,8 +907,8 @@ export default function PassportPage() {
                       </div>
 
                       <p className="mt-7 max-w-sm text-sm leading-relaxed opacity-75 md:text-base">
-                        {stats.xUsername
-                          ? `Connected as @${stats.xUsername}. Each submitted post is tracked for 24 hours.`
+                          {stats.xUsername
+                          ? `Connected as @${stats.xUsername}. Each submitted post is tracked for 24 hours, including community engagement and interactions.`
                           : "Connect and verify X on the Community page to submit posts and track participation."}
                       </p>
                     </div>
