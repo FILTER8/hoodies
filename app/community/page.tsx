@@ -133,7 +133,8 @@ type Hoodie = {
 };
 
 type FeedTab = "active" | "past";
-type PassportTab = "submit" | "pfp" | "posts";
+type CommunityView = "feed" | "submit" | "pfp";
+type PassportTab = "submit" | "posts";
 type MyPostsTab = "active" | "past" | "flagged";
 
 type RefreshResult = {
@@ -435,7 +436,7 @@ function PostCard({
 
 export default function CommunityPage() {
   const { address, connect } = useWallet();
-  const [view, setView] = useState<"passport" | "feed">("feed");
+  const [view, setView] = useState<CommunityView>("feed");
   const [passportTab, setPassportTab] = useState<PassportTab>("submit");
   const [myPostsTab, setMyPostsTab] = useState<MyPostsTab>("active");
   const [feedTab, setFeedTab] = useState<FeedTab>("active");
@@ -713,12 +714,12 @@ export default function CommunityPage() {
   }, [view, feedTab, loadFeed]);
 
   useEffect(() => {
-    if (!signedIn || passportTab !== "posts") return;
+    if (!signedIn || view !== "submit" || passportTab !== "posts") return;
 
     queueMicrotask(() => {
       void loadPosts(myPostsTab);
     });
-  }, [signedIn, passportTab, myPostsTab, loadPosts]);
+  }, [signedIn, view, passportTab, myPostsTab, loadPosts]);
 
   useEffect(() => {
     if (!submissionRetryAt) return;
@@ -830,6 +831,7 @@ export default function CommunityPage() {
       setTweetUrl("");
       await Promise.all([loadPosts("active"), loadAccount()]);
       setMessage("Post submitted. Tracking has started for 24 hours.");
+      setView("submit");
       setPassportTab("posts");
       setMyPostsTab("active");
     } catch (submitError) {
@@ -949,17 +951,23 @@ export default function CommunityPage() {
           </div>
 
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <div className="flex border-2 border-[var(--ink)]">
-              {(["feed", "passport"] as const).map((item) => (
+            <div className="flex flex-wrap border-2 border-[var(--ink)]">
+              {(
+                [
+                  ["feed", "Feed"],
+                  ["submit", "Submit Post"],
+                  ["pfp", "Verify PFP"],
+                ] as const
+              ).map(([item, label]) => (
                 <button
                   key={item}
                   type="button"
                   onClick={() => setView(item)}
-                  className={`flex-1 px-4 py-3 text-[9px] uppercase tracking-[0.14em] first:border-r-2 first:border-[var(--ink)] sm:flex-none sm:px-5 sm:text-[10px] sm:tracking-[0.16em] ${
+                  className={`flex-1 border-r-2 border-[var(--ink)] px-4 py-3 text-[9px] uppercase tracking-[0.14em] last:border-r-0 sm:flex-none sm:px-5 sm:text-[10px] sm:tracking-[0.16em] ${
                     view === item ? "bg-[var(--ink)] text-[var(--paper)]" : ""
                   }`}
                 >
-                  {item === "passport" ? "Submit Post" : "Feed"}
+                  {label}
                 </button>
               ))}
             </div>
@@ -1058,7 +1066,7 @@ export default function CommunityPage() {
           </section>
         ) : null}
 
-        {view === "passport" ? (
+        {view !== "feed" ? (
           <section className="py-12 md:py-16">
             {!address ? (
               <div className="border-2 border-[var(--ink)] p-8 md:p-12">
@@ -1119,28 +1127,29 @@ export default function CommunityPage() {
                   </div>
                 </div>
 
-                <div className="mt-10 flex flex-wrap border-2 border-[var(--ink)]">
-                  {(
-                    [
-                      ["submit", "Submit Post"],
-                      ["pfp", "Verify PFP"],
-                      ["posts", "My Posts"],
-                    ] as const
-                  ).map(([id, label]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setPassportTab(id)}
-                      className={`border-r-2 border-[var(--ink)] px-5 py-3 text-[9px] uppercase tracking-[0.15em] last:border-r-0 ${
-                        passportTab === id ? "bg-[var(--ink)] text-[var(--paper)]" : ""
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                {view === "submit" ? (
+                  <div className="mt-10 flex flex-wrap border-2 border-[var(--ink)]">
+                    {(
+                      [
+                        ["submit", "Submit Post"],
+                        ["posts", "My Posts"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setPassportTab(id)}
+                        className={`border-r-2 border-[var(--ink)] px-5 py-3 text-[9px] uppercase tracking-[0.15em] last:border-r-0 ${
+                          passportTab === id ? "bg-[var(--ink)] text-[var(--paper)]" : ""
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
 
-                {passportTab === "submit" ? (
+                {view === "submit" && passportTab === "submit" ? (
                   <div className="mt-8 grid gap-8 lg:grid-cols-[0.72fr_1.28fr]">
                     <div className="border-2 border-[var(--ink)] p-7 md:p-9">
                       <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">X verification</p>
@@ -1252,8 +1261,28 @@ export default function CommunityPage() {
                   </div>
                 ) : null}
 
-                {passportTab === "pfp" ? (
-                  <form onSubmit={submitPfp} className="mt-8 border-2 border-[var(--ink)] p-7 md:p-10">
+                {view === "pfp" ? (
+                  <>
+                    <div className="mt-8 border-2 border-[var(--ink)] p-7 md:p-9">
+                      <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">X verification</p>
+                      <h2 className="mt-5 text-4xl leading-none">
+                        {xUsername ? `@${xUsername}` : "CONNECT X"}
+                      </h2>
+                      <p className="mt-5 text-sm leading-relaxed opacity-70">
+                        One X account can be linked to one Passport wallet.
+                      </p>
+                      {!xUsername ? (
+                        <button
+                          type="button"
+                          onClick={() => void connectX()}
+                          className="pixel-cta pixel-cta-dark mt-7"
+                        >
+                          Connect X
+                        </button>
+                      ) : null}
+                    </div>
+
+                    <form onSubmit={submitPfp} className="mt-8 border-2 border-[var(--ink)] p-7 md:p-10">
                     <div className="grid gap-8 lg:grid-cols-2">
                       <div>
                         <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Hood PFP</p>
@@ -1367,10 +1396,11 @@ export default function CommunityPage() {
                         </button>
                       </div>
                     </div>
-                  </form>
+                    </form>
+                  </>
                 ) : null}
 
-                {passportTab === "posts" ? (
+                {view === "submit" && passportTab === "posts" ? (
                   <div className="mt-8">
                     <div className="flex flex-wrap border-2 border-[var(--ink)]">
                       {(
