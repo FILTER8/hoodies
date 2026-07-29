@@ -44,6 +44,7 @@ type PassportStats = {
   xReplies: number;
   xReposts: number;
   xQuotes: number;
+  postsEngaged: number;
 };
 
 type PassportAccountResponse = {
@@ -55,6 +56,9 @@ type PassportAccountResponse = {
     replies?: number | string | null;
     reposts?: number | string | null;
     quotes?: number | string | null;
+  } | null;
+  support?: {
+    posts_engaged?: number | string | null;
   } | null;
   pfp?: {
     token_id?: number | string | null;
@@ -246,6 +250,7 @@ export default function PassportPage() {
     xReplies: 0,
     xReposts: 0,
     xQuotes: 0,
+    postsEngaged: 0,
   });
 
   const selectedHoodie = useMemo(
@@ -332,6 +337,7 @@ export default function PassportPage() {
         xReplies: 0,
         xReposts: 0,
         xQuotes: 0,
+        postsEngaged: 0,
       });
       setError(null);
       return;
@@ -406,6 +412,7 @@ export default function PassportPage() {
           xReplies: safeNumber(passport.posts?.replies),
           xReposts: safeNumber(passport.posts?.reposts),
           xQuotes: safeNumber(passport.posts?.quotes),
+          postsEngaged: safeNumber(passport.support?.posts_engaged),
           pfpStatus: normalizePfpStatus(passport.pfp?.status),
           pfpTokenId:
             passport.pfp?.token_id === null ||
@@ -567,7 +574,8 @@ export default function PassportPage() {
       drawStatRow(artY + (rowHeight + rowGap) * 4, "Comments", String(stats.xReplies), 32);
       drawStatRow(artY + (rowHeight + rowGap) * 5, "Reshares", String(stats.xReposts), 32);
       drawStatRow(artY + (rowHeight + rowGap) * 6, "Quotes", String(stats.xQuotes), 32);
-      drawStatRow(artY + (rowHeight + rowGap) * 7, "Verified X PFP", pfpExportLabel, 24);
+      drawStatRow(artY + (rowHeight + rowGap) * 7, "Posts Engaged", String(stats.postsEngaged), 32);
+      drawStatRow(artY + (rowHeight + rowGap) * 8, "Verified X PFP", pfpExportLabel, 24);
 
       const footerY = 1325;
       context.strokeStyle = BLACK;
@@ -642,6 +650,7 @@ export default function PassportPage() {
     stats.xReplies,
     stats.xReposts,
     stats.xQuotes,
+    stats.postsEngaged,
     pfpExportLabel,
   ]);
 
@@ -886,6 +895,15 @@ export default function PassportPage() {
                             </p>
                           </div>
                         ))}
+
+                        <div className="col-span-2 border-b border-r border-[#ccff00] p-4">
+                          <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
+                            Posts Engaged
+                          </p>
+                          <p className="mt-3 text-3xl leading-none">
+                            {formatNumber(stats.postsEngaged)}
+                          </p>
+                        </div>
                       </div>
 
                       <p className="mt-7 max-w-sm text-sm leading-relaxed opacity-75 md:text-base">
@@ -1059,6 +1077,7 @@ export default function PassportPage() {
                             ["Comments", String(stats.xReplies)],
                             ["Reshares", String(stats.xReposts)],
                             ["Quotes", String(stats.xQuotes)],
+                            ["Posts Engaged", String(stats.postsEngaged)],
                             ["Verified X PFP", pfpExportLabel],
                           ].map(([label, value]) => (
                             <div
