@@ -39,6 +39,7 @@ type PassportStats = {
   pfpTokenId: string | null;
   pfpHoodieImageUrl: string | null;
   pfpMatchPercentage: number | null;
+  pfpStreakDays: number;
   xUsername: string | null;
   xLikes: number;
   xReplies: number;
@@ -64,6 +65,8 @@ type PassportAccountResponse = {
     token_id?: number | string | null;
     hoodie_image_url?: string | null;
     hoodie_similarity?: number | string | null;
+    current_streak_days?: number | string | null;
+    currentStreakDays?: number | string | null;
     status?: PfpStatus | string | null;
   } | null;
 };
@@ -245,6 +248,7 @@ export default function PassportPage() {
     pfpTokenId: null,
     pfpHoodieImageUrl: null,
     pfpMatchPercentage: null,
+    pfpStreakDays: 0,
     xUsername: null,
     xLikes: 0,
     xReplies: 0,
@@ -321,6 +325,12 @@ export default function PassportPage() {
   const pfpExportLabel = isPfpVerified
     ? `VERIFIED #${stats.pfpTokenId || "—"}`
     : pfpStatusLabel;
+  const pfpStreakLabel = isPfpVerified
+    ? `${formatNumber(stats.pfpStreakDays)} DAY${stats.pfpStreakDays === 1 ? "" : "S"}`
+    : "NO ACTIVE STREAK";
+  const pfpExportValue = isPfpVerified
+    ? `${pfpExportLabel} · ${pfpStreakLabel} STREAK`
+    : pfpStatusLabel;
 
   const loadHoodies = useCallback(async () => {
     if (!address) {
@@ -332,6 +342,7 @@ export default function PassportPage() {
         pfpTokenId: null,
         pfpHoodieImageUrl: null,
         pfpMatchPercentage: null,
+        pfpStreakDays: 0,
         xUsername: null,
         xLikes: 0,
         xReplies: 0,
@@ -424,6 +435,15 @@ export default function PassportPage() {
             pfpSimilarity === null || pfpSimilarity === undefined
               ? null
               : Math.max(0, Math.min(100, safeNumber(pfpSimilarity) * 100)),
+          pfpStreakDays: Math.max(
+            0,
+            Math.floor(
+              safeNumber(
+                passport.pfp?.current_streak_days ??
+                  passport.pfp?.currentStreakDays
+              )
+            )
+          ),
         }));
       } catch {
         // No Passport session yet. The Community page handles wallet signing.
@@ -575,7 +595,7 @@ export default function PassportPage() {
       drawStatRow(artY + (rowHeight + rowGap) * 5, "Reshares", String(stats.xReposts), 32);
       drawStatRow(artY + (rowHeight + rowGap) * 6, "Quotes", String(stats.xQuotes), 32);
       drawStatRow(artY + (rowHeight + rowGap) * 7, "Posts Engaged", String(stats.postsEngaged), 32);
-      drawStatRow(artY + (rowHeight + rowGap) * 8, "Verified X PFP", pfpExportLabel, 24);
+      drawStatRow(artY + (rowHeight + rowGap) * 8, "Verified X PFP", pfpExportValue, 19);
 
       const footerY = 1325;
       context.strokeStyle = BLACK;
@@ -651,7 +671,7 @@ export default function PassportPage() {
     stats.xReposts,
     stats.xQuotes,
     stats.postsEngaged,
-    pfpExportLabel,
+    pfpExportValue,
   ]);
 
   return (
@@ -958,6 +978,15 @@ export default function PassportPage() {
                         </div>
                       </div>
 
+                      <div className="mx-auto mt-4 w-full max-w-[220px] border-2 border-[#ccff00] p-3 text-center">
+                        <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
+                          Streak
+                        </p>
+                        <p className="mt-2 text-2xl leading-none tracking-[-0.04em]">
+                          {isPfpVerified ? pfpStreakLabel : "—"}
+                        </p>
+                      </div>
+
                       <div className="mt-7 text-center">
                         <p className="text-[9px] uppercase tracking-[0.16em] opacity-60">
                           {isPfpVerified ? "Verified Hoodie" : "Hood PFP"}
@@ -1078,7 +1107,7 @@ export default function PassportPage() {
                             ["Reshares", String(stats.xReposts)],
                             ["Quotes", String(stats.xQuotes)],
                             ["Posts Engaged", String(stats.postsEngaged)],
-                            ["Verified X PFP", pfpExportLabel],
+                            ["Verified X PFP", pfpExportValue],
                           ].map(([label, value]) => (
                             <div
                               key={label}
