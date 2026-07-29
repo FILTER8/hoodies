@@ -758,11 +758,11 @@ const exportCard = useCallback(async () => {
     context.fillStyle = exportForeground;
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.font = "64px DepartureMono, monospace";
+    context.font = "92px DepartureMono, monospace";
 
     const cleanQuote = quote.replace(/^[“"]|[”"]$/g, "").trim();
-    const lines = wrapText(context, `“${cleanQuote}”`, 980);
-    const lineHeight = 92;
+    const lines = wrapText(context, `“${cleanQuote}”`, 760);
+    const lineHeight = 122;
     const startY =
       height / 2 - ((lines.length - 1) * lineHeight) / 2;
 
