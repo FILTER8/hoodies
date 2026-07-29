@@ -1263,24 +1263,27 @@ export default function CommunityPage() {
 
                 {view === "pfp" ? (
                   <>
-                    <div className="mt-8 border-2 border-[var(--ink)] p-7 md:p-9">
-                      <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">X verification</p>
-                      <h2 className="mt-5 text-4xl leading-none">
-                        {xUsername ? `@${xUsername}` : "CONNECT X"}
-                      </h2>
-                      <p className="mt-5 text-sm leading-relaxed opacity-70">
-                        One X account can be linked to one Passport wallet.
-                      </p>
-                      {!xUsername ? (
-                        <button
-                          type="button"
-                          onClick={() => void connectX()}
-                          className="pixel-cta pixel-cta-dark mt-7"
-                        >
-                          Connect X
-                        </button>
-                      ) : null}
-                    </div>
+        <div className="mt-8 border-2 border-[var(--ink)] p-7 md:p-9">
+  <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">
+    X verification
+  </p>
+
+  <h2 className="mt-5 text-4xl leading-none">
+    {xUsername ? `@${xUsername}` : "CONNECT X"}
+  </h2>
+
+  <p className="mt-5 text-sm leading-relaxed opacity-70">
+    One X account can be linked to one Passport wallet.
+  </p>
+
+  <button
+    type="button"
+    onClick={() => void connectX()}
+    className="pixel-cta pixel-cta-dark mt-7"
+  >
+    {xUsername ? "Reconnect X" : "Connect X"}
+  </button>
+</div>
 
                     <form onSubmit={submitPfp} className="mt-8 border-2 border-[var(--ink)] p-7 md:p-10">
                     <div className="grid gap-8 lg:grid-cols-2">
