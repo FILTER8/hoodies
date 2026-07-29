@@ -242,10 +242,10 @@ export default function ExportPage() {
   const [hoodies, setHoodies] = useState<Hoodie[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [outputSize, setOutputSize] = useState<(typeof outputSizes)[number]>(2400);
-  const [spaceAround, setSpaceAround] = useState(50);
-  const [spaceBetween, setSpaceBetween] = useState(20);
-  const [showTokenIds, setShowTokenIds] = useState(true);
-  const [showBranding, setShowBranding] = useState(true);
+  const [spaceAround, setSpaceAround] = useState(0);
+  const [spaceBetween, setSpaceBetween] = useState(0);
+  const [showTokenIds, setShowTokenIds] = useState(false);
+  const [showBranding, setShowBranding] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [ownershipChecked, setOwnershipChecked] = useState(false);
