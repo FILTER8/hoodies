@@ -101,6 +101,13 @@ const builds = [
     action: "Open camera",
   },
   {
+    label: "New",
+    title: "Hood Collage Maker",
+    copy: "Create animated scenes with Hoodies, custom pixel stickers, drawings and up to eight unique frames.",
+    href: "/tools/collage",
+    action: "Build a Hood scene",
+  },
+  {
     label: "Live",
     title: "Hoodie Explorer",
     copy: "Explore traits, Neighborhood Rarity, market data and the on-chain ink inside every Hoodie.",

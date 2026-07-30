@@ -133,9 +133,39 @@ type Hoodie = {
 };
 
 type FeedTab = "active" | "past";
-type CommunityView = "feed" | "submit" | "pfp";
+type CommunityView = "feed" | "submit" | "pfp" | "leaderboard";
 type PassportTab = "submit" | "posts";
 type MyPostsTab = "active" | "past" | "flagged";
+
+
+
+type LeaderboardTab = "overall" | "posts" | "support" | "pfp";
+
+type LeaderboardEntry = {
+  rank: number;
+  wallet: string;
+  xUsername: string | null;
+  tokenId: number | null;
+  hoodieImageUrl: string | null;
+  score: number;
+  submittedPosts: number;
+  likesReceived: number;
+  repliesReceived: number;
+  repostsReceived: number;
+  quotesReceived: number;
+  supportLikes: number;
+  supportReplies: number;
+  supportReposts: number;
+  supportQuotes: number;
+  pfpStreakDays: number;
+  level?: string | null;
+};
+
+type LeaderboardResponse = {
+  season?: number;
+  entries?: LeaderboardEntry[];
+  updatedAt?: string | null;
+};
 
 type RefreshResult = {
   postsUpdated: number;
@@ -440,6 +470,7 @@ export default function CommunityPage() {
   const [passportTab, setPassportTab] = useState<PassportTab>("submit");
   const [myPostsTab, setMyPostsTab] = useState<MyPostsTab>("active");
   const [feedTab, setFeedTab] = useState<FeedTab>("active");
+  const [leaderboardTab, setLeaderboardTab] = useState<LeaderboardTab>("overall");
   const [account, setAccount] = useState<Account | null>(null);
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [postsHasMore, setPostsHasMore] = useState(false);
@@ -447,6 +478,9 @@ export default function CommunityPage() {
   const [feed, setFeed] = useState<PostRecord[]>([]);
   const [feedHasMore, setFeedHasMore] = useState(false);
   const [feedLoadingMore, setFeedLoadingMore] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardUpdatedAt, setLeaderboardUpdatedAt] = useState<string | null>(null);
   const [pfp, setPfp] = useState<PfpRecord | null>(null);
   const [hoodies, setHoodies] = useState<Hoodie[]>([]);
   const [tweetUrl, setTweetUrl] = useState("");
@@ -642,6 +676,35 @@ export default function CommunityPage() {
     [],
   );
 
+
+
+  const loadLeaderboard = useCallback(async (metric: LeaderboardTab) => {
+    setLeaderboardLoading(true);
+    setError("");
+
+    try {
+      const data = await apiFetch<LeaderboardResponse>(
+        `/v1/leaderboard?${new URLSearchParams({
+          metric,
+          limit: "100",
+        })}`,
+      );
+
+      setLeaderboard(data.entries || []);
+      setLeaderboardUpdatedAt(data.updatedAt || null);
+    } catch (leaderboardError) {
+      setLeaderboard([]);
+      setLeaderboardUpdatedAt(null);
+      setError(
+        leaderboardError instanceof Error
+          ? leaderboardError.message
+          : "Unable to load the leaderboard.",
+      );
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("community-theme");
 
@@ -712,6 +775,14 @@ export default function CommunityPage() {
       void loadFeed(feedTab);
     });
   }, [view, feedTab, loadFeed]);
+
+  useEffect(() => {
+    if (view !== "leaderboard") return;
+
+    queueMicrotask(() => {
+      void loadLeaderboard(leaderboardTab);
+    });
+  }, [view, leaderboardTab, loadLeaderboard]);
 
   useEffect(() => {
     if (!signedIn || view !== "submit" || passportTab !== "posts") return;
@@ -957,6 +1028,7 @@ export default function CommunityPage() {
                   ["feed", "Feed"],
                   ["submit", "Submit Post"],
                   ["pfp", "Verify PFP"],
+                  ["leaderboard", "Leaderboard"],
                 ] as const
               ).map(([item, label]) => (
                 <button
@@ -1066,7 +1138,7 @@ export default function CommunityPage() {
           </section>
         ) : null}
 
-        {view !== "feed" ? (
+        {view !== "feed" && view !== "leaderboard" ? (
           <section className="py-12 md:py-16">
             {!address ? (
               <div className="border-2 border-[var(--ink)] p-8 md:p-12">
@@ -1458,6 +1530,162 @@ export default function CommunityPage() {
                 ) : null}
               </>
             )}
+          </section>
+        ) : view === "leaderboard" ? (
+          <section className="py-12 md:py-16">
+            <div className="flex flex-col gap-6 border-b-2 border-[var(--ink)] pb-6 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
+                  Citizen Passport / Season 01
+                </p>
+                <h2 className="mt-4 text-5xl leading-none tracking-[-0.05em] md:text-7xl">
+                  LEADERBOARD
+                </h2>
+                <p className="mt-5 max-w-2xl text-sm leading-relaxed opacity-70">
+                  Participation across the Hood. Rankings are live and may change as posts, support, and verified PFP streaks grow.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap border-2 border-[var(--ink)]">
+                {([
+                  ["overall", "Overall"],
+                  ["posts", "Posts"],
+                  ["support", "Support"],
+                  ["pfp", "PFP"],
+                ] as const).map(([item, label]) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setLeaderboardTab(item)}
+                    className={`border-r-2 border-[var(--ink)] px-4 py-3 text-[9px] uppercase tracking-[0.14em] last:border-r-0 sm:px-5 ${
+                      leaderboardTab === item
+                        ? "bg-[var(--ink)] text-[var(--paper)]"
+                        : ""
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {leaderboardUpdatedAt ? (
+              <p className="mt-4 text-[8px] uppercase tracking-[0.13em] opacity-55">
+                Updated {formatDate(leaderboardUpdatedAt)}
+              </p>
+            ) : null}
+
+            {leaderboardLoading ? (
+              <p className="mt-10 text-[9px] uppercase tracking-[0.15em] opacity-60">
+                Loading Leaderboard...
+              </p>
+            ) : leaderboard.length ? (
+              <div className="mt-8 border-l-2 border-t-2 border-[var(--ink)]">
+                <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(4,minmax(110px,0.65fr))] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
+                  {["Rank", "Citizen", "Score", "Posts", "Support", "PFP Streak"].map((label) => (
+                    <div key={label} className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0">
+                      {label}
+                    </div>
+                  ))}
+                </div>
+
+                {leaderboard.map((entry, index) => {
+                  const received =
+                    entry.likesReceived +
+                    entry.repliesReceived +
+                    entry.repostsReceived +
+                    entry.quotesReceived;
+                  const support =
+                    entry.supportLikes +
+                    entry.supportReplies +
+                    entry.supportReposts +
+                    entry.supportQuotes;
+                  const image =
+                    entry.hoodieImageUrl ||
+                    (entry.tokenId !== null
+                      ? `https://api.onchainhoodies.xyz/images/${entry.tokenId}.svg`
+                      : "");
+
+                  return (
+                    <article
+                      key={`${entry.wallet}-${entry.rank}-${index}`}
+                      className="border-b-2 border-r-2 border-[var(--ink)]"
+                    >
+                      <div className="grid gap-0 lg:grid-cols-[72px_minmax(260px,1.5fr)_repeat(4,minmax(110px,0.65fr))]">
+                        <div className="flex items-center justify-center border-b-2 border-[var(--ink)] p-4 text-3xl lg:border-b-0 lg:border-r-2">
+                          #{String(entry.rank).padStart(2, "0")}
+                        </div>
+
+                        <div className="flex min-w-0 items-center gap-4 border-b-2 border-[var(--ink)] p-4 lg:border-b-0 lg:border-r-2">
+                          <div className="h-16 w-16 shrink-0 overflow-hidden border-2 border-[var(--ink)] bg-[var(--ink)]">
+                            {image ? (
+                              <img
+                                src={image}
+                                alt={entry.xUsername ? `@${entry.xUsername}` : shortWallet(entry.wallet)}
+                                className="h-full w-full object-contain [image-rendering:pixelated]"
+                              />
+                            ) : (
+                              <div className="grid h-full w-full place-items-center text-[8px] uppercase text-[var(--paper)]">
+                                No PFP
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="min-w-0">
+                            <p className="truncate text-xl leading-none">
+                              {entry.xUsername ? `@${entry.xUsername}` : shortWallet(entry.wallet)}
+                            </p>
+                            <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-55">
+                              {entry.level || "Citizen"}
+                              {entry.tokenId !== null ? ` / Hoodie #${entry.tokenId}` : ""}
+                            </p>
+                          </div>
+                        </div>
+
+                        {[
+                          ["Score", entry.score],
+                          ["Posts", leaderboardTab === "posts" ? received : entry.submittedPosts],
+                          ["Support", support],
+                          ["PFP Streak", `${entry.pfpStreakDays}D`],
+                        ].map(([label, value]) => (
+                          <div
+                            key={String(label)}
+                            className="border-b-2 border-[var(--ink)] p-4 lg:border-b-0 lg:border-r-2 lg:last:border-r-0"
+                          >
+                            <p className="text-[8px] uppercase tracking-[0.13em] opacity-55">{label}</p>
+                            <p className="mt-2 text-2xl leading-none">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-2 border-t border-[var(--ink)] sm:grid-cols-4 lg:hidden">
+                        {[
+                          ["Likes", entry.likesReceived],
+                          ["Replies", entry.repliesReceived],
+                          ["Reposts", entry.repostsReceived],
+                          ["Quotes", entry.quotesReceived],
+                        ].map(([label, value]) => (
+                          <div key={String(label)} className="border-r border-[var(--ink)] p-3 last:border-r-0">
+                            <p className="text-[7px] uppercase tracking-[0.12em] opacity-55">{label}</p>
+                            <p className="mt-2 text-lg">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="mt-10 border-2 border-[var(--ink)] p-10 text-center">
+                <p className="text-sm uppercase tracking-[0.14em] opacity-60">
+                  No leaderboard data yet
+                </p>
+              </div>
+            )}
+
+            <p className="mt-6 max-w-3xl text-[8px] uppercase leading-relaxed tracking-[0.12em] opacity-55">
+              Season 01 rankings show community participation. Final $OCH rewards are calculated separately and may include review, eligibility, and anti-spam checks.
+            </p>
           </section>
         ) : (
           <section className="py-12 md:py-16">
