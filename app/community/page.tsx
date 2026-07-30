@@ -1581,96 +1581,175 @@ export default function CommunityPage() {
               </p>
             ) : leaderboard.length ? (
               <div className="mt-8 border-l-2 border-t-2 border-[var(--ink)]">
-                <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(4,minmax(110px,0.65fr))] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
-                  {["Rank", "Citizen", "Score", "Posts", "Support", "PFP Streak"].map((label) => (
-                    <div key={label} className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0">
-                      {label}
-                    </div>
-                  ))}
-                </div>
+                {leaderboardTab === "overall" ? (
+                  <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(4,minmax(110px,0.65fr))] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
+                    {["Rank", "Citizen", "Score", "Posts", "Support", "PFP Streak"].map((label) => (
+                      <div
+                        key={label}
+                        className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0"
+                      >
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                ) : leaderboardTab === "posts" ? (
+                  <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(5,minmax(100px,0.65fr))] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
+                    {["Rank", "Citizen", "Posts", "Likes", "Replies", "Reposts", "Quotes"].map((label) => (
+                      <div
+                        key={label}
+                        className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0"
+                      >
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                ) : leaderboardTab === "support" ? (
+                  <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(5,minmax(100px,0.65fr))] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
+                    {["Rank", "Citizen", "Support", "Likes", "Replies", "Reposts", "Quotes"].map((label) => (
+                      <div
+                        key={label}
+                        className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0"
+                      >
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_minmax(160px,0.75fr)] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
+                    {["Rank", "Citizen", "PFP Streak"].map((label) => (
+                      <div
+                        key={label}
+                        className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0"
+                      >
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {leaderboard.map((entry, index) => {
-                  const received =
-                    entry.likesReceived +
-                    entry.repliesReceived +
-                    entry.repostsReceived +
-                    entry.quotesReceived;
                   const support =
                     entry.supportLikes +
                     entry.supportReplies +
                     entry.supportReposts +
                     entry.supportQuotes;
+
                   const image =
                     entry.hoodieImageUrl ||
                     (entry.tokenId !== null
                       ? `https://api.onchainhoodies.xyz/images/${entry.tokenId}.svg`
                       : "");
 
+                  const citizenCell = (
+                    <div className="flex min-w-0 items-center gap-4 border-b-2 border-[var(--ink)] p-4 lg:border-b-0 lg:border-r-2">
+                      <div className="h-16 w-16 shrink-0 overflow-hidden border-2 border-[var(--ink)] bg-[var(--ink)]">
+                        {image ? (
+                          <img
+                            src={image}
+                            alt={
+                              entry.xUsername
+                                ? `@${entry.xUsername}`
+                                : shortWallet(entry.wallet)
+                            }
+                            className="h-full w-full object-contain [image-rendering:pixelated]"
+                          />
+                        ) : (
+                          <div className="grid h-full w-full place-items-center text-[8px] uppercase text-[var(--paper)]">
+                            No PFP
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="truncate text-xl leading-none">
+                          {entry.xUsername
+                            ? `@${entry.xUsername}`
+                            : shortWallet(entry.wallet)}
+                        </p>
+                        <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-55">
+                          {entry.level || "Citizen"}
+                          {entry.tokenId !== null
+                            ? ` / Hoodie #${entry.tokenId}`
+                            : ""}
+                        </p>
+                      </div>
+                    </div>
+                  );
+
+                  const rankCell = (
+                    <div className="flex items-center justify-center border-b-2 border-[var(--ink)] p-4 text-3xl lg:border-b-0 lg:border-r-2">
+                      #{String(entry.rank).padStart(2, "0")}
+                    </div>
+                  );
+
+                  const renderMetricCell = (label: string, value: number | string) => (
+                    <div
+                      key={label}
+                      className="border-b-2 border-[var(--ink)] p-4 lg:border-b-0 lg:border-r-2 lg:last:border-r-0"
+                    >
+                      <p className="text-[8px] uppercase tracking-[0.13em] opacity-55 lg:hidden">
+                        {label}
+                      </p>
+                      <p className="mt-2 text-2xl leading-none lg:mt-0">{value}</p>
+                    </div>
+                  );
+
                   return (
                     <article
                       key={`${entry.wallet}-${entry.rank}-${index}`}
                       className="border-b-2 border-r-2 border-[var(--ink)]"
                     >
-                      <div className="grid gap-0 lg:grid-cols-[72px_minmax(260px,1.5fr)_repeat(4,minmax(110px,0.65fr))]">
-                        <div className="flex items-center justify-center border-b-2 border-[var(--ink)] p-4 text-3xl lg:border-b-0 lg:border-r-2">
-                          #{String(entry.rank).padStart(2, "0")}
+                      {leaderboardTab === "overall" ? (
+                        <div className="grid gap-0 lg:grid-cols-[72px_minmax(260px,1.5fr)_repeat(4,minmax(110px,0.65fr))]">
+                          {rankCell}
+                          {citizenCell}
+                          {[
+                            ["Score", entry.score],
+                            ["Posts", entry.submittedPosts],
+                            ["Support", support],
+                            ["PFP Streak", `${entry.pfpStreakDays}D`],
+                          ].map(([label, value]) =>
+                            renderMetricCell(String(label), value),
+                          )}
                         </div>
-
-                        <div className="flex min-w-0 items-center gap-4 border-b-2 border-[var(--ink)] p-4 lg:border-b-0 lg:border-r-2">
-                          <div className="h-16 w-16 shrink-0 overflow-hidden border-2 border-[var(--ink)] bg-[var(--ink)]">
-                            {image ? (
-                              <img
-                                src={image}
-                                alt={entry.xUsername ? `@${entry.xUsername}` : shortWallet(entry.wallet)}
-                                className="h-full w-full object-contain [image-rendering:pixelated]"
-                              />
-                            ) : (
-                              <div className="grid h-full w-full place-items-center text-[8px] uppercase text-[var(--paper)]">
-                                No PFP
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="min-w-0">
-                            <p className="truncate text-xl leading-none">
-                              {entry.xUsername ? `@${entry.xUsername}` : shortWallet(entry.wallet)}
-                            </p>
-                            <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-55">
-                              {entry.level || "Citizen"}
-                              {entry.tokenId !== null ? ` / Hoodie #${entry.tokenId}` : ""}
-                            </p>
-                          </div>
+                      ) : leaderboardTab === "posts" ? (
+                        <div className="grid gap-0 lg:grid-cols-[72px_minmax(260px,1.5fr)_repeat(5,minmax(100px,0.65fr))]">
+                          {rankCell}
+                          {citizenCell}
+                          {[
+                            ["Posts", entry.submittedPosts],
+                            ["Likes", entry.likesReceived],
+                            ["Replies", entry.repliesReceived],
+                            ["Reposts", entry.repostsReceived],
+                            ["Quotes", entry.quotesReceived],
+                          ].map(([label, value]) =>
+                            renderMetricCell(String(label), value),
+                          )}
                         </div>
-
-                        {[
-                          ["Score", entry.score],
-                          ["Posts", leaderboardTab === "posts" ? received : entry.submittedPosts],
-                          ["Support", support],
-                          ["PFP Streak", `${entry.pfpStreakDays}D`],
-                        ].map(([label, value]) => (
-                          <div
-                            key={String(label)}
-                            className="border-b-2 border-[var(--ink)] p-4 lg:border-b-0 lg:border-r-2 lg:last:border-r-0"
-                          >
-                            <p className="text-[8px] uppercase tracking-[0.13em] opacity-55">{label}</p>
-                            <p className="mt-2 text-2xl leading-none">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="grid grid-cols-2 border-t border-[var(--ink)] sm:grid-cols-4 lg:hidden">
-                        {[
-                          ["Likes", entry.likesReceived],
-                          ["Replies", entry.repliesReceived],
-                          ["Reposts", entry.repostsReceived],
-                          ["Quotes", entry.quotesReceived],
-                        ].map(([label, value]) => (
-                          <div key={String(label)} className="border-r border-[var(--ink)] p-3 last:border-r-0">
-                            <p className="text-[7px] uppercase tracking-[0.12em] opacity-55">{label}</p>
-                            <p className="mt-2 text-lg">{value}</p>
-                          </div>
-                        ))}
-                      </div>
+                      ) : leaderboardTab === "support" ? (
+                        <div className="grid gap-0 lg:grid-cols-[72px_minmax(260px,1.5fr)_repeat(5,minmax(100px,0.65fr))]">
+                          {rankCell}
+                          {citizenCell}
+                          {[
+                            ["Support", support],
+                            ["Likes", entry.supportLikes],
+                            ["Replies", entry.supportReplies],
+                            ["Reposts", entry.supportReposts],
+                            ["Quotes", entry.supportQuotes],
+                          ].map(([label, value]) =>
+                            renderMetricCell(String(label), value),
+                          )}
+                        </div>
+                      ) : (
+                        <div className="grid gap-0 lg:grid-cols-[72px_minmax(260px,1.5fr)_minmax(160px,0.75fr)]">
+                          {rankCell}
+                          {citizenCell}
+                          {renderMetricCell(
+                            "PFP Streak",
+                            `${entry.pfpStreakDays}D`,
+                          )}
+                        </div>
+                      )}
                     </article>
                   );
                 })}
