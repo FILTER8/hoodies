@@ -1012,7 +1012,7 @@ export default function CommunityPage() {
         <div className="flex flex-col gap-5 border-b-2 border-[var(--ink)] pb-5 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
-              Citizen Passport / Season 01
+              Hoodies Passport / Season 01
             </p>
             <h1 className="mt-3 text-[clamp(2.8rem,7vw,6.5rem)] leading-[0.8] tracking-[-0.075em]">
               GROW THE
@@ -1536,7 +1536,7 @@ export default function CommunityPage() {
   <div className="flex flex-col gap-6 border-b-2 border-[var(--ink)] pb-6 md:flex-row md:items-end md:justify-between">
     <div>
       <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
-        Citizen Passport / Season 01
+        Hoddies Passport / Season 01
       </p>
 
       <h2 className="mt-4 text-5xl leading-none tracking-[-0.05em] md:text-7xl">
