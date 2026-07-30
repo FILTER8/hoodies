@@ -1532,240 +1532,447 @@ export default function CommunityPage() {
             )}
           </section>
         ) : view === "leaderboard" ? (
-          <section className="py-12 md:py-16">
-            <div className="flex flex-col gap-6 border-b-2 border-[var(--ink)] pb-6 md:flex-row md:items-end md:justify-between">
-              <div>
-                <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
-                  Citizen Passport / Season 01
-                </p>
-                <h2 className="mt-4 text-5xl leading-none tracking-[-0.05em] md:text-7xl">
-                  LEADERBOARD
-                </h2>
-                <p className="mt-5 max-w-2xl text-sm leading-relaxed opacity-70">
-                  Participation across the Hood. Rankings are live and may change as posts, support, and verified PFP streaks grow.
-                </p>
+    <section className="py-12 md:py-16">
+  <div className="flex flex-col gap-6 border-b-2 border-[var(--ink)] pb-6 md:flex-row md:items-end md:justify-between">
+    <div>
+      <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
+        Citizen Passport / Season 01
+      </p>
+
+      <h2 className="mt-4 text-5xl leading-none tracking-[-0.05em] md:text-7xl">
+        LEADERBOARD
+      </h2>
+
+      <p className="mt-5 max-w-2xl text-sm leading-relaxed opacity-70">
+        Participation across the Hood. Rankings are live and may change as
+        posts, support, and verified PFP streaks grow.
+      </p>
+    </div>
+
+    <div className="flex flex-wrap border-2 border-[var(--ink)]">
+      {(
+        [
+          ["overall", "Overall"],
+          ["posts", "Posts"],
+          ["support", "Support"],
+          ["pfp", "PFP"],
+        ] as const
+      ).map(([item, label]) => (
+        <button
+          key={item}
+          type="button"
+          onClick={() => setLeaderboardTab(item)}
+          className={`border-r-2 border-[var(--ink)] px-4 py-3 text-[9px] uppercase tracking-[0.14em] last:border-r-0 sm:px-5 ${
+            leaderboardTab === item
+              ? "bg-[var(--ink)] text-[var(--paper)]"
+              : ""
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  </div>
+
+  {leaderboardUpdatedAt ? (
+    <p className="mt-4 text-[8px] uppercase tracking-[0.13em] opacity-55">
+      Updated {formatDate(leaderboardUpdatedAt)}
+    </p>
+  ) : null}
+
+  {leaderboardLoading ? (
+    <p className="mt-10 text-[9px] uppercase tracking-[0.15em] opacity-60">
+      Loading Leaderboard...
+    </p>
+  ) : leaderboard.length ? (
+    <div className="mt-8 border-l-2 border-t-2 border-[var(--ink)]">
+      {leaderboardTab === "overall" ? (
+        <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(4,minmax(110px,0.65fr))] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
+          {[
+            "Rank",
+            "Citizen",
+            "Score",
+            "Posts",
+            "Support",
+            "PFP Streak",
+          ].map((label) => (
+            <div
+              key={label}
+              className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0"
+            >
+              {label}
+            </div>
+          ))}
+        </div>
+      ) : leaderboardTab === "posts" ? (
+        <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(5,minmax(100px,0.65fr))] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
+          {[
+            "Rank",
+            "Citizen",
+            "Posts",
+            "Likes",
+            "Replies",
+            "Reposts",
+            "Quotes",
+          ].map((label) => (
+            <div
+              key={label}
+              className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0"
+            >
+              {label}
+            </div>
+          ))}
+        </div>
+      ) : leaderboardTab === "support" ? (
+        <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(5,minmax(100px,0.65fr))] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
+          {[
+            "Rank",
+            "Citizen",
+            "Support",
+            "Likes",
+            "Replies",
+            "Reposts",
+            "Quotes",
+          ].map((label) => (
+            <div
+              key={label}
+              className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0"
+            >
+              {label}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_minmax(160px,0.75fr)] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
+          {["Rank", "Citizen", "PFP Streak"].map((label) => (
+            <div
+              key={label}
+              className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0"
+            >
+              {label}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {leaderboard.map((entry, index) => {
+        const support =
+          entry.supportLikes +
+          entry.supportReplies +
+          entry.supportReposts +
+          entry.supportQuotes;
+
+        const image =
+          entry.hoodieImageUrl ||
+          (entry.tokenId !== null
+            ? `https://api.onchainhoodies.xyz/images/${entry.tokenId}.svg`
+            : "");
+
+        const mobileMetricLabel =
+          leaderboardTab === "overall"
+            ? "Score"
+            : leaderboardTab === "posts"
+              ? "Posts"
+              : leaderboardTab === "support"
+                ? "Support"
+                : "Streak";
+
+        const mobileMetricValue =
+          leaderboardTab === "overall"
+            ? entry.score
+            : leaderboardTab === "posts"
+              ? entry.submittedPosts
+              : leaderboardTab === "support"
+                ? support
+                : `${entry.pfpStreakDays}D`;
+
+        const renderDesktopMetricCell = (
+          label: string,
+          value: number | string,
+        ) => (
+          <div
+            key={label}
+            className="border-r-2 border-[var(--ink)] p-4 last:border-r-0"
+          >
+            <p className="text-2xl leading-none">{value}</p>
+          </div>
+        );
+
+        return (
+          <article
+            key={`${entry.wallet}-${entry.rank}-${index}`}
+            className="border-b-2 border-r-2 border-[var(--ink)]"
+          >
+            {/* Mobile */}
+            <div className="grid grid-cols-[58px_minmax(0,1fr)_74px] items-stretch lg:hidden">
+              <div className="flex items-center justify-center border-r-2 border-[var(--ink)] px-2 py-4 text-lg">
+                #{String(entry.rank).padStart(2, "0")}
               </div>
 
-              <div className="flex flex-wrap border-2 border-[var(--ink)]">
-                {([
-                  ["overall", "Overall"],
-                  ["posts", "Posts"],
-                  ["support", "Support"],
-                  ["pfp", "PFP"],
-                ] as const).map(([item, label]) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setLeaderboardTab(item)}
-                    className={`border-r-2 border-[var(--ink)] px-4 py-3 text-[9px] uppercase tracking-[0.14em] last:border-r-0 sm:px-5 ${
-                      leaderboardTab === item
-                        ? "bg-[var(--ink)] text-[var(--paper)]"
-                        : ""
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className="flex min-w-0 items-center gap-3 border-r-2 border-[var(--ink)] p-3">
+                <div className="h-12 w-12 shrink-0 overflow-hidden border-2 border-[var(--ink)] bg-[var(--ink)]">
+                  {image ? (
+                    <img
+                      src={image}
+                      alt={
+                        entry.xUsername
+                          ? `@${entry.xUsername}`
+                          : shortWallet(entry.wallet)
+                      }
+                      className="h-full w-full object-contain [image-rendering:pixelated]"
+                    />
+                  ) : (
+                    <div className="grid h-full w-full place-items-center text-center text-[6px] uppercase leading-tight text-[var(--paper)]">
+                      No PFP
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <p className="truncate text-sm leading-none sm:text-base">
+                    {entry.xUsername
+                      ? `@${entry.xUsername}`
+                      : shortWallet(entry.wallet)}
+                  </p>
+
+                  <p className="mt-2 truncate text-[6px] uppercase tracking-[0.1em] opacity-55 sm:text-[7px]">
+                    {entry.level || "Citizen"}
+                    {entry.tokenId !== null
+                      ? ` / Hoodie #${entry.tokenId}`
+                      : ""}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col justify-center p-2 text-right">
+                <p className="text-[6px] uppercase tracking-[0.1em] opacity-55">
+                  {mobileMetricLabel}
+                </p>
+
+                <p className="mt-2 text-lg leading-none">
+                  {mobileMetricValue}
+                </p>
               </div>
             </div>
 
-            {leaderboardUpdatedAt ? (
-              <p className="mt-4 text-[8px] uppercase tracking-[0.13em] opacity-55">
-                Updated {formatDate(leaderboardUpdatedAt)}
-              </p>
-            ) : null}
+            {/* Desktop */}
+            {leaderboardTab === "overall" ? (
+              <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(4,minmax(110px,0.65fr))] lg:grid">
+                <div className="flex items-center justify-center border-r-2 border-[var(--ink)] p-4 text-3xl">
+                  #{String(entry.rank).padStart(2, "0")}
+                </div>
 
-            {leaderboardLoading ? (
-              <p className="mt-10 text-[9px] uppercase tracking-[0.15em] opacity-60">
-                Loading Leaderboard...
-              </p>
-            ) : leaderboard.length ? (
-              <div className="mt-8 border-l-2 border-t-2 border-[var(--ink)]">
-                {leaderboardTab === "overall" ? (
-                  <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(4,minmax(110px,0.65fr))] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
-                    {["Rank", "Citizen", "Score", "Posts", "Support", "PFP Streak"].map((label) => (
-                      <div
-                        key={label}
-                        className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0"
-                      >
-                        {label}
-                      </div>
-                    ))}
-                  </div>
-                ) : leaderboardTab === "posts" ? (
-                  <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(5,minmax(100px,0.65fr))] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
-                    {["Rank", "Citizen", "Posts", "Likes", "Replies", "Reposts", "Quotes"].map((label) => (
-                      <div
-                        key={label}
-                        className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0"
-                      >
-                        {label}
-                      </div>
-                    ))}
-                  </div>
-                ) : leaderboardTab === "support" ? (
-                  <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(5,minmax(100px,0.65fr))] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
-                    {["Rank", "Citizen", "Support", "Likes", "Replies", "Reposts", "Quotes"].map((label) => (
-                      <div
-                        key={label}
-                        className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0"
-                      >
-                        {label}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_minmax(160px,0.75fr)] border-b-2 border-r-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)] lg:grid">
-                    {["Rank", "Citizen", "PFP Streak"].map((label) => (
-                      <div
-                        key={label}
-                        className="border-r border-[var(--paper)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0"
-                      >
-                        {label}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {leaderboard.map((entry, index) => {
-                  const support =
-                    entry.supportLikes +
-                    entry.supportReplies +
-                    entry.supportReposts +
-                    entry.supportQuotes;
-
-                  const image =
-                    entry.hoodieImageUrl ||
-                    (entry.tokenId !== null
-                      ? `https://api.onchainhoodies.xyz/images/${entry.tokenId}.svg`
-                      : "");
-
-                  const citizenCell = (
-                    <div className="flex min-w-0 items-center gap-4 border-b-2 border-[var(--ink)] p-4 lg:border-b-0 lg:border-r-2">
-                      <div className="h-16 w-16 shrink-0 overflow-hidden border-2 border-[var(--ink)] bg-[var(--ink)]">
-                        {image ? (
-                          <img
-                            src={image}
-                            alt={
-                              entry.xUsername
-                                ? `@${entry.xUsername}`
-                                : shortWallet(entry.wallet)
-                            }
-                            className="h-full w-full object-contain [image-rendering:pixelated]"
-                          />
-                        ) : (
-                          <div className="grid h-full w-full place-items-center text-[8px] uppercase text-[var(--paper)]">
-                            No PFP
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="min-w-0">
-                        <p className="truncate text-xl leading-none">
-                          {entry.xUsername
+                <div className="flex min-w-0 items-center gap-4 border-r-2 border-[var(--ink)] p-4">
+                  <div className="h-16 w-16 shrink-0 overflow-hidden border-2 border-[var(--ink)] bg-[var(--ink)]">
+                    {image ? (
+                      <img
+                        src={image}
+                        alt={
+                          entry.xUsername
                             ? `@${entry.xUsername}`
-                            : shortWallet(entry.wallet)}
-                        </p>
-                        <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-55">
-                          {entry.level || "Citizen"}
-                          {entry.tokenId !== null
-                            ? ` / Hoodie #${entry.tokenId}`
-                            : ""}
-                        </p>
+                            : shortWallet(entry.wallet)
+                        }
+                        className="h-full w-full object-contain [image-rendering:pixelated]"
+                      />
+                    ) : (
+                      <div className="grid h-full w-full place-items-center text-[8px] uppercase text-[var(--paper)]">
+                        No PFP
                       </div>
-                    </div>
-                  );
+                    )}
+                  </div>
 
-                  const rankCell = (
-                    <div className="flex items-center justify-center border-b-2 border-[var(--ink)] p-4 text-3xl lg:border-b-0 lg:border-r-2">
-                      #{String(entry.rank).padStart(2, "0")}
-                    </div>
-                  );
+                  <div className="min-w-0">
+                    <p className="truncate text-xl leading-none">
+                      {entry.xUsername
+                        ? `@${entry.xUsername}`
+                        : shortWallet(entry.wallet)}
+                    </p>
 
-                  const renderMetricCell = (label: string, value: number | string) => (
-                    <div
-                      key={label}
-                      className="border-b-2 border-[var(--ink)] p-4 lg:border-b-0 lg:border-r-2 lg:last:border-r-0"
-                    >
-                      <p className="text-[8px] uppercase tracking-[0.13em] opacity-55 lg:hidden">
-                        {label}
-                      </p>
-                      <p className="mt-2 text-2xl leading-none lg:mt-0">{value}</p>
-                    </div>
-                  );
+                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-55">
+                      {entry.level || "Citizen"}
+                      {entry.tokenId !== null
+                        ? ` / Hoodie #${entry.tokenId}`
+                        : ""}
+                    </p>
+                  </div>
+                </div>
 
-                  return (
-                    <article
-                      key={`${entry.wallet}-${entry.rank}-${index}`}
-                      className="border-b-2 border-r-2 border-[var(--ink)]"
-                    >
-                      {leaderboardTab === "overall" ? (
-                        <div className="grid gap-0 lg:grid-cols-[72px_minmax(260px,1.5fr)_repeat(4,minmax(110px,0.65fr))]">
-                          {rankCell}
-                          {citizenCell}
-                          {[
-                            ["Score", entry.score],
-                            ["Posts", entry.submittedPosts],
-                            ["Support", support],
-                            ["PFP Streak", `${entry.pfpStreakDays}D`],
-                          ].map(([label, value]) =>
-                            renderMetricCell(String(label), value),
-                          )}
-                        </div>
-                      ) : leaderboardTab === "posts" ? (
-                        <div className="grid gap-0 lg:grid-cols-[72px_minmax(260px,1.5fr)_repeat(5,minmax(100px,0.65fr))]">
-                          {rankCell}
-                          {citizenCell}
-                          {[
-                            ["Posts", entry.submittedPosts],
-                            ["Likes", entry.likesReceived],
-                            ["Replies", entry.repliesReceived],
-                            ["Reposts", entry.repostsReceived],
-                            ["Quotes", entry.quotesReceived],
-                          ].map(([label, value]) =>
-                            renderMetricCell(String(label), value),
-                          )}
-                        </div>
-                      ) : leaderboardTab === "support" ? (
-                        <div className="grid gap-0 lg:grid-cols-[72px_minmax(260px,1.5fr)_repeat(5,minmax(100px,0.65fr))]">
-                          {rankCell}
-                          {citizenCell}
-                          {[
-                            ["Support", support],
-                            ["Likes", entry.supportLikes],
-                            ["Replies", entry.supportReplies],
-                            ["Reposts", entry.supportReposts],
-                            ["Quotes", entry.supportQuotes],
-                          ].map(([label, value]) =>
-                            renderMetricCell(String(label), value),
-                          )}
-                        </div>
-                      ) : (
-                        <div className="grid gap-0 lg:grid-cols-[72px_minmax(260px,1.5fr)_minmax(160px,0.75fr)]">
-                          {rankCell}
-                          {citizenCell}
-                          {renderMetricCell(
-                            "PFP Streak",
-                            `${entry.pfpStreakDays}D`,
-                          )}
-                        </div>
-                      )}
-                    </article>
-                  );
-                })}
+                {[
+                  ["Score", entry.score],
+                  ["Posts", entry.submittedPosts],
+                  ["Support", support],
+                  ["PFP Streak", `${entry.pfpStreakDays}D`],
+                ].map(([label, value]) =>
+                  renderDesktopMetricCell(String(label), value),
+                )}
+              </div>
+            ) : leaderboardTab === "posts" ? (
+              <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(5,minmax(100px,0.65fr))] lg:grid">
+                <div className="flex items-center justify-center border-r-2 border-[var(--ink)] p-4 text-3xl">
+                  #{String(entry.rank).padStart(2, "0")}
+                </div>
+
+                <div className="flex min-w-0 items-center gap-4 border-r-2 border-[var(--ink)] p-4">
+                  <div className="h-16 w-16 shrink-0 overflow-hidden border-2 border-[var(--ink)] bg-[var(--ink)]">
+                    {image ? (
+                      <img
+                        src={image}
+                        alt={
+                          entry.xUsername
+                            ? `@${entry.xUsername}`
+                            : shortWallet(entry.wallet)
+                        }
+                        className="h-full w-full object-contain [image-rendering:pixelated]"
+                      />
+                    ) : (
+                      <div className="grid h-full w-full place-items-center text-[8px] uppercase text-[var(--paper)]">
+                        No PFP
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="truncate text-xl leading-none">
+                      {entry.xUsername
+                        ? `@${entry.xUsername}`
+                        : shortWallet(entry.wallet)}
+                    </p>
+
+                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-55">
+                      {entry.level || "Citizen"}
+                      {entry.tokenId !== null
+                        ? ` / Hoodie #${entry.tokenId}`
+                        : ""}
+                    </p>
+                  </div>
+                </div>
+
+                {[
+                  ["Posts", entry.submittedPosts],
+                  ["Likes", entry.likesReceived],
+                  ["Replies", entry.repliesReceived],
+                  ["Reposts", entry.repostsReceived],
+                  ["Quotes", entry.quotesReceived],
+                ].map(([label, value]) =>
+                  renderDesktopMetricCell(String(label), value),
+                )}
+              </div>
+            ) : leaderboardTab === "support" ? (
+              <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_repeat(5,minmax(100px,0.65fr))] lg:grid">
+                <div className="flex items-center justify-center border-r-2 border-[var(--ink)] p-4 text-3xl">
+                  #{String(entry.rank).padStart(2, "0")}
+                </div>
+
+                <div className="flex min-w-0 items-center gap-4 border-r-2 border-[var(--ink)] p-4">
+                  <div className="h-16 w-16 shrink-0 overflow-hidden border-2 border-[var(--ink)] bg-[var(--ink)]">
+                    {image ? (
+                      <img
+                        src={image}
+                        alt={
+                          entry.xUsername
+                            ? `@${entry.xUsername}`
+                            : shortWallet(entry.wallet)
+                        }
+                        className="h-full w-full object-contain [image-rendering:pixelated]"
+                      />
+                    ) : (
+                      <div className="grid h-full w-full place-items-center text-[8px] uppercase text-[var(--paper)]">
+                        No PFP
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="truncate text-xl leading-none">
+                      {entry.xUsername
+                        ? `@${entry.xUsername}`
+                        : shortWallet(entry.wallet)}
+                    </p>
+
+                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-55">
+                      {entry.level || "Citizen"}
+                      {entry.tokenId !== null
+                        ? ` / Hoodie #${entry.tokenId}`
+                        : ""}
+                    </p>
+                  </div>
+                </div>
+
+                {[
+                  ["Support", support],
+                  ["Likes", entry.supportLikes],
+                  ["Replies", entry.supportReplies],
+                  ["Reposts", entry.supportReposts],
+                  ["Quotes", entry.supportQuotes],
+                ].map(([label, value]) =>
+                  renderDesktopMetricCell(String(label), value),
+                )}
               </div>
             ) : (
-              <div className="mt-10 border-2 border-[var(--ink)] p-10 text-center">
-                <p className="text-sm uppercase tracking-[0.14em] opacity-60">
-                  No leaderboard data yet
-                </p>
+              <div className="hidden grid-cols-[72px_minmax(260px,1.5fr)_minmax(160px,0.75fr)] lg:grid">
+                <div className="flex items-center justify-center border-r-2 border-[var(--ink)] p-4 text-3xl">
+                  #{String(entry.rank).padStart(2, "0")}
+                </div>
+
+                <div className="flex min-w-0 items-center gap-4 border-r-2 border-[var(--ink)] p-4">
+                  <div className="h-16 w-16 shrink-0 overflow-hidden border-2 border-[var(--ink)] bg-[var(--ink)]">
+                    {image ? (
+                      <img
+                        src={image}
+                        alt={
+                          entry.xUsername
+                            ? `@${entry.xUsername}`
+                            : shortWallet(entry.wallet)
+                        }
+                        className="h-full w-full object-contain [image-rendering:pixelated]"
+                      />
+                    ) : (
+                      <div className="grid h-full w-full place-items-center text-[8px] uppercase text-[var(--paper)]">
+                        No PFP
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="truncate text-xl leading-none">
+                      {entry.xUsername
+                        ? `@${entry.xUsername}`
+                        : shortWallet(entry.wallet)}
+                    </p>
+
+                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-55">
+                      {entry.level || "Citizen"}
+                      {entry.tokenId !== null
+                        ? ` / Hoodie #${entry.tokenId}`
+                        : ""}
+                    </p>
+                  </div>
+                </div>
+
+                {renderDesktopMetricCell(
+                  "PFP Streak",
+                  `${entry.pfpStreakDays}D`,
+                )}
               </div>
             )}
+          </article>
+        );
+      })}
+    </div>
+  ) : (
+    <div className="mt-10 border-2 border-[var(--ink)] p-10 text-center">
+      <p className="text-sm uppercase tracking-[0.14em] opacity-60">
+        No leaderboard data yet
+      </p>
+    </div>
+  )}
 
-            <p className="mt-6 max-w-3xl text-[8px] uppercase leading-relaxed tracking-[0.12em] opacity-55">
-              Season 01 rankings show community participation. Final $OCH rewards are calculated separately and may include review, eligibility, and anti-spam checks.
-            </p>
-          </section>
+  <p className="mt-6 max-w-3xl text-[8px] uppercase leading-relaxed tracking-[0.12em] opacity-55">
+    Season 01 rankings show community participation. Final $OCH rewards are
+    calculated separately and may include review, eligibility, and anti-spam
+    checks.
+  </p>
+</section>
         ) : (
           <section className="py-12 md:py-16">
             <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
