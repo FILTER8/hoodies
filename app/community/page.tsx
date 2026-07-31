@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
 import { useWallet } from "../../components/WalletProvider";
+import { useSignMessage } from "wagmi";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_PASSPORT_API_URL ||
@@ -20,9 +21,6 @@ const ADMIN_WALLET = (
 const POSTS_PAGE_SIZE = 10;
 const FEED_PAGE_SIZE = 6;
 
-type EthereumProvider = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-};
 
 type XAccount = {
   id?: string;
@@ -466,6 +464,7 @@ function PostCard({
 
 export default function CommunityPage() {
   const { address, connect } = useWallet();
+  const { signMessageAsync } = useSignMessage();
   const [view, setView] = useState<CommunityView>("feed");
   const [passportTab, setPassportTab] = useState<PassportTab>("submit");
   const [myPostsTab, setMyPostsTab] = useState<MyPostsTab>("active");
@@ -815,50 +814,42 @@ export default function CommunityPage() {
   }, [submissionRetryAt, loadAccount]);
 
   async function createPassportSession() {
-    if (!address) {
-      await connect();
-      return;
-    }
-
-    const ethereum = (window as unknown as { ethereum?: EthereumProvider }).ethereum;
-
-    if (!ethereum) {
-      setError("No browser wallet was found.");
-      return;
-    }
-
-    setAction("Signing Passport...");
-    setError("");
-    setMessage("");
-
-    try {
-      const nonce = await apiFetch<{ message: string }>("/v1/auth/nonce", {
-        method: "POST",
-        body: JSON.stringify({ wallet: address }),
-      });
-
-      const signature = (await ethereum.request({
-        method: "personal_sign",
-        params: [nonce.message, address],
-      })) as string;
-
-      await apiFetch("/v1/auth/wallet", {
-        method: "POST",
-        body: JSON.stringify({ wallet: address, signature }),
-      });
-
-      await Promise.all([loadAccount(), loadPosts("active"), loadPfp()]);
-      setMessage("Passport verified. Welcome to the Hood.");
-    } catch (sessionError) {
-      setError(
-        sessionError instanceof Error
-          ? sessionError.message
-          : "Passport verification failed.",
-      );
-    } finally {
-      setAction("");
-    }
+  if (!address) {
+    await connect();
+    return;
   }
+
+  setAction("Signing Passport...");
+  setError("");
+  setMessage("");
+
+  try {
+    const nonce = await apiFetch<{ message: string }>("/v1/auth/nonce", {
+      method: "POST",
+      body: JSON.stringify({ wallet: address }),
+    });
+
+    const signature = await signMessageAsync({
+      message: nonce.message,
+    });
+
+    await apiFetch("/v1/auth/wallet", {
+      method: "POST",
+      body: JSON.stringify({ wallet: address, signature }),
+    });
+
+    await Promise.all([loadAccount(), loadPosts("active"), loadPfp()]);
+    setMessage("Passport verified. Welcome to the Hood.");
+  } catch (sessionError) {
+    setError(
+      sessionError instanceof Error
+        ? sessionError.message
+        : "Passport verification failed.",
+    );
+  } finally {
+    setAction("");
+  }
+}
 
   async function connectX() {
     setAction("Opening X...");
