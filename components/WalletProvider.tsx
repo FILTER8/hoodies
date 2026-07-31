@@ -7,11 +7,13 @@ import {
   useContext,
   useMemo,
 } from "react";
+import type { WalletClient } from "viem";
 import {
   useAccount,
   useChainId,
   useDisconnect,
   useSwitchChain,
+  useWalletClient,
 } from "wagmi";
 import { siteConfig } from "../lib/config";
 
@@ -28,6 +30,7 @@ type WalletContextValue = {
   connect: () => Promise<void>;
   disconnect: () => void;
   ensureRequiredNetwork: () => Promise<void>;
+  getWalletClient: () => Promise<WalletClient>;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -57,6 +60,10 @@ export function WalletProvider({
   const { openConnectModal } = useConnectModal();
 
   const {
+    refetch: refetchWalletClient,
+  } = useWalletClient();
+
+  const {
     switchChainAsync,
     isPending: switchingNetwork,
     error: switchError,
@@ -73,7 +80,7 @@ export function WalletProvider({
   const ensureRequiredNetwork = useCallback(async () => {
     if (!isConnected) {
       openConnectModal?.();
-      return;
+      throw new Error("Connect your wallet first.");
     }
 
     if (chainId === siteConfig.chainId) {
@@ -96,6 +103,25 @@ export function WalletProvider({
     switchChainAsync,
   ]);
 
+  const getWalletClient = useCallback(async (): Promise<WalletClient> => {
+    if (!isConnected) {
+      openConnectModal?.();
+      throw new Error("Connect your wallet first.");
+    }
+
+    const result = await refetchWalletClient();
+
+    if (!result.data) {
+      throw new Error("No connected wallet client was found.");
+    }
+
+    return result.data;
+  }, [
+    isConnected,
+    openConnectModal,
+    refetchWalletClient,
+  ]);
+
   const value = useMemo<WalletContextValue>(
     () => ({
       address: address ?? null,
@@ -111,6 +137,7 @@ export function WalletProvider({
       connect,
       disconnect,
       ensureRequiredNetwork,
+      getWalletClient,
     }),
     [
       address,
@@ -118,6 +145,7 @@ export function WalletProvider({
       connect,
       disconnect,
       ensureRequiredNetwork,
+      getWalletClient,
       isConnected,
       isConnecting,
       isReconnecting,

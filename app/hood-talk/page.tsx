@@ -18,17 +18,14 @@ import { siteConfig } from "../../lib/config";
 import { apiConfig, collectionApiUrl } from "../../lib/api";
 import {
   HOOD_TALK_REGISTRY_ABI,
-  ROBINHOOD_TESTNET_CHAIN_HEX,
   ROBINHOOD_TESTNET_EXPLORER_URL,
-  ROBINHOOD_TESTNET_RPC_URL,
 } from "../../lib/hoodTalkRegistry";
 
 const BRAND_URL = "ONCHAINHOODIES.XYZ";
 
-const ROBINHOOD_MAINNET_CHAIN_HEX = "0x1237";
-const ROBINHOOD_MAINNET_RPC_URL = "https://rpc.mainnet.chain.robinhood.com";
 const ROBINHOOD_MAINNET_EXPLORER_URL =
   "https://robinhoodchain.blockscout.com";
+
 
 
 
@@ -333,7 +330,7 @@ function HoodieArtwork({
 }
 
 export default function HoodTalkPage() {
-  const { address, connect } = useWallet();
+  const { address,connect,ensureRequiredNetwork, getWalletClient } = useWallet();
   const [ownedHoodies, setOwnedHoodies] = useState<OwnedHoodie[]>([]);
   const [selectedTokenId, setSelectedTokenId] = useState("");
   const [token, setToken] = useState<TokenApiResponse | null>(null);
@@ -354,18 +351,9 @@ export default function HoodTalkPage() {
   const talkHistoryRef = useRef<Record<string, TalkHistory>>({});
   const generationRef = useRef(0);
 
-  const activeChainHex = apiConfig.isMainnet
-    ? ROBINHOOD_MAINNET_CHAIN_HEX
-    : ROBINHOOD_TESTNET_CHAIN_HEX;
-  const activeRpcUrl = apiConfig.isMainnet
-    ? ROBINHOOD_MAINNET_RPC_URL
-    : ROBINHOOD_TESTNET_RPC_URL;
-  const activeExplorerUrl = apiConfig.isMainnet
-    ? ROBINHOOD_MAINNET_EXPLORER_URL
-    : ROBINHOOD_TESTNET_EXPLORER_URL;
-  const activeChainName = apiConfig.isMainnet
-    ? "Robinhood Chain"
-    : "Robinhood Chain Testnet";
+const activeExplorerUrl = apiConfig.isMainnet
+  ? ROBINHOOD_MAINNET_EXPLORER_URL
+  : ROBINHOOD_TESTNET_EXPLORER_URL;
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -597,91 +585,83 @@ export default function HoodTalkPage() {
     };
   }, [isHolder, loadRegistry, selectedTokenId]);
 
-  const commitHoodTalk = useCallback(async () => {
-    if (!token || !quote || !authorization || committing) return;
-    if (!window.ethereum) {
-      setError("No browser wallet was found.");
-      return;
+ const commitHoodTalk = useCallback(async () => {
+  if (!token || !quote || !authorization || committing) return;
+
+  setCommitting(true);
+  setError(null);
+
+  try {
+    await ensureRequiredNetwork();
+
+    const walletClient = await getWalletClient();
+
+    const registryAddress = apiConfig.isMainnet
+      ? process.env.NEXT_PUBLIC_HOOD_TALK_REGISTRY_MAINNET_ADDRESS
+      : process.env.NEXT_PUBLIC_HOOD_TALK_REGISTRY_TESTNET_ADDRESS;
+
+    if (!registryAddress) {
+      throw new Error(
+        apiConfig.isMainnet
+          ? "NEXT_PUBLIC_HOOD_TALK_REGISTRY_MAINNET_ADDRESS is not configured."
+          : "NEXT_PUBLIC_HOOD_TALK_REGISTRY_TESTNET_ADDRESS is not configured.",
+      );
     }
 
-    setCommitting(true);
-    setError(null);
+    const provider = new BrowserProvider(
+      walletClient.transport as ConstructorParameters<
+        typeof BrowserProvider
+      >[0],
+    );
 
-    try {
-      try {
-        await window.ethereum.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: activeChainHex }],
-        });
-      } catch (switchError) {
-        const code = (switchError as { code?: number }).code;
-        if (code !== 4902) throw switchError;
+    const signer = await provider.getSigner();
+    const signerAddress = await signer.getAddress();
 
-        await window.ethereum.request({
-          method: "wallet_addEthereumChain",
-          params: [
-            {
-              chainId: activeChainHex,
-              chainName: activeChainName,
-              nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-              rpcUrls: [activeRpcUrl],
-              blockExplorerUrls: [activeExplorerUrl],
-            },
-          ],
-        });
-      }
-
-      const registryAddress = apiConfig.isMainnet
-        ? process.env.NEXT_PUBLIC_HOOD_TALK_REGISTRY_MAINNET_ADDRESS
-        : process.env.NEXT_PUBLIC_HOOD_TALK_REGISTRY_TESTNET_ADDRESS;
-
-      if (!registryAddress) {
-        throw new Error(
-          apiConfig.isMainnet
-            ? "NEXT_PUBLIC_HOOD_TALK_REGISTRY_MAINNET_ADDRESS is not configured."
-            : "NEXT_PUBLIC_HOOD_TALK_REGISTRY_TESTNET_ADDRESS is not configured.",
-        );
-      }
-
-      const provider = new BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const signerAddress = await signer.getAddress();
-      if (!address || signerAddress.toLowerCase() !== address.toLowerCase()) {
-        throw new Error("The active wallet does not match the connected holder wallet.");
-      }
-
-      const registry = new Contract(registryAddress, HOOD_TALK_REGISTRY_ABI, signer);
-      const transaction = await registry.setHoodTalk(
-        BigInt(token.token.id),
-        quote,
-        BigInt(authorization.deadline),
-        authorization.signature,
+    if (
+      !address ||
+      signerAddress.toLowerCase() !== address.toLowerCase()
+    ) {
+      throw new Error(
+        "The active wallet does not match the connected holder wallet.",
       );
-
-      await transaction.wait();
-      await loadRegistry(token.token.id);
-      setTransactionHash(transaction.hash);
-    } catch (commitError) {
-      setError(
-        commitError instanceof Error
-          ? commitError.message
-          : "Unable to set this Hood Talk on-chain.",
-      );
-    } finally {
-      setCommitting(false);
     }
-  }, [
-    activeChainHex,
-    activeChainName,
-    activeExplorerUrl,
-    activeRpcUrl,
-    address,
-    authorization,
-    committing,
-    loadRegistry,
-    quote,
-    token,
-  ]);
+
+    const registry = new Contract(
+      registryAddress,
+      HOOD_TALK_REGISTRY_ABI,
+      signer,
+    );
+
+    const transaction = await registry.setHoodTalk(
+      BigInt(token.token.id),
+      quote,
+      BigInt(authorization.deadline),
+      authorization.signature,
+    );
+
+    await transaction.wait();
+    await loadRegistry(token.token.id);
+
+    setTransactionHash(transaction.hash);
+  } catch (commitError) {
+    setError(
+      commitError instanceof Error
+        ? commitError.message
+        : "Unable to set this Hood Talk on-chain.",
+    );
+  } finally {
+    setCommitting(false);
+  }
+}, [
+  address,
+  authorization,
+  committing,
+  ensureRequiredNetwork,
+  getWalletClient,
+  loadRegistry,
+  quote,
+  token,
+]);
 
 const exportCard = useCallback(async () => {
   if (!token || !quote || exporting) return;
