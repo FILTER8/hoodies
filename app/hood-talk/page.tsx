@@ -102,62 +102,6 @@ type TalkHistory = {
   angles: string[];
 };
 
-type HoodTalkView = "talk" | "feed" | "leaderboard";
-
-type IndexedTalk = {
-  sequence: number;
-  tokenId: number;
-  count: number;
-  quote: string;
-  author: string;
-  updatedAt: number;
-  transactionHash: string;
-  blockNumber: number;
-  logIndex: number;
-  image: string;
-  token: string;
-};
-
-type HoodTalkStats = {
-  updatedAt?: string | null;
-  totalTalks: number;
-  uniqueHoodiesSpoken: number;
-  indexedTalks: number;
-};
-
-type FeedResponse = {
-  updatedAt: string | null;
-  total: number;
-  limit: number;
-  nextBefore: number | null;
-  talks: IndexedTalk[];
-};
-
-type LeaderboardEntry = {
-  rank: number;
-  tokenId: number;
-  count: number;
-  latestQuote: string;
-  lastSpokenAt: number;
-  transactionHash: string;
-  image: string;
-  token: string;
-};
-
-type LeaderboardResponse = {
-  updatedAt: string | null;
-  total: number;
-  limit: number;
-  entries: LeaderboardEntry[];
-};
-
-type TokenHistoryResponse = {
-  schemaVersion?: string;
-  tokenId: number;
-  total: number;
-  talks: IndexedTalk[];
-};
-
 function tokenArtworkFallback(tokenId: string | number) {
   if (apiConfig.isMainnet) {
     return collectionApiUrl(
@@ -185,41 +129,6 @@ function absoluteApiUrl(value: string | undefined, fallback: string) {
   }
 
   return value.startsWith("/") ? value : fallback;
-}
-
-function publicApiUrl(path: string) {
-  return collectionApiUrl(path);
-}
-
-function openSeaTokenUrl(tokenId: string | number) {
-  return `https://opensea.io/assets/robinhood/${siteConfig.collectionAddress}/${tokenId}`;
-}
-
-function formatTalkDate(timestamp: number) {
-  if (!timestamp) return "—";
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(timestamp * 1000));
-}
-
-function formatRelativeTime(timestamp: number, now: number) {
-  if (!timestamp) return "—";
-  const difference = Math.max(0, now - timestamp);
-  if (difference < 60) return "JUST NOW";
-  if (difference < 3600) return `${Math.floor(difference / 60)}M AGO`;
-  if (difference < 86400) return `${Math.floor(difference / 3600)}H AGO`;
-  return `${Math.floor(difference / 86400)}D AGO`;
-}
-
-function formatStat(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    notation: value >= 10000 ? "compact" : "standard",
-    maximumFractionDigits: 1,
-  }).format(value);
 }
 
 function formatCountdown(totalSeconds: number) {
@@ -420,75 +329,6 @@ function HoodieArtwork({
   );
 }
 
-
-type HistoryListProps = {
-  history: TokenHistoryResponse | null;
-  loading: boolean;
-  explorerUrl: string;
-  compact?: boolean;
-};
-
-function HistoryList({
-  history,
-  loading,
-  explorerUrl,
-  compact = false,
-}: HistoryListProps) {
-  return (
-    <div className="border-l border-t border-[var(--hood-fg)]">
-      {loading ? (
-        <div className="border-b border-r border-[var(--hood-fg)] p-6 text-[9px] uppercase tracking-[0.16em] opacity-60">
-          Reading permanent history
-        </div>
-      ) : history?.talks?.length ? (
-        [...history.talks].reverse().map((talk) => (
-          <article
-            key={`${talk.transactionHash}-${talk.logIndex}`}
-            className={`grid border-b border-r border-[var(--hood-fg)] ${
-              compact
-                ? "grid-cols-[58px_minmax(0,1fr)]"
-                : "md:grid-cols-[80px_minmax(0,1fr)_190px]"
-            }`}
-          >
-            <div className="border-r border-[var(--hood-fg)] p-4 text-lg">
-              #{String(talk.count).padStart(2, "0")}
-            </div>
-
-            <div className="min-w-0 p-4">
-              <p className="text-sm uppercase leading-relaxed tracking-[0.06em]">
-                “{talk.quote.replace(/^[“\"]|[”\"]$/g, "")}”
-              </p>
-              <p className="mt-3 text-[7px] uppercase tracking-[0.12em] opacity-55 md:hidden">
-                {formatTalkDate(talk.updatedAt)}
-              </p>
-            </div>
-
-            {!compact ? (
-              <div className="hidden border-l border-[var(--hood-fg)] p-4 md:block">
-                <p className="text-[8px] uppercase tracking-[0.12em] opacity-60">
-                  {formatTalkDate(talk.updatedAt)}
-                </p>
-                <a
-                  href={`${explorerUrl}/tx/${talk.transactionHash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-3 inline-block text-[8px] uppercase tracking-[0.12em] underline underline-offset-4"
-                >
-                  Transaction ↗
-                </a>
-              </div>
-            ) : null}
-          </article>
-        ))
-      ) : (
-        <div className="border-b border-r border-[var(--hood-fg)] p-6 text-[9px] uppercase tracking-[0.16em] opacity-60">
-          No indexed Hood Talks yet
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function HoodTalkPage() {
   const { address,connect,ensureRequiredNetwork, getWalletClient } = useWallet();
   const [ownedHoodies, setOwnedHoodies] = useState<OwnedHoodie[]>([]);
@@ -508,19 +348,6 @@ export default function HoodTalkPage() {
   const [pickerOpen, setPickerOpen] = useState(true);
   const [darkHood, setDarkHood] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<HoodTalkView>("talk");
-  const [stats, setStats] = useState<HoodTalkStats | null>(null);
-  const [feed, setFeed] = useState<IndexedTalk[]>([]);
-  const [feedNextBefore, setFeedNextBefore] = useState<number | null>(null);
-  const [feedLoading, setFeedLoading] = useState(false);
-  const [feedLoadingMore, setFeedLoadingMore] = useState(false);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
-  const [selectedHistory, setSelectedHistory] = useState<TokenHistoryResponse | null>(null);
-  const [selectedHistoryLoading, setSelectedHistoryLoading] = useState(false);
-  const [detailTokenId, setDetailTokenId] = useState<number | null>(null);
-  const [detailHistory, setDetailHistory] = useState<TokenHistoryResponse | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
   const talkHistoryRef = useRef<Record<string, TalkHistory>>({});
   const generationRef = useRef(0);
 
@@ -758,133 +585,7 @@ const activeExplorerUrl = apiConfig.isMainnet
     };
   }, [isHolder, loadRegistry, selectedTokenId]);
 
-
-  const loadStats = useCallback(async () => {
-    try {
-      const response = await fetch(publicApiUrl("/v1/hood-talks/stats"), {
-        cache: "no-store",
-      });
-      const data = (await response.json()) as HoodTalkStats & { error?: string };
-      if (!response.ok) throw new Error(data.error || "Unable to load Hood Talk stats.");
-      setStats(data);
-    } catch {
-      setStats(null);
-    }
-  }, []);
-
-  const loadFeed = useCallback(async (before?: number, append = false) => {
-    if (append) {
-      setFeedLoadingMore(true);
-    } else {
-      setFeedLoading(true);
-    }
-    try {
-      const parameters = new URLSearchParams({ limit: "20" });
-      if (before) parameters.set("before", String(before));
-      const response = await fetch(
-        publicApiUrl(`/v1/hood-talks?${parameters.toString()}`),
-        { cache: "no-store" },
-      );
-      const data = (await response.json()) as FeedResponse & { error?: string };
-      if (!response.ok) throw new Error(data.error || "Unable to load the live feed.");
-      setFeed((current) => append ? [...current, ...(data.talks || [])] : data.talks || []);
-      setFeedNextBefore(data.nextBefore ?? null);
-    } catch (feedError) {
-      if (!append) setFeed([]);
-      setError(feedError instanceof Error ? feedError.message : "Unable to load the live feed.");
-    } finally {
-      setFeedLoading(false);
-      setFeedLoadingMore(false);
-    }
-  }, []);
-
-  const loadLeaderboard = useCallback(async () => {
-    setLeaderboardLoading(true);
-    try {
-      const response = await fetch(
-        publicApiUrl("/v1/hood-talks/leaderboard?limit=100"),
-        { cache: "no-store" },
-      );
-      const data = (await response.json()) as LeaderboardResponse & { error?: string };
-      if (!response.ok) throw new Error(data.error || "Unable to load the leaderboard.");
-      setLeaderboard(data.entries || []);
-    } catch (leaderboardError) {
-      setLeaderboard([]);
-      setError(leaderboardError instanceof Error ? leaderboardError.message : "Unable to load the leaderboard.");
-    } finally {
-      setLeaderboardLoading(false);
-    }
-  }, []);
-
-  const fetchHistory = useCallback(async (tokenId: string | number) => {
-    const response = await fetch(
-      publicApiUrl(`/v1/token/${encodeURIComponent(String(tokenId))}/hood-talk/history`),
-      { cache: "no-store" },
-    );
-    const data = (await response.json()) as TokenHistoryResponse & { error?: string };
-    if (!response.ok) throw new Error(data.error || `Unable to load Hoodie #${tokenId} history.`);
-    return data;
-  }, []);
-
-  const openHistory = useCallback(async (tokenId: number) => {
-    setDetailTokenId(tokenId);
-    setDetailHistory(null);
-    setDetailLoading(true);
-    setError(null);
-    try {
-      setDetailHistory(await fetchHistory(tokenId));
-    } catch (historyError) {
-      setError(historyError instanceof Error ? historyError.message : "Unable to load Hoodie history.");
-    } finally {
-      setDetailLoading(false);
-    }
-  }, [fetchHistory]);
-
-  useEffect(() => {
-    queueMicrotask(() => {
-      void loadStats();
-      void loadFeed();
-      void loadLeaderboard();
-    });
-  }, [loadFeed, loadLeaderboard, loadStats]);
-
-  useEffect(() => {
-    if (view !== "leaderboard") return;
-    queueMicrotask(() => void loadLeaderboard());
-  }, [loadLeaderboard, view]);
-
-  useEffect(() => {
-    let active = true;
-
-    queueMicrotask(() => {
-      if (!active) return;
-
-      if (!selectedTokenId) {
-        setSelectedHistory(null);
-        setSelectedHistoryLoading(false);
-        return;
-      }
-
-      setSelectedHistoryLoading(true);
-
-      void fetchHistory(selectedTokenId)
-        .then((history) => {
-          if (active) setSelectedHistory(history);
-        })
-        .catch(() => {
-          if (active) setSelectedHistory(null);
-        })
-        .finally(() => {
-          if (active) setSelectedHistoryLoading(false);
-        });
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [fetchHistory, selectedTokenId]);
-
-  const commitHoodTalk = useCallback(async () => {
+ const commitHoodTalk = useCallback(async () => {
   if (!token || !quote || !authorization || committing) return;
 
   setCommitting(true);
@@ -1128,11 +829,6 @@ const exportCard = useCallback(async () => {
   const cooldownActive = cooldownSeconds > 0;
   const isPreview = Boolean(authorization);
 
-  const mostActive = leaderboard[0] || null;
-  const latestTalk = feed[0] || null;
-
-
-
   return (
     <main
       className="min-h-screen bg-[var(--hood-bg)] text-[var(--hood-fg)]"
@@ -1147,170 +843,297 @@ const exportCard = useCallback(async () => {
 
       <section className="mx-auto max-w-[1700px] px-4 pb-16 pt-20 md:px-6 md:pt-24">
         <div className="section-heading-row border-[var(--hood-fg)]">
-          <p>Build 04 / Permanent voices</p>
+          <p>Build 04 / Holder access</p>
+
           <div className="flex items-center gap-4">
-            <button type="button" onClick={() => setDarkHood((current) => !current)} className="uppercase">
+            <button
+              type="button"
+              onClick={() => setDarkHood((current) => !current)}
+              className="uppercase"
+            >
               {darkHood ? "Lights on" : "Lights off"}
             </button>
+
             <Link href="/">Back to the Hood</Link>
           </div>
         </div>
 
-        <div className="mt-6 flex flex-col gap-6 border-b-2 border-[var(--hood-fg)] pb-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">Every Hoodie has a permanent voice</p>
-            <h1 className="mt-4 text-[clamp(3.5rem,9vw,8rem)] leading-[0.8] tracking-[-0.075em]">
-              HOOD<br />TALK.
-            </h1>
-          </div>
-          <div className="flex flex-wrap border-2 border-[var(--hood-fg)]">
-            {([[
-              "talk", "Hood Talk"
-            ], ["feed", "Live Feed"], ["leaderboard", "Leaderboard"]] as const).map(([item, label]) => (
+        {!address ? (
+          <div className="grid min-h-[72vh] place-items-center border border-[var(--hood-fg)] p-6 text-center">
+            <div className="max-w-2xl">
+              <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
+                Visual personality
+              </p>
+              <h1 className="mt-6 text-6xl leading-[0.86] tracking-[-0.07em] md:text-8xl">
+                LET YOUR
+                <br />
+                HOODIE TALK.
+              </h1>
+              <p className="mx-auto mt-6 max-w-md text-sm leading-relaxed opacity-70 md:text-base">
+                Connect the wallet holding your OnChainHoodies.
+              </p>
               <button
-                key={item}
                 type="button"
-                onClick={() => setView(item)}
-                className={`border-r-2 border-[var(--hood-fg)] px-4 py-3 text-[9px] uppercase tracking-[0.14em] last:border-r-0 sm:px-6 ${view === item ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}
+                onClick={connect}
+                className="pixel-cta mt-8"
               >
-                {label}
+                Connect wallet
               </button>
-            ))}
+            </div>
           </div>
-        </div>
+        ) : ownershipLoading ? (
+          <div className="grid min-h-[72vh] place-items-center border border-[var(--hood-fg)] text-[10px] uppercase tracking-[0.18em]">
+            Reading your Hoodies
+          </div>
+        ) : ownershipChecked && !isHolder ? (
+          <div className="grid min-h-[72vh] place-items-center border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-6 text-center text-[var(--hood-bg)]">
+            <div className="max-w-xl">
+              <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
+                Holder access
+              </p>
+              <h1 className="mt-6 text-6xl leading-[0.86] tracking-[-0.07em] md:text-8xl">
+                NOT IN
+                <br />
+                THE HOOD.
+              </h1>
+              <a
+                href={siteConfig.openSeaUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="pixel-cta mt-8 inline-block border-[var(--hood-bg)]"
+              >
+                Get a Hoodie
+              </a>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
+            <aside className="min-w-0 xl:sticky xl:top-20 xl:self-start">
+              <p className="text-[9px] uppercase tracking-[0.18em]">
+                Holder tool
+              </p>
+              <h1 className="mt-3 text-5xl leading-[0.86] tracking-[-0.06em] md:text-6xl">
+                HOOD
+                <br />
+                TALK
+              </h1>
+              <p className="mt-4 text-sm leading-relaxed opacity-70">
+                Every Hoodie has a voice. Its image and traits shape the
+                character. The market only enters when it has something worth saying.
+              </p>
 
-        <section className="mt-5 grid border-l-2 border-t-2 border-[var(--hood-fg)] sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            ["Total Hood Talks", stats?.totalTalks],
-            ["Hoodies Spoken", stats?.uniqueHoodiesSpoken],
-            ["Most Active", mostActive ? `#${mostActive.tokenId} / ${mostActive.count}` : null],
-            ["Latest Talk", latestTalk ? formatRelativeTime(latestTalk.updatedAt, clockNow) : null],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="border-b-2 border-r-2 border-[var(--hood-fg)] p-4 sm:p-5">
-              <p className="text-[8px] uppercase tracking-[0.16em] opacity-55">{label}</p>
-              <p className="mt-3 text-3xl leading-none tracking-[-0.04em] md:text-4xl">
-                {typeof value === "number" ? formatStat(value) : value || "—"}
+              <div className="mt-6 border border-[var(--hood-fg)]">
+                <button
+                  type="button"
+                  onClick={() => setPickerOpen((current) => !current)}
+                  className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left text-[10px] uppercase tracking-[0.13em]"
+                >
+                  <span>Your Hoodies / {ownedHoodies.length}</span>
+                  <span>{pickerOpen ? "−" : "+"}</span>
+                </button>
+
+                {pickerOpen && (
+                  <div className="border-t border-[var(--hood-fg)]">
+                    <div className="max-h-[390px] overflow-y-auto overscroll-contain">
+                      {ownedHoodies.map((hoodie) => {
+                        const isSelected = hoodie.tokenId === selectedTokenId;
+
+                        return (
+                          <button
+                            key={hoodie.tokenId}
+                            type="button"
+                            onClick={() => setSelectedTokenId(hoodie.tokenId)}
+                            className={`flex w-full items-center gap-2 border-b border-[var(--hood-fg)]/20 p-1.5 text-left last:border-b-0 ${
+                              isSelected ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""
+                            }`}
+                          >
+                            <div className="h-12 w-12 shrink-0 overflow-hidden bg-[#ccff00]">
+                              <OwnedArtwork hoodie={hoodie} />
+                            </div>
+                            <span className="min-w-0 flex-1 truncate text-[8px] uppercase tracking-[0.1em]">
+                              {hoodie.name ||
+                                `OnChainHoodies #${hoodie.tokenId}`}
+                            </span>
+                            <span className="text-[9px]">
+                              {isSelected ? "■" : "□"}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void loadOwnership()}
+                disabled={ownershipLoading}
+                className="mt-2 w-full border border-[var(--hood-fg)] px-3 py-2.5 text-[9px] uppercase tracking-[0.13em] disabled:opacity-40"
+              >
+                {ownershipLoading ? "Reading ownership" : "Refresh ownership"}
+              </button>
+            </aside>
+
+            <div className="min-w-0">
+              <div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                <div className="flex items-center justify-between gap-3 border border-[var(--hood-fg)] px-4 py-3 text-[9px] uppercase tracking-[0.15em]">
+                  <span>
+                    {isPreview ? "New talk preview" : "Current on-chain talk"}
+                  </span>
+                  <span>
+                    {token
+                      ? `#${String(token.token.id).padStart(4, "0")}`
+                      : "Loading"}
+                  </span>
+                </div>
+
+                <div className="min-w-[210px] border border-[var(--hood-fg)] bg-[var(--hood-fg)] px-5 py-3 text-[var(--hood-bg)]">
+                  <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
+                    Hood Talks
+                  </p>
+                  <p className="mt-1 text-3xl leading-none tracking-[-0.05em]">
+                    {isPreview && authorization
+                      ? `${registryTalk?.count ?? 0} > ${authorization.nextCount}`
+                      : registryTalk?.count ?? 0}
+                  </p>
+                  {isPreview && authorization ? (
+                    <p className="mt-2 text-[7px] uppercase tracking-[0.12em] opacity-60">
+                      Pending on-chain update
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-[7px] uppercase tracking-[0.12em] opacity-60">
+                      Permanent character history
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <section className="overflow-hidden border border-[var(--hood-fg)]">
+                <div className="grid lg:grid-cols-2">
+                  <div className="aspect-square overflow-hidden border-b border-[var(--hood-fg)] bg-[#ccff00] lg:border-b-0 lg:border-r">
+                    {token ? (
+                      <HoodieArtwork token={token} priority />
+                    ) : null}
+                  </div>
+
+                  <div className="relative flex aspect-square min-w-0 flex-col justify-center px-6 py-14 text-center md:px-12 lg:px-14">
+                    <div className="absolute left-5 top-5 text-[9px] uppercase tracking-[0.17em] opacity-60 md:left-7 md:top-7">
+                      {token
+                        ? `${formatArchetype(token.traits.hoodie)} / #${String(token.token.id).padStart(4, "0")}`
+                        : "Visual personality"}
+                    </div>
+
+                    {tokenLoading || talkLoading ? (
+                      <div>
+                        <p className="text-[10px] uppercase tracking-[0.18em] opacity-55">
+                          {tokenLoading
+                            ? "Meeting your Hoodie"
+                            : "Reading the Hood"}
+                        </p>
+                        <div className="mx-auto mt-6 h-[2px] w-40 overflow-hidden bg-[var(--hood-fg)]/20">
+                          <div className="h-full w-1/2 animate-pulse bg-[var(--hood-fg)]" />
+                        </div>
+                      </div>
+                    ) : quote ? (
+                      <div className="mx-auto flex max-w-4xl flex-col items-center">
+                        <blockquote className="text-[clamp(1.65rem,3.3vw,4.6rem)] uppercase leading-[1.08] tracking-[0.07em]">
+                          “{quote.replace(/^[“\"]|[”\"]$/g, "")}”
+                        </blockquote>
+
+                        <HoodieSpeakButton
+                              text={quote}
+                              archetype={token?.traits.hoodie}
+                              mouth={token?.traits.mouth.value}
+                          className="mt-8"
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-xl uppercase tracking-[0.1em] opacity-55">
+                        Your Hoodie stayed quiet.
+                      </p>
+                    )}
+
+                    <div className="absolute bottom-5 left-5 right-5 flex items-center justify-between gap-3 text-[8px] uppercase tracking-[0.14em] md:bottom-7 md:left-7 md:right-7">
+                      <span>
+                        {isPreview && authorization
+                          ? `Next Hood Talk #${authorization.nextCount}`
+                          : `Hood Talk #${registryTalk?.count ?? 0}`}
+                      </span>
+                      <span className="text-[7px] tracking-[0.1em] opacity-70">
+                        {BRAND_URL.toLowerCase()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() => token && void generateTalk(token)}
+                  disabled={!token || tokenLoading || talkLoading || committing || cooldownActive}
+                  className="border border-[var(--hood-fg)] px-4 py-4 text-[10px] uppercase tracking-[0.16em] disabled:opacity-40"
+                >
+                  {talkLoading
+                    ? "Listening"
+                    : cooldownActive
+                      ? `Next talk in ${formatCountdown(cooldownSeconds)}`
+                      : registryTalk?.quote
+                        ? "Generate new talk"
+                        : "Let Hoodie talk"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void exportCard()}
+                  disabled={!token || !quote || exporting || talkLoading || committing}
+                  className="border border-[var(--hood-fg)] px-4 py-4 text-[10px] uppercase tracking-[0.16em] disabled:opacity-40"
+                >
+                  {exporting ? "Creating card" : "Export Hood Talk"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void commitHoodTalk()}
+                  disabled={!token || !quote || !authorization || talkLoading || committing || cooldownActive}
+                  className="bg-[var(--hood-fg)] px-4 py-4 text-[10px] uppercase tracking-[0.16em] text-[var(--hood-bg)] disabled:opacity-40"
+                >
+                  {committing ? "Setting on-chain" : authorization ? "Set on-chain" : "Generate first"}
+                </button>
+
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[8px] uppercase leading-relaxed tracking-[0.12em] opacity-60">
+                <span>
+                  {registryTalk
+                    ? `Hood Talk #${registryTalk.count}${isPreview ? ` → #${authorization?.nextCount}` : ""}`
+                    : "Reading registry"}
+                </span>
+                {transactionHash ? (
+                  <a
+                    href={`${activeExplorerUrl}/tx/${transactionHash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    Transaction ↗
+                  </a>
+                ) : null}
+              </div>
+
+              <p className="mt-3 text-[8px] uppercase leading-relaxed tracking-[0.12em] opacity-55">
+                Export / 2400 × 1200 PNG
               </p>
             </div>
-          ))}
-        </section>
-
-        {view === "talk" ? (
-          !address ? (
-            <div className="mt-8 grid min-h-[58vh] place-items-center border border-[var(--hood-fg)] p-6 text-center">
-              <div className="max-w-2xl">
-                <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">Holder tool</p>
-                <h2 className="mt-6 text-5xl leading-[0.86] tracking-[-0.07em] md:text-7xl">LET YOUR<br />HOODIE TALK.</h2>
-                <p className="mx-auto mt-6 max-w-md text-sm leading-relaxed opacity-70">Connect the wallet holding your OnChainHoodies. The Live Feed and Leaderboard remain public.</p>
-                <button type="button" onClick={connect} className="pixel-cta mt-8">Connect wallet</button>
-              </div>
-            </div>
-          ) : ownershipLoading ? (
-            <div className="mt-8 grid min-h-[58vh] place-items-center border border-[var(--hood-fg)] text-[10px] uppercase tracking-[0.18em]">Reading your Hoodies</div>
-          ) : ownershipChecked && !isHolder ? (
-            <div className="mt-8 grid min-h-[58vh] place-items-center border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-6 text-center text-[var(--hood-bg)]">
-              <div className="max-w-xl">
-                <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">Holder access</p>
-                <h2 className="mt-6 text-5xl leading-[0.86] tracking-[-0.07em] md:text-7xl">NOT IN<br />THE HOOD.</h2>
-                <a href={siteConfig.openSeaUrl} target="_blank" rel="noreferrer" className="pixel-cta mt-8 inline-block border-[var(--hood-bg)]">Get a Hoodie</a>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-8 grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
-              <aside className="min-w-0 xl:sticky xl:top-20 xl:self-start">
-                <p className="text-[9px] uppercase tracking-[0.18em]">Holder tool</p>
-                <h2 className="mt-3 text-5xl leading-[0.86] tracking-[-0.06em] md:text-6xl">YOUR<br />HOODIES</h2>
-                <p className="mt-4 text-sm leading-relaxed opacity-70">Select a Hoodie to read its current voice and complete permanent history.</p>
-                <div className="mt-6 border border-[var(--hood-fg)]">
-                  <button type="button" onClick={() => setPickerOpen((current) => !current)} className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left text-[10px] uppercase tracking-[0.13em]">
-                    <span>Your Hoodies / {ownedHoodies.length}</span><span>{pickerOpen ? "−" : "+"}</span>
-                  </button>
-                  {pickerOpen ? (
-                    <div className="border-t border-[var(--hood-fg)]"><div className="max-h-[390px] overflow-y-auto overscroll-contain">
-                      {ownedHoodies.map((hoodie) => {
-                        const selected = hoodie.tokenId === selectedTokenId;
-                        return <button key={hoodie.tokenId} type="button" onClick={() => setSelectedTokenId(hoodie.tokenId)} className={`flex w-full items-center gap-2 border-b border-[var(--hood-fg)]/20 p-1.5 text-left last:border-b-0 ${selected ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}>
-                          <div className="h-12 w-12 shrink-0 overflow-hidden bg-[#ccff00]"><OwnedArtwork hoodie={hoodie} /></div>
-                          <span className="min-w-0 flex-1 truncate text-[8px] uppercase tracking-[0.1em]">{hoodie.name || `OnChainHoodies #${hoodie.tokenId}`}</span>
-                          <span className="text-[9px]">{selected ? "■" : "□"}</span>
-                        </button>;
-                      })}
-                    </div></div>
-                  ) : null}
-                </div>
-                <button type="button" onClick={() => void loadOwnership()} disabled={ownershipLoading} className="mt-2 w-full border border-[var(--hood-fg)] px-3 py-2.5 text-[9px] uppercase tracking-[0.13em] disabled:opacity-40">{ownershipLoading ? "Reading ownership" : "Refresh ownership"}</button>
-              </aside>
-
-              <div className="min-w-0">
-                <div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-                  <div className="flex items-center justify-between gap-3 border border-[var(--hood-fg)] px-4 py-3 text-[9px] uppercase tracking-[0.15em]"><span>{isPreview ? "New talk preview" : "Current on-chain talk"}</span><span>{token ? `#${String(token.token.id).padStart(4, "0")}` : "Loading"}</span></div>
-                  <div className="min-w-[210px] border border-[var(--hood-fg)] bg-[var(--hood-fg)] px-5 py-3 text-[var(--hood-bg)]">
-                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">Hood Talks</p>
-                    <p className="mt-1 text-3xl leading-none tracking-[-0.05em]">{isPreview && authorization ? `${registryTalk?.count ?? 0} > ${authorization.nextCount}` : registryTalk?.count ?? 0}</p>
-                    <p className="mt-2 text-[7px] uppercase tracking-[0.12em] opacity-60">{isPreview ? "Pending on-chain update" : "Permanent character history"}</p>
-                  </div>
-                </div>
-
-                <section className="overflow-hidden border border-[var(--hood-fg)]"><div className="grid lg:grid-cols-2">
-                  <div className="aspect-square overflow-hidden border-b border-[var(--hood-fg)] bg-[#ccff00] lg:border-b-0 lg:border-r">{token ? <HoodieArtwork token={token} priority /> : null}</div>
-                  <div className="relative flex aspect-square min-w-0 flex-col justify-center px-6 py-14 text-center md:px-12 lg:px-14">
-                    <div className="absolute left-5 top-5 text-[9px] uppercase tracking-[0.17em] opacity-60 md:left-7 md:top-7">{token ? `${formatArchetype(token.traits.hoodie)} / #${String(token.token.id).padStart(4, "0")}` : "Visual personality"}</div>
-                    {tokenLoading || talkLoading ? <div><p className="text-[10px] uppercase tracking-[0.18em] opacity-55">{tokenLoading ? "Meeting your Hoodie" : "Reading the Hood"}</p><div className="mx-auto mt-6 h-[2px] w-40 overflow-hidden bg-[var(--hood-fg)]/20"><div className="h-full w-1/2 animate-pulse bg-[var(--hood-fg)]" /></div></div> : quote ? <div className="mx-auto flex max-w-4xl flex-col items-center"><blockquote className="text-[clamp(1.65rem,3.3vw,4.6rem)] uppercase leading-[1.08] tracking-[0.07em]">“{quote.replace(/^[“\"]|[”\"]$/g, "")}”</blockquote><HoodieSpeakButton text={quote} archetype={token?.traits.hoodie} mouth={token?.traits.mouth.value} className="mt-8" /></div> : <p className="text-xl uppercase tracking-[0.1em] opacity-55">Your Hoodie stayed quiet.</p>}
-                    <div className="absolute bottom-5 left-5 right-5 flex items-center justify-between gap-3 text-[8px] uppercase tracking-[0.14em] md:bottom-7 md:left-7 md:right-7"><span>{isPreview && authorization ? `Next Hood Talk #${authorization.nextCount}` : `Hood Talk #${registryTalk?.count ?? 0}`}</span><span className="text-[7px] tracking-[0.1em] opacity-70">{BRAND_URL.toLowerCase()}</span></div>
-                  </div>
-                </div></section>
-
-                <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                  <button type="button" onClick={() => token && void generateTalk(token)} disabled={!token || tokenLoading || talkLoading || committing || cooldownActive} className="border border-[var(--hood-fg)] px-4 py-4 text-[10px] uppercase tracking-[0.16em] disabled:opacity-40">{talkLoading ? "Listening" : cooldownActive ? `Next talk in ${formatCountdown(cooldownSeconds)}` : registryTalk?.quote ? "Generate new talk" : "Let Hoodie talk"}</button>
-                  <button type="button" onClick={() => void exportCard()} disabled={!token || !quote || exporting || talkLoading || committing} className="border border-[var(--hood-fg)] px-4 py-4 text-[10px] uppercase tracking-[0.16em] disabled:opacity-40">{exporting ? "Creating card" : "Export Hood Talk"}</button>
-                  <button type="button" onClick={() => void commitHoodTalk()} disabled={!token || !quote || !authorization || talkLoading || committing || cooldownActive} className="bg-[var(--hood-fg)] px-4 py-4 text-[10px] uppercase tracking-[0.16em] text-[var(--hood-bg)] disabled:opacity-40">{committing ? "Setting on-chain" : authorization ? "Set on-chain" : "Generate first"}</button>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[8px] uppercase leading-relaxed tracking-[0.12em] opacity-60"><span>{registryTalk ? `Hood Talk #${registryTalk.count}${isPreview ? ` → #${authorization?.nextCount}` : ""}` : "Reading registry"}</span>{transactionHash ? <a href={`${activeExplorerUrl}/tx/${transactionHash}`} target="_blank" rel="noreferrer" className="underline">Transaction ↗</a> : null}</div>
-
-                <section className="mt-10">
-                  <div className="flex flex-col gap-3 border-b-2 border-[var(--hood-fg)] pb-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[9px] uppercase tracking-[0.16em] opacity-60">Permanent history</p><h3 className="mt-2 text-3xl leading-none">HOODIE #{selectedTokenId || "—"}</h3></div>{selectedTokenId ? <a href={openSeaTokenUrl(selectedTokenId)} target="_blank" rel="noreferrer" className="text-[9px] uppercase tracking-[0.14em] underline underline-offset-4">OpenSea ↗</a> : null}</div>
-                  <div className="mt-4"><HistoryList history={selectedHistory} loading={selectedHistoryLoading} explorerUrl={activeExplorerUrl} /></div>
-                </section>
-              </div>
-            </div>
-          )
-        ) : view === "feed" ? (
-          <section className="py-10 md:py-14">
-            <div className="flex flex-col gap-4 border-b-2 border-[var(--hood-fg)] pb-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[9px] uppercase tracking-[0.18em] opacity-60">Newest first</p><h2 className="mt-3 text-5xl leading-none tracking-[-0.05em] md:text-7xl">LIVE FEED</h2></div><button type="button" onClick={() => void loadFeed()} disabled={feedLoading} className="border border-[var(--hood-fg)] px-4 py-3 text-[9px] uppercase tracking-[0.14em] disabled:opacity-40">Refresh feed</button></div>
-            {feedLoading ? <p className="mt-8 text-[9px] uppercase tracking-[0.15em] opacity-60">Reading the Hood...</p> : <div className="mt-8 grid gap-4 lg:grid-cols-2">
-              {feed.map((talk) => <article key={`${talk.transactionHash}-${talk.logIndex}`} className="grid overflow-hidden border-2 border-[var(--hood-fg)] sm:grid-cols-[180px_minmax(0,1fr)]">
-                <button type="button" onClick={() => void openHistory(talk.tokenId)} className="aspect-square overflow-hidden border-b-2 border-[var(--hood-fg)] bg-[#ccff00] sm:border-b-0 sm:border-r-2"><FallbackImage preferred={talk.image} fallback={tokenArtworkFallback(talk.tokenId)} alt={`OnChainHoodie #${talk.tokenId}`} width={400} height={400} sizes="180px" className="image-render-pixel h-full w-full object-contain" /></button>
-                <div className="flex min-w-0 flex-col justify-between p-5"><div><div className="flex items-center justify-between gap-3"><button type="button" onClick={() => void openHistory(talk.tokenId)} className="text-sm uppercase tracking-[0.12em] underline underline-offset-4">Hoodie #{talk.tokenId}</button><span className="text-[8px] uppercase tracking-[0.12em] opacity-55">Talk #{talk.count}</span></div><blockquote className="mt-6 text-xl uppercase leading-relaxed tracking-[0.06em] md:text-2xl">“{talk.quote.replace(/^[“\"]|[”\"]$/g, "")}”</blockquote></div><div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-[8px] uppercase tracking-[0.12em]"><span className="opacity-55">{formatRelativeTime(talk.updatedAt, clockNow)}</span><div className="flex gap-4"><button type="button" onClick={() => void openHistory(talk.tokenId)} className="underline underline-offset-4">View history</button><a href={openSeaTokenUrl(talk.tokenId)} target="_blank" rel="noreferrer" className="underline underline-offset-4">OpenSea ↗</a></div></div></div>
-              </article>)}
-            </div>}
-            {feedNextBefore ? <div className="mt-8 flex justify-center"><button type="button" onClick={() => void loadFeed(feedNextBefore, true)} disabled={feedLoadingMore} className="border-2 border-[var(--hood-fg)] px-6 py-4 text-[10px] uppercase tracking-[0.15em] disabled:opacity-40">{feedLoadingMore ? "Loading" : "Load more"}</button></div> : null}
-          </section>
-        ) : (
-          <section className="py-10 md:py-14">
-            <div className="border-b-2 border-[var(--hood-fg)] pb-5"><p className="text-[9px] uppercase tracking-[0.18em] opacity-60">Most permanent voices</p><h2 className="mt-3 text-5xl leading-none tracking-[-0.05em] md:text-7xl">LEADERBOARD</h2></div>
-            {leaderboardLoading ? <p className="mt-8 text-[9px] uppercase tracking-[0.15em] opacity-60">Building the ranking...</p> : leaderboard.length ? <div className="mt-8 border-l-2 border-t-2 border-[var(--hood-fg)]">
-              <div className="hidden grid-cols-[80px_minmax(280px,1.4fr)_130px_160px_190px] border-b-2 border-r-2 border-[var(--hood-fg)] bg-[var(--hood-fg)] text-[var(--hood-bg)] lg:grid">{["Rank", "Hoodie", "Talks", "Last spoke", "Actions"].map((label) => <div key={label} className="border-r border-[var(--hood-bg)] p-3 text-[8px] uppercase tracking-[0.14em] last:border-r-0">{label}</div>)}</div>
-              {leaderboard.map((entry) => <article key={entry.tokenId} className="grid grid-cols-[58px_minmax(0,1fr)_70px] border-b-2 border-r-2 border-[var(--hood-fg)] lg:grid-cols-[80px_minmax(280px,1.4fr)_130px_160px_190px]">
-                <div className="flex items-center justify-center border-r-2 border-[var(--hood-fg)] p-3 text-lg">#{String(entry.rank).padStart(2, "0")}</div>
-                <button type="button" onClick={() => void openHistory(entry.tokenId)} className="flex min-w-0 items-center gap-3 border-r-2 border-[var(--hood-fg)] p-3 text-left"><div className="h-14 w-14 shrink-0 overflow-hidden bg-[#ccff00]"><FallbackImage preferred={entry.image} fallback={tokenArtworkFallback(entry.tokenId)} alt={`OnChainHoodie #${entry.tokenId}`} width={112} height={112} sizes="56px" className="image-render-pixel h-full w-full object-contain" /></div><div className="min-w-0"><p className="text-sm uppercase tracking-[0.1em]">Hoodie #{entry.tokenId}</p><p className="mt-2 hidden truncate text-[7px] uppercase tracking-[0.1em] opacity-55 sm:block">“{entry.latestQuote.replace(/^[“\"]|[”\"]$/g, "")}”</p></div></button>
-                <div className="flex flex-col justify-center p-3 text-right lg:border-r-2 lg:border-[var(--hood-fg)] lg:text-left"><p className="text-[7px] uppercase tracking-[0.1em] opacity-55 lg:hidden">Talks</p><p className="mt-1 text-xl leading-none lg:mt-0">{entry.count}</p></div>
-                <div className="hidden items-center border-r-2 border-[var(--hood-fg)] p-3 text-[9px] uppercase tracking-[0.12em] lg:flex">{formatRelativeTime(entry.lastSpokenAt, clockNow)}</div>
-                <div className="hidden items-center gap-4 p-3 text-[8px] uppercase tracking-[0.12em] lg:flex"><button type="button" onClick={() => void openHistory(entry.tokenId)} className="underline underline-offset-4">View talks</button><a href={openSeaTokenUrl(entry.tokenId)} target="_blank" rel="noreferrer" className="underline underline-offset-4">OpenSea ↗</a></div>
-              </article>)}
-            </div> : <div className="mt-8 border-2 border-[var(--hood-fg)] p-8 text-center text-[9px] uppercase tracking-[0.15em] opacity-60">The leaderboard is being created by the next hourly indexer run.</div>}
-          </section>
+          </div>
         )}
 
-        {detailTokenId !== null ? (
-          <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/80 p-3 sm:p-6" role="dialog" aria-modal="true" aria-label={`Hoodie #${detailTokenId} Hood Talk history`}>
-            <div className="mx-auto max-w-5xl border-2 border-[var(--hood-fg)] bg-[var(--hood-bg)] text-[var(--hood-fg)]">
-              <div className="flex items-center justify-between gap-4 border-b-2 border-[var(--hood-fg)] p-4 sm:p-5"><div><p className="text-[8px] uppercase tracking-[0.14em] opacity-55">Permanent history</p><h3 className="mt-2 text-3xl leading-none sm:text-4xl">HOODIE #{detailTokenId}</h3></div><button type="button" onClick={() => { setDetailTokenId(null); setDetailHistory(null); }} className="border border-[var(--hood-fg)] px-4 py-3 text-[9px] uppercase tracking-[0.14em]">Close</button></div>
-              <div className="grid md:grid-cols-[260px_minmax(0,1fr)]"><div className="border-b-2 border-[var(--hood-fg)] p-4 md:border-b-0 md:border-r-2"><div className="aspect-square overflow-hidden bg-[#ccff00]"><FallbackImage preferred={tokenArtworkFallback(detailTokenId)} fallback={tokenArtworkFallback(detailTokenId)} alt={`OnChainHoodie #${detailTokenId}`} width={520} height={520} sizes="260px" className="image-render-pixel h-full w-full object-contain" /></div><div className="mt-3 grid gap-2"><a href={openSeaTokenUrl(detailTokenId)} target="_blank" rel="noreferrer" className="border border-[var(--hood-fg)] px-3 py-3 text-center text-[9px] uppercase tracking-[0.14em]">OpenSea ↗</a>{ownedHoodies.some((hoodie) => hoodie.tokenId === String(detailTokenId)) ? <button type="button" onClick={() => { setSelectedTokenId(String(detailTokenId)); setView("talk"); setDetailTokenId(null); }} className="border border-[var(--hood-fg)] px-3 py-3 text-[9px] uppercase tracking-[0.14em]">Open in Hood Talk</button> : null}</div></div><div className="max-h-[75vh] overflow-y-auto p-4 sm:p-5"><div className="mb-4 flex items-center justify-between text-[9px] uppercase tracking-[0.14em]"><span>All Hood Talks</span><span>{detailHistory?.total ?? 0}</span></div><HistoryList history={detailHistory} loading={detailLoading} explorerUrl={activeExplorerUrl} compact /></div></div>
-            </div>
+        {error && (
+          <div className="mt-3 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-3 text-xs text-[var(--hood-bg)]">
+            {error}
           </div>
-        ) : null}
-
-        {error ? <div className="mt-5 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-3 text-xs text-[var(--hood-bg)]">{error}</div> : null}
+        )}
       </section>
 
       <SiteFooter />
