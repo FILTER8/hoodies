@@ -181,10 +181,13 @@ function clampStickerPosition(
   value: number,
   objectSize: number,
 ): number {
+  const minimum = -objectSize + 1;
+  const maximum = CANVAS_SIZE - 1;
+
   return Math.max(
-    0,
+    minimum,
     Math.min(
-      CANVAS_SIZE - objectSize,
+      maximum,
       Math.floor(value),
     ),
   );
@@ -2014,11 +2017,11 @@ export default function HoodCollagePage() {
      * allowing movement beyond the canvas edges.
      */
     const position =
-      getCanvasPosition(
-        event,
-        dragState.type !==
-          "hoodie",
-      );
+  getCanvasPosition(
+    event,
+    dragState.type ===
+      "drawing",
+  );
 
     if (
       dragState.type ===
