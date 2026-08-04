@@ -1269,14 +1269,12 @@ export default function CommunityPage() {
                         </ol>
 
                         <p className="mt-4 border-t-2 border-[var(--ink)] pt-4 text-xs opacity-70">
-                          Maximum{" "}
-                          <strong>
-                            {submissionMax} submissions per wallet every 24 hours.
-                          </strong>
-                          <br />
-                          Following these rules does not guarantee a reward.
-                          Every submission is reviewed by the Hood.
-                        </p>
+  <strong>
+    Maximum {submissionMax} submissions per wallet every 24 hours.
+  </strong>
+  <br />
+  Focus on thoughtful, high-quality posts. Low-effort or repetitive submissions may not be eligible for rewards.
+</p>
                       </div>
 
                       {submissionLimitReached ? (
