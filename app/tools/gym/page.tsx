@@ -49,7 +49,7 @@ const TEMPLATE = {
    */
   head: {
     x: 50,
-    y: 7,
+    y: 8,
   },
 } as const;
 
