@@ -53,6 +53,10 @@ const TEMPLATE = {
   },
 } as const;
 
+const COLLECTION_ABI = [
+  "function getCompositeIndex(uint256 tokenId) view returns (uint256)",
+] as const;
+
 const PIXEL_DATA_ABI = [
   "function getComposite(uint256 compositeIndex) view returns (uint256[])",
   "function canvasWidth() view returns (uint16)",
@@ -79,6 +83,7 @@ type PixelRect = {
 
 type RenderedHoodie = {
   tokenId: number;
+  compositeIndex: number;
   sourceWidth: number;
   sourceHeight: number;
   palette: PaletteColor[];
@@ -107,7 +112,15 @@ function parseTokenId(value: string): number {
   return tokenId;
 }
 
-function requireRpcConfiguration(): void {
+function getCollectionAddress(): string {
+  const configuredAddress = (
+    siteConfig as typeof siteConfig & { collectionAddress?: string }
+  ).collectionAddress;
+
+  return configuredAddress ?? process.env.NEXT_PUBLIC_COLLECTION_ADDRESS ?? "";
+}
+
+function requireRpcConfiguration(): string {
   if (!siteConfig.rpcUrl) {
     throw new Error("The RPC URL is not configured.");
   }
@@ -115,6 +128,16 @@ function requireRpcConfiguration(): void {
   if (!siteConfig.pixelDataAddress) {
     throw new Error("The PixelData contract address is not configured.");
   }
+
+  const collectionAddress = getCollectionAddress();
+
+  if (!collectionAddress) {
+    throw new Error(
+      "The collection contract address is not configured. Add collectionAddress to siteConfig or set NEXT_PUBLIC_COLLECTION_ADDRESS.",
+    );
+  }
+
+  return collectionAddress;
 }
 
 function bigintToSafeNumber(value: bigint, label: string): number {
@@ -229,7 +252,7 @@ function decodeTraitRectangles(data: Uint8Array): PixelRect[] {
 async function fetchRenderedHoodie(
   tokenId: number,
 ): Promise<RenderedHoodie> {
-  requireRpcConfiguration();
+  const collectionAddress = requireRpcConfiguration();
 
   const provider = new JsonRpcProvider(
     siteConfig.rpcUrl,
@@ -239,10 +262,24 @@ async function fetchRenderedHoodie(
     },
   );
 
+  const collection = new Contract(
+    collectionAddress,
+    COLLECTION_ABI,
+    provider,
+  );
+
   const pixelData = new Contract(
     siteConfig.pixelDataAddress,
     PIXEL_DATA_ABI,
     provider,
+  );
+
+  const compositeIndexResult = (await collection.getCompositeIndex(
+    tokenId,
+  )) as bigint;
+  const compositeIndex = bigintToSafeNumber(
+    compositeIndexResult,
+    "Composite index",
   );
 
   const [
@@ -251,7 +288,7 @@ async function fetchRenderedHoodie(
     canvasHeightResult,
     palettePointer,
   ] = await Promise.all([
-    pixelData.getComposite(tokenId) as Promise<bigint[]>,
+    pixelData.getComposite(compositeIndex) as Promise<bigint[]>,
     pixelData.canvasWidth() as Promise<bigint>,
     pixelData.canvasHeight() as Promise<bigint>,
     pixelData.palettePointer() as Promise<string>,
@@ -330,6 +367,7 @@ async function fetchRenderedHoodie(
 
   return {
     tokenId,
+    compositeIndex,
     sourceWidth,
     sourceHeight,
     palette,
@@ -620,8 +658,6 @@ async function downloadGIF(
   const headYFrames = [
     TEMPLATE.head.y - movePixels,
     TEMPLATE.head.y,
-    TEMPLATE.head.y + movePixels,
-    TEMPLATE.head.y,
   ];
   const gif = GIFEncoder();
   let palette: ReturnType<typeof quantize> | null = null;
@@ -753,8 +789,6 @@ export default function GymBuilderPage() {
   const animationFrames = useMemo(
     () => [
       TEMPLATE.head.y - movePixels,
-      TEMPLATE.head.y,
-      TEMPLATE.head.y + movePixels,
       TEMPLATE.head.y,
     ],
     [movePixels],
@@ -893,7 +927,7 @@ export default function GymBuilderPage() {
             </p>
 
             <h1 className="mt-5 text-[clamp(2.8rem,8vw,6rem)] leading-[0.86] tracking-[-0.06em]">
-              GYM BUILDER.
+              GYM BUILDER
             </h1>
 
             <p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed opacity-75 md:text-base">
@@ -906,10 +940,6 @@ export default function GymBuilderPage() {
               <h2 className="text-[10px] uppercase tracking-[0.16em]">
                 Hoodie ID
               </h2>
-
-              <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
-                Layers 1 / 3 / 4 / 5 / 6
-              </p>
             </div>
 
             <form
@@ -942,10 +972,6 @@ export default function GymBuilderPage() {
                 {loadingPreview ? "Reading Chain..." : "Build Hoodie"}
               </button>
             </form>
-
-            <p className="mt-4 text-left text-[8px] uppercase leading-relaxed tracking-[0.12em] opacity-55">
-              Background layer 0 and Hoodie layer 2 are excluded.
-            </p>
           </section>
 
           <section className="border-b-2 border-[#ccff00] py-8">
@@ -983,7 +1009,7 @@ export default function GymBuilderPage() {
 
             {renderedHoodie ? (
               <p className="mt-4 text-[8px] uppercase tracking-[0.14em] opacity-60">
-                Hoodie #{renderedHoodie.tokenId} / Native 1 × 1 PixelData
+                Hoodie #{renderedHoodie.tokenId} / Composite #{renderedHoodie.compositeIndex} / Native 1 × 1 PixelData
               </p>
             ) : null}
           </section>
@@ -995,7 +1021,7 @@ export default function GymBuilderPage() {
               </h2>
 
               <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
-                Yo-Yo Head Move
+                Up / Neutral Head Move
               </p>
             </div>
 
@@ -1110,7 +1136,7 @@ export default function GymBuilderPage() {
           </div>
 
           <p className="mt-4 text-[8px] uppercase leading-relaxed tracking-[0.12em] opacity-55">
-            GIF uses the selected speed and movement. Off exports a still four-frame loop.
+            GIF alternates between head up and the original position. Off exports a still two-frame loop.
           </p>
         </div>
       </section>
