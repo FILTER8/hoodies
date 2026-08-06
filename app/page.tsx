@@ -128,6 +128,8 @@ const contracts = [
   { label: "Renderer", address: siteConfig.rendererAddress },
   { label: "Pixel Data", address: siteConfig.pixelDataAddress },
   { label: "Hood Talk", address: siteConfig.hoodTalkRegistryAddress },
+  { label: "HoodOS", address: siteConfig.hoodOSAddress },
+  { label: "HoodWallet", address: siteConfig.hoodWalletAddress },
 ];
 
 const metricLabels: Record<MarketMetric, string> = {
