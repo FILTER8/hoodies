@@ -1213,25 +1213,40 @@ export default function CommunityPage() {
                 ) : null}
 
                 {view === "submit" && passportTab === "submit" ? (
-                  <div className="mt-8 grid gap-8 lg:grid-cols-[0.72fr_1.28fr]">
-                    <div className="border-2 border-[var(--ink)] p-7 md:p-9">
-                      <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">X verification</p>
-                      <h2 className="mt-5 text-4xl leading-none">
-                        {xUsername ? `@${xUsername}` : "CONNECT X"}
-                      </h2>
-                      <p className="mt-5 text-sm leading-relaxed opacity-70">
-                        One X account can be linked to one Passport wallet.
-                      </p>
-                      {!xUsername ? (
-                        <button
-                          type="button"
-                          onClick={() => void connectX()}
-                          className="pixel-cta pixel-cta-dark mt-7"
-                        >
-                          Connect X
-                        </button>
-                      ) : null}
-                    </div>
+  <div className="mt-8 border-2 border-[var(--ink)] p-8 md:p-12">
+    <p className="text-[9px] uppercase tracking-[0.18em] opacity-55">
+      Hoodies Passport / Season 01
+    </p>
+
+    <h2 className="mt-5 text-4xl leading-none md:text-6xl">
+      X POST SUBMISSIONS
+      <br />
+      ARE CLOSED
+    </h2>
+
+    <p className="mt-6 max-w-2xl text-sm leading-relaxed opacity-70 md:text-base">
+      Season 01 X post submissions are now closed.
+      Existing submissions remain visible and will continue through the
+      current tracking cycle.
+    </p>
+
+    <p className="mt-6 max-w-2xl border-t-2 border-[var(--ink)] pt-5 text-xs leading-relaxed opacity-60">
+      You can still view your previous submissions, maintain your verified
+      PFP streak, and participate through other Hoodie tools.
+    </p>
+
+    <button
+      type="button"
+      onClick={() => {
+        setPassportTab("posts");
+        setMyPostsTab("active");
+      }}
+      className="pixel-cta pixel-cta-dark mt-8"
+    >
+      View My Posts
+    </button>
+  </div>
+) : null}
 
                     <form
                       onSubmit={submitPost}
