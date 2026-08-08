@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type CSSProperties,
 } from "react";
 import { Contract, JsonRpcProvider, formatUnits } from "ethers";
 
@@ -19,6 +20,8 @@ import {
   apiConfig,
   collectionApiUrl,
 } from "../../lib/api";
+
+const BRAND_URL = "ONCHAINHOODIES.XYZ";
 
 /*//////////////////////////////////////////////////////////////
                               TYPES
@@ -49,6 +52,7 @@ type HoodWalletAsset = {
   balanceRaw: bigint;
   balanceFormatted: string;
   contract?: string;
+  decimals: number;
   kind: "native" | "erc20";
 };
 
@@ -61,9 +65,23 @@ type HoodWalletRecord = {
   status: HoodWalletStatus;
 
   nativeBalance: bigint;
-  goatBalance: bigint;
-
   assets: HoodWalletAsset[];
+};
+
+type HoodWalletAssetApiItem = {
+  symbol: string;
+  name: string;
+  balanceRaw: string;
+  balanceFormatted: string;
+  contract?: string;
+  decimals: number;
+  kind: "erc20";
+};
+
+type HoodWalletAssetApiResponse = {
+  assets?: HoodWalletAssetApiItem[];
+  warning?: string;
+  error?: string;
 };
 
 type HoodOSReadContract = {
@@ -80,12 +98,7 @@ const HOOD_OS_ABI = [
   "function walletOf(uint256 tokenId) view returns (address)",
 ];
 
-const ERC20_ABI = [
-  "function name() view returns (string)",
-  "function symbol() view returns (string)",
-  "function decimals() view returns (uint8)",
-  "function balanceOf(address account) view returns (uint256)",
-];
+
 
 /*
  * Native currency label.
@@ -215,6 +228,311 @@ function formatTokenBalance(
     : whole;
 }
 
+async function fetchWalletTokenAssets(
+  walletAddress: string,
+): Promise<HoodWalletAsset[]> {
+  const params = new URLSearchParams({
+    address: walletAddress,
+  });
+
+  const url =
+    `/api/hoodwallet/assets?${params.toString()}`;
+
+  const MAX_ATTEMPTS = 3;
+
+  for (
+    let attempt = 1;
+    attempt <= MAX_ATTEMPTS;
+    attempt += 1
+  ) {
+    try {
+      const response = await fetch(
+        url,
+        {
+          headers: {
+            accept: "application/json",
+          },
+        },
+      );
+
+      const payload =
+        (await response.json()) as HoodWalletAssetApiResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error ||
+            `Unable to load HoodWallet token balances (${response.status}).`,
+        );
+      }
+
+      const assets =
+        Array.isArray(payload.assets)
+          ? payload.assets
+          : [];
+
+      return assets
+        .map(
+          (
+            asset,
+          ): HoodWalletAsset | null => {
+            let balanceRaw: bigint;
+
+            try {
+              balanceRaw =
+                BigInt(
+                  asset.balanceRaw,
+                );
+            } catch {
+              return null;
+            }
+
+            if (
+              balanceRaw <= BigInt(0)
+            ) {
+              return null;
+            }
+
+            return {
+              symbol:
+                asset.symbol,
+
+              name:
+                asset.name,
+
+              balanceRaw,
+
+              balanceFormatted:
+                asset.balanceFormatted,
+
+              contract:
+                asset.contract,
+
+              decimals:
+                asset.decimals,
+
+              kind:
+                "erc20",
+            };
+          },
+        )
+        .filter(
+          (
+            asset,
+          ): asset is HoodWalletAsset =>
+            asset !== null,
+        )
+        .sort(
+          (left, right) =>
+            left.symbol.localeCompare(
+              right.symbol,
+            ),
+        );
+    } catch (error) {
+      if (
+        attempt ===
+        MAX_ATTEMPTS
+      ) {
+        console.warn(
+          `Token balances unavailable for ${walletAddress} after ${MAX_ATTEMPTS} attempts.`,
+          error,
+        );
+
+        /*
+         * Token discovery is supplementary.
+         * Never break the entire HoodWallet page.
+         */
+        return [];
+      }
+
+      /*
+       * Small backoff:
+       *
+       * retry 1 -> 250ms
+       * retry 2 -> 500ms
+       */
+      await new Promise<void>(
+        (resolve) => {
+          window.setTimeout(
+            resolve,
+            250 * attempt,
+          );
+        },
+      );
+    }
+  }
+
+  return [];
+}
+
+function downloadBlob(
+  blob: Blob,
+  filename: string,
+) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function downloadHoodWalletPng(
+  hoodie: OwnedHoodie,
+  wallet: HoodWalletRecord,
+  darkHood: boolean,
+) {
+  if (document.fonts?.ready) {
+    await document.fonts.ready;
+  }
+
+  const width = 2400;
+  const height = 1200;
+  const artworkSize = 1200;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Canvas is unavailable.");
+  }
+
+  const background = darkHood ? "#000000" : "#ccff00";
+  const foreground = darkHood ? "#ccff00" : "#000000";
+
+  context.imageSmoothingEnabled = false;
+  context.fillStyle = background;
+  context.fillRect(0, 0, width, height);
+
+  context.fillStyle = "#ccff00";
+  context.fillRect(0, 0, artworkSize, artworkSize);
+
+  const artworkResponse = await fetch(ownedArtworkUrl(hoodie));
+
+  if (!artworkResponse.ok) {
+    throw new Error("Unable to load Hoodie artwork.");
+  }
+
+  const artworkBlob = await artworkResponse.blob();
+  const artworkUrl = URL.createObjectURL(artworkBlob);
+
+  try {
+    const artwork = new window.Image();
+    artwork.decoding = "sync";
+
+    await new Promise<void>((resolve, reject) => {
+      artwork.onload = () => resolve();
+      artwork.onerror = () =>
+        reject(new Error("Unable to render Hoodie artwork."));
+      artwork.src = artworkUrl;
+    });
+
+    context.drawImage(artwork, 0, 0, artworkSize, artworkSize);
+  } finally {
+    URL.revokeObjectURL(artworkUrl);
+  }
+
+  context.strokeStyle = foreground;
+  context.lineWidth = 4;
+  context.beginPath();
+  context.moveTo(artworkSize, 0);
+  context.lineTo(artworkSize, height);
+  context.stroke();
+
+  const left = 1280;
+  const right = width - 90;
+
+  context.fillStyle = foreground;
+  context.textAlign = "left";
+  context.textBaseline = "alphabetic";
+
+  context.font = "28px DepartureMono, monospace";
+  context.fillText("HOODWALLET", left, 92);
+
+  context.font = "74px DepartureMono, monospace";
+  context.fillText(`#${wallet.tokenId}`, left, 185);
+
+  context.font = "25px DepartureMono, monospace";
+  context.fillText(statusLabel(wallet.status).toUpperCase(), left, 245);
+
+  context.globalAlpha = 0.62;
+  context.font = "22px DepartureMono, monospace";
+  context.fillText("DETERMINISTIC ADDRESS", left, 318);
+  context.globalAlpha = 1;
+
+  context.font = "25px DepartureMono, monospace";
+  context.fillText(wallet.walletAddress, left, 360);
+
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(left, 405);
+  context.lineTo(right, 405);
+  context.stroke();
+
+  context.font = "25px DepartureMono, monospace";
+  context.fillText("ASSETS", left, 458);
+
+  const visibleAssets = wallet.assets.slice(0, 7);
+  let y = 535;
+
+  for (const asset of visibleAssets) {
+    context.globalAlpha = 0.62;
+    context.font = "20px DepartureMono, monospace";
+    context.fillText(asset.name.toUpperCase(), left, y);
+    context.globalAlpha = 1;
+
+    context.font = "31px DepartureMono, monospace";
+    context.fillText(asset.symbol.toUpperCase(), left, y + 43);
+
+    context.textAlign = "right";
+    context.font = "38px DepartureMono, monospace";
+    context.fillText(asset.balanceFormatted, right, y + 43);
+    context.textAlign = "left";
+
+    y += 108;
+  }
+
+  if (wallet.assets.length > visibleAssets.length) {
+    const remaining = wallet.assets.length - visibleAssets.length;
+    context.globalAlpha = 0.62;
+    context.font = "20px DepartureMono, monospace";
+    context.fillText(
+      `+${remaining} MORE ASSET${remaining === 1 ? "" : "S"}`,
+      left,
+      Math.min(y, height - 105),
+    );
+    context.globalAlpha = 1;
+  }
+
+  context.fillStyle = "#000000";
+  context.textAlign = "left";
+  context.font = "22px DepartureMono, monospace";
+  context.fillText(`ONCHAINHOODIE #${wallet.tokenId}`, 54, height - 48);
+
+  context.fillStyle = foreground;
+  context.textAlign = "right";
+  context.font = "20px DepartureMono, monospace";
+  context.fillText(BRAND_URL.toLowerCase(), right, height - 48);
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((result) => {
+      if (result) {
+        resolve(result);
+      } else {
+        reject(new Error("Unable to create HoodWallet PNG."));
+      }
+    }, "image/png");
+  });
+
+  const filename = `onchainhoodies-${wallet.tokenId}-hoodwallet${
+    darkHood ? "-dark" : ""
+  }.png`;
+
+  downloadBlob(blob, filename);
+}
+
 function statusLabel(
   status: HoodWalletStatus,
 ) {
@@ -331,12 +649,40 @@ function AssetRow({
 function HoodWalletCard({
   hoodie,
   wallet,
+  darkHood,
 }: {
   hoodie: OwnedHoodie;
   wallet: HoodWalletRecord;
+  darkHood: boolean;
 }) {
   const statusIsActive =
     wallet.status === "active";
+
+  const [downloading, setDownloading] =
+    useState(false);
+
+  const downloadCard = useCallback(async () => {
+    if (downloading) return;
+
+    setDownloading(true);
+
+    try {
+      await downloadHoodWalletPng(
+        hoodie,
+        wallet,
+        darkHood,
+      );
+    } catch (downloadError) {
+      console.error(downloadError);
+      window.alert(
+        downloadError instanceof Error
+          ? downloadError.message
+          : "Unable to download HoodWallet PNG.",
+      );
+    } finally {
+      setDownloading(false);
+    }
+  }, [darkHood, downloading, hoodie, wallet]);
 
   return (
     <article className="border border-[var(--hood-fg)]">
@@ -378,17 +724,28 @@ function HoodWalletCard({
                 </h2>
               </div>
 
-              <span
-                className={`border border-[var(--hood-fg)] px-3 py-2 text-[8px] uppercase tracking-[0.15em] ${
-                  statusIsActive
-                    ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
-                    : ""
-                }`}
-              >
-                {statusLabel(
-                  wallet.status,
-                )}
-              </span>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => void downloadCard()}
+                  disabled={downloading}
+                  className="border border-[var(--hood-fg)] px-3 py-2 text-[8px] uppercase tracking-[0.15em] disabled:opacity-40"
+                >
+                  {downloading ? "Creating PNG" : "Download PNG"}
+                </button>
+
+                <span
+                  className={`border border-[var(--hood-fg)] px-3 py-2 text-[8px] uppercase tracking-[0.15em] ${
+                    statusIsActive
+                      ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                      : ""
+                  }`}
+                >
+                  {statusLabel(
+                    wallet.status,
+                  )}
+                </span>
+              </div>
             </div>
 
             <div className="mt-5 border border-[var(--hood-fg)]">
@@ -456,7 +813,7 @@ function HoodWalletCard({
             {wallet.assets.map(
               (asset) => (
                 <AssetRow
-                  key={`${wallet.tokenId}-${asset.symbol}-${asset.contract || "native"}`}
+                  key={`${wallet.tokenId}-${asset.contract || asset.symbol}-${asset.kind}`}
                   asset={asset}
                 />
               ),
@@ -518,6 +875,9 @@ export default function HoodWalletPage() {
     refreshKey,
     setRefreshKey,
   ] = useState(0);
+
+  const [darkHood, setDarkHood] =
+    useState(false);
 
   const isHolder =
     ownedHoodies.length > 0;
@@ -689,16 +1049,6 @@ export default function HoodWalletPage() {
         return;
       }
 
-      if (
-        !siteConfig.goatAddress
-      ) {
-        setError(
-          "GOAT token address is not configured.",
-        );
-
-        return;
-      }
-
       setWalletLoading(
         true,
       );
@@ -713,31 +1063,6 @@ export default function HoodWalletPage() {
             provider,
           ) as unknown as HoodOSReadContract;
 
-        const goat =
-          new Contract(
-            siteConfig.goatAddress,
-            ERC20_ABI,
-            provider,
-          );
-
-        const [
-          goatName,
-          goatSymbol,
-          goatDecimalsValue,
-        ] =
-          await Promise.all([
-            goat.name() as Promise<string>,
-
-            goat.symbol() as Promise<string>,
-
-            goat.decimals() as Promise<bigint>,
-          ]);
-
-        const goatDecimals =
-          Number(
-            goatDecimalsValue,
-          );
-
         /*
          * Process sequentially in small chunks.
          *
@@ -750,7 +1075,7 @@ export default function HoodWalletPage() {
           [];
 
         const concurrency =
-          10;
+          4;
 
         for (
           let index = 0;
@@ -793,7 +1118,7 @@ export default function HoodWalletPage() {
                   const [
                     code,
                     nativeBalance,
-                    goatBalance,
+                    tokenAssets,
                   ] =
                     await Promise.all([
                       provider.getCode(
@@ -804,9 +1129,16 @@ export default function HoodWalletPage() {
                         walletAddress,
                       ),
 
-                      goat.balanceOf(
+                      fetchWalletTokenAssets(
                         walletAddress,
-                      ) as Promise<bigint>,
+                      ).catch((tokenError) => {
+                        console.error(
+                          `Unable to load ERC-20 balances for ${walletAddress}:`,
+                          tokenError,
+                        );
+
+                        return [];
+                      }),
                     ]);
 
                   const status: HoodWalletStatus =
@@ -815,53 +1147,21 @@ export default function HoodWalletPage() {
                       ? "counterfactual"
                       : "active";
 
-                  const assets: HoodWalletAsset[] =
-                    [
-                      {
-                        symbol:
-                          goatSymbol,
-
-                        name:
-                          goatName,
-
-                        balanceRaw:
-                          goatBalance,
-
-                        balanceFormatted:
-                          formatTokenBalance(
-                            goatBalance,
-                            goatDecimals,
-                            6,
-                          ),
-
-                        contract:
-                          siteConfig.goatAddress,
-
-                        kind:
-                          "erc20",
-                      },
-
-                      {
-                        symbol:
-                          NATIVE_SYMBOL,
-
-                        name:
-                          NATIVE_NAME,
-
-                        balanceRaw:
-                          nativeBalance,
-
-                        balanceFormatted:
-                          formatTokenBalance(
-                            nativeBalance,
-                            18,
-                            6,
-                          ),
-
-                        kind:
-                          "native",
-                      },
-                    ];
+                  const assets: HoodWalletAsset[] = [
+                    ...tokenAssets,
+                    {
+                      symbol: NATIVE_SYMBOL,
+                      name: NATIVE_NAME,
+                      balanceRaw: nativeBalance,
+                      balanceFormatted: formatTokenBalance(
+                        nativeBalance,
+                        18,
+                        6,
+                      ),
+                      decimals: 18,
+                      kind: "native",
+                    },
+                  ];
 
                   return {
                     tokenId:
@@ -880,8 +1180,6 @@ export default function HoodWalletPage() {
                     status,
 
                     nativeBalance,
-
-                    goatBalance,
 
                     assets,
                   } satisfies HoodWalletRecord;
@@ -943,26 +1241,52 @@ export default function HoodWalletPage() {
                          PORTFOLIO TOTALS
   //////////////////////////////////////////////////////////////*/
 
-  const totalGoat =
+  const portfolioTokenTotals =
     useMemo(() => {
-      return hoodWallets.reduce(
-        (
-          total,
-          wallet,
-        ) =>
-          total +
-          wallet.goatBalance,
-        BigInt(0),
+      const totals = new Map<
+        string,
+        {
+          symbol: string;
+          name: string;
+          contract?: string;
+          decimals: number;
+          balanceRaw: bigint;
+        }
+      >();
+
+      for (const wallet of hoodWallets) {
+        for (const asset of wallet.assets) {
+          if (asset.kind !== "erc20") {
+            continue;
+          }
+
+          const key =
+            asset.contract?.toLowerCase() ||
+            `${asset.symbol}:${asset.name}`;
+
+          const current = totals.get(key);
+
+          totals.set(key, {
+            symbol: asset.symbol,
+            name: asset.name,
+            contract: asset.contract,
+            decimals: asset.decimals,
+            balanceRaw:
+              (current?.balanceRaw ?? BigInt(0)) +
+              asset.balanceRaw,
+          });
+        }
+      }
+
+      return Array.from(totals.values()).sort((left, right) =>
+        left.symbol.localeCompare(right.symbol),
       );
     }, [hoodWallets]);
 
   const totalNative =
     useMemo(() => {
       return hoodWallets.reduce(
-        (
-          total,
-          wallet,
-        ) =>
+        (total, wallet) =>
           total +
           wallet.nativeBalance,
         BigInt(0),
@@ -987,12 +1311,14 @@ export default function HoodWalletPage() {
       className="min-h-screen bg-[var(--hood-bg)] text-[var(--hood-fg)]"
       style={
         {
-          "--hood-bg":
-            "#ccff00",
+          "--hood-bg": darkHood
+            ? "#000000"
+            : "#ccff00",
 
-          "--hood-fg":
-            "#000000",
-        } as React.CSSProperties
+          "--hood-fg": darkHood
+            ? "#ccff00"
+            : "#000000",
+        } as CSSProperties
       }
     >
       <SiteHeader />
@@ -1005,9 +1331,21 @@ export default function HoodWalletPage() {
             Build 04 / ERC-6551
           </p>
 
-          <Link href="/">
-            Back to the Hood
-          </Link>
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() =>
+                setDarkHood((current) => !current)
+              }
+              className="uppercase"
+            >
+              {darkHood ? "Lights on" : "Lights off"}
+            </button>
+
+            <Link href="/">
+              Back to the Hood
+            </Link>
+          </div>
         </div>
 
         <div className="mt-6 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
@@ -1213,29 +1551,32 @@ export default function HoodWalletPage() {
                     </p>
 
                     <p className="mt-4 text-4xl leading-none tracking-[-0.06em]">
-                      {
-                        hoodWallets.length
-                      }
+                      {hoodWallets.length}
                     </p>
                   </div>
 
-                  <div className="border border-[var(--hood-fg)] p-4">
-                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
-                      GOAT across HoodWallets
-                    </p>
+                  {portfolioTokenTotals.map((token) => (
+                    <div
+                      key={token.contract || `${token.symbol}-${token.name}`}
+                      className="border border-[var(--hood-fg)] p-4"
+                    >
+                      <p className="truncate text-[8px] uppercase tracking-[0.16em] opacity-60">
+                        {token.name} across HoodWallets
+                      </p>
 
-                    <p className="mt-4 text-3xl leading-none tracking-[-0.05em]">
-                      {formatTokenBalance(
-                        totalGoat,
-                        18,
-                        6,
-                      )}
-                    </p>
+                      <p className="mt-4 break-all text-3xl leading-none tracking-[-0.05em]">
+                        {formatTokenBalance(
+                          token.balanceRaw,
+                          token.decimals,
+                          6,
+                        )}
+                      </p>
 
-                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
-                      GOAT
-                    </p>
-                  </div>
+                      <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
+                        {token.symbol}
+                      </p>
+                    </div>
+                  ))}
 
                   <div className="border border-[var(--hood-fg)] p-4">
                     <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
@@ -1251,9 +1592,7 @@ export default function HoodWalletPage() {
                     </p>
 
                     <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
-                      {
-                        NATIVE_SYMBOL
-                      }
+                      {NATIVE_SYMBOL}
                     </p>
                   </div>
 
@@ -1263,13 +1602,7 @@ export default function HoodWalletPage() {
                     </p>
 
                     <p className="mt-4 text-3xl leading-none tracking-[-0.05em]">
-                      {
-                        activeWalletCount
-                      }{" "}
-                      /{" "}
-                      {
-                        hoodWallets.length
-                      }
+                      {activeWalletCount} / {hoodWallets.length}
                     </p>
 
                     <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
@@ -1353,6 +1686,9 @@ export default function HoodWalletPage() {
                             }
                             wallet={
                               wallet
+                            }
+                            darkHood={
+                              darkHood
                             }
                           />
                         );
