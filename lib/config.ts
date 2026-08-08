@@ -52,6 +52,15 @@ const testnetPixelDataAddress =
   process.env.NEXT_PUBLIC_PIXEL_DATA_TESTNET_ADDRESS?.trim() || "";
 
 /* -------------------------------------------------------------------------- */
+/* Builder Fund */
+/* -------------------------------------------------------------------------- */
+
+const mainnetBuilderFundAddress =
+  "0xC7c165bA3fCf9244A45977D4809202b1DC803941";
+
+const testnetBuilderFundAddress = "";
+
+/* -------------------------------------------------------------------------- */
 /* HoodOS */
 /* -------------------------------------------------------------------------- */
 
@@ -64,6 +73,12 @@ const testnetHoodOSAddress =
 /* -------------------------------------------------------------------------- */
 /* HoodWallet */
 /* -------------------------------------------------------------------------- */
+
+  const mainnetGoatAddress =
+  process.env.NEXT_PUBLIC_GOAT_MAINNET_ADDRESS?.trim() || "";
+
+const testnetGoatAddress =
+  process.env.NEXT_PUBLIC_GOAT_TESTNET_ADDRESS?.trim() || "";
 
 const mainnetHoodWalletAddress =
   process.env.NEXT_PUBLIC_HOODWALLET_MAINNET_ADDRESS?.trim() || "";
@@ -106,6 +121,11 @@ export const siteConfig = {
       ? mainnetCollectionAddress
       : testnetCollectionAddress,
 
+  builderFundAddress:
+    appNetwork === "mainnet"
+      ? mainnetBuilderFundAddress
+      : testnetBuilderFundAddress,
+
   hoodTalkRegistryAddress:
     appNetwork === "mainnet"
       ? mainnetRegistryAddress
@@ -130,6 +150,11 @@ export const siteConfig = {
     appNetwork === "mainnet"
       ? mainnetHoodWalletAddress
       : testnetHoodWalletAddress,
+
+  goatAddress:
+    appNetwork === "mainnet"
+      ? mainnetGoatAddress
+      : testnetGoatAddress,
 };
 
 export function shortAddress(address: string) {

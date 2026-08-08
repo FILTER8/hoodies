@@ -9,16 +9,9 @@ const X_HANDLE = "@OnChainHoodies";
 const X_PROFILE = "https://x.com/OnChainHoodies";
 const BUILDER_VAULT_ADDRESS =
   "0xC7c165bA3fCf9244A45977D4809202b1DC803941";
-const BUILDER_VAULT_INITIAL_OCH = 150;
-
-type VaultOwnershipResponse = {
-  items?: Array<{
-    tokenId: string;
-    name?: string;
-    image?: string;
-  }>;
-  count?: number;
-  indexedTotal?: number | null;
+type BuilderFundResponse = {
+  balance?: number;
+  sentOut?: number;
   error?: string;
 };
 
@@ -261,6 +254,7 @@ export default function ApiPage() {
   const [overlap, setOverlap] = useState<HolderOverlapCollection[]>([]);
   const [measuredAt, setMeasuredAt] = useState<string>();
   const [vaultBalance, setVaultBalance] = useState<number | null>(null);
+  const [builderSentOut, setBuilderSentOut] = useState<number | null>(null);
   const [vaultLoading, setVaultLoading] = useState(true);
 
   useEffect(() => {
@@ -278,15 +272,10 @@ export default function ApiPage() {
               signal: controller.signal,
               cache: "no-store",
             }),
-            fetch(
-              `/api/hoodies?owner=${encodeURIComponent(
-                BUILDER_VAULT_ADDRESS,
-              )}`,
-              {
-                signal: controller.signal,
-                cache: "no-store",
-              },
-            ),
+            fetch("/api/builder-fund", {
+              signal: controller.signal,
+              cache: "no-store",
+            }),
           ]);
 
         setStatus(statusResponse.ok ? "live" : "offline");
@@ -300,19 +289,16 @@ export default function ApiPage() {
         }
 
         if (vaultResponse.ok) {
-          const vaultData =
-            (await vaultResponse.json()) as VaultOwnershipResponse;
-          const uniqueCount = Array.isArray(vaultData.items)
-            ? new Set(
-                vaultData.items.map((item) => String(item.tokenId)),
-              ).size
-            : Number(vaultData.count ?? vaultData.indexedTotal ?? 0);
+          const fundData =
+            (await vaultResponse.json()) as BuilderFundResponse;
+          const balance = Number(fundData.balance);
+          const sentOut = Number(fundData.sentOut);
 
-          setVaultBalance(
-            Number.isFinite(uniqueCount) ? uniqueCount : null,
-          );
+          setVaultBalance(Number.isFinite(balance) ? balance : null);
+          setBuilderSentOut(Number.isFinite(sentOut) ? sentOut : null);
         } else {
           setVaultBalance(null);
+          setBuilderSentOut(null);
         }
 
         setVaultLoading(false);
@@ -352,10 +338,6 @@ export default function ApiPage() {
     [overlap],
   );
 
-  const distributedOCH =
-    vaultBalance === null
-      ? null
-      : Math.max(0, BUILDER_VAULT_INITIAL_OCH - vaultBalance);
 
   const vaultExplorerUrl = `https://explorer.robinhoodchain.com/address/${BUILDER_VAULT_ADDRESS}`;
 
@@ -686,7 +668,7 @@ export default function ApiPage() {
             <div className="grid lg:grid-cols-[0.9fr_1.1fr]">
               <div className="bg-black p-6 text-[#ccff00] md:p-10">
                 <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
-                  Builder Treasury
+                  Builder Fund
                 </p>
 
                 <p className="mt-5 text-[clamp(4rem,9vw,8rem)] leading-[0.82] tracking-[-0.08em]">
@@ -698,29 +680,32 @@ export default function ApiPage() {
                 </p>
 
                 <p className="mt-7 max-w-md text-base leading-relaxed opacity-75">
-                  Live on-chain inventory reserved for builders who create real
-                  value for the Hood.
+                  A growing pool of Hoodies reserved for holders who build useful
+                  things for the Hood. The fund can grow or shrink as Hoodies are
+                  acquired and rewarded.
                 </p>
 
                 <div className="mt-8 border border-[#ccff00]">
                   <div className="grid grid-cols-2 border-b border-[#ccff00]">
                     <div className="border-r border-[#ccff00] p-4">
                       <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
-                        Initial allocation
+                        In fund
                       </p>
                       <p className="mt-2 text-2xl">
-                        {BUILDER_VAULT_INITIAL_OCH}
+                        {vaultLoading
+                          ? "..."
+                          : vaultBalance?.toLocaleString() ?? "—"}
                       </p>
                     </div>
 
                     <div className="p-4">
                       <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
-                        Distributed
+                        Sent out
                       </p>
                       <p className="mt-2 text-2xl">
                         {vaultLoading
                           ? "..."
-                          : distributedOCH?.toLocaleString() ?? "—"}
+                          : builderSentOut?.toLocaleString() ?? "—"}
                       </p>
                     </div>
                   </div>
@@ -747,24 +732,25 @@ export default function ApiPage() {
 
               <div className="p-6 md:p-10">
                 <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
-                  Build useful things. Share in what you help create.
+                  Hold a Hoodie. Build something useful. Ship it.
                 </p>
 
                 <h3 className="mt-6 text-4xl leading-[0.95] tracking-[-0.05em] md:text-6xl">
-                  THE HOOD
+                  BUILD. SHIP.
                   <br />
-                  REWARDS BUILDERS.
+                  EARN A BUILDER HOODIE.
                 </h3>
 
                 <p className="mt-7 max-w-2xl text-base leading-relaxed opacity-75 md:text-lg">
                   Build something useful with the OnChainHoodies API, ship it
-                  publicly and tag {X_HANDLE}. Strong builds may receive OCH
-                  from the Builder Treasury and become part of the official Hood
+                  publicly and tag {X_HANDLE}. To qualify for a Builder Hoodie,
+                  you must hold at least one OnChainHoodie. Strong builds may
+                  receive a Builder Hoodie and become part of the official Hood
                   ecosystem.
                 </p>
 
                 <div className="mt-8 grid grid-cols-2 border-l border-t border-black text-[9px] uppercase tracking-[0.13em] md:grid-cols-4">
-                  {["Useful", "Original", "Working", "Openly shipped"].map(
+                  {["Hold", "Build", "Ship", "Earn"].map(
                     (item) => (
                       <div
                         key={item}
@@ -776,11 +762,12 @@ export default function ApiPage() {
                   )}
                 </div>
 
-                <div className="mt-8 grid gap-2 md:grid-cols-3">
+                <div className="mt-8 grid gap-2 md:grid-cols-4">
                   {[
-                    ["Shipped", "A useful working experiment."],
-                    ["Adopted", "Used and shared by the community."],
-                    ["Core Build", "Becomes part of the official Hood ecosystem."],
+                    ["Hold", "Hold at least one OnChainHoodie."],
+                    ["Build", "Create something useful and working."],
+                    ["Ship", "Put it out there for the community."],
+                    ["Earn", "Strong builds may receive a Builder Hoodie."],
                   ].map(([title, copy]) => (
                     <div key={title} className="border border-black p-4">
                       <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
@@ -812,9 +799,9 @@ export default function ApiPage() {
                 </div>
 
                 <p className="mt-6 text-[9px] uppercase leading-relaxed tracking-[0.12em] opacity-55">
-                  Rewards are selective and based on quality, usefulness,
-                  originality and community impact. A submission does not
-                  guarantee a reward.
+                  Builder Hoodies are selective. A submission does not guarantee
+                  a reward. Quality, usefulness, originality and community impact
+                  matter.
                 </p>
               </div>
             </div>
@@ -825,8 +812,8 @@ export default function ApiPage() {
               Builder principle
             </p>
             <p className="mt-6 max-w-5xl text-3xl leading-tight tracking-[-0.04em] md:text-5xl">
-              Most communities ask builders to contribute. The Hood wants
-              builders to share in what they help create.
+              Join the Hood. Build for the Hood. Strong contributions can earn
+              a Builder Hoodie.
             </p>
           </div>
         </div>

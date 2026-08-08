@@ -78,48 +78,114 @@ const neighborFallbacks: Record<NeighborName, string> = {
   HODLer: "/hodler.png",
 };
 
-const builds = [
+const tools = [
   {
     label: "Live",
     title: "Hood Talk",
-    copy: "Give your Hoodie a permanent on-chain voice and build its public history inside the Hood.",
+    copy: "Give your Hoodie a permanent on-chain voice.",
     href: "/hood-talk",
-    action: "Give your Hoodie a voice",
-  },
-  {
-    label: "Live",
-    title: "Grid Exporter",
-    copy: "Choose the Hoodies in your wallet and export them as one clean, branded square PNG.",
-    href: "/tools/export",
-    action: "Open exporter",
-  },
-  {
-    label: "Live",
-    title: "Hoodie Cam",
-    copy: "Capture your surroundings through the black-and-green 1-bit language of the Hood.",
-    href: "/cam",
-    action: "Open camera",
-  },
-  {
-    label: "New",
-    title: "Hood Collage Maker",
-    copy: "Create animated scenes with Hoodies, custom pixel stickers, drawings and up to eight unique frames.",
-    href: "/tools/collage",
-    action: "Build a Hood scene",
+    action: "Open Hood Talk",
   },
   {
     label: "Live",
     title: "Hoodie Explorer",
-    copy: "Explore traits, Neighborhood Rarity, market data and the on-chain ink inside every Hoodie.",
+    copy: "Explore traits, rarity, market data and on-chain ink.",
     href: "/tools/explorer",
     action: "Open explorer",
   },
   {
     label: "Live",
-    title: "Builder API",
-    copy: "Build with artwork, traits, rarity, ink, market data and collector intelligence.",
+    title: "Grid Exporter",
+    copy: "Turn the Hoodies in your wallet into one clean branded grid.",
+    href: "/tools/export",
+    action: "Open exporter",
+  },
+  {
+    label: "New",
+    title: "Collage Maker",
+    copy: "Build animated Hoodie scenes with stickers, drawings and frames.",
+    href: "/tools/collage",
+    action: "Make a scene",
+  },
+  {
+    label: "Live",
+    title: "Hoodie Cam",
+    copy: "See your surroundings through the black-and-green language of the Hood.",
+    href: "/cam",
+    action: "Open camera",
+  },
+  {
+    label: "New",
+    title: "Gym Builder",
+    copy: "Turn any Hoodie into a gym bro using its raw on-chain PixelData.",
+    href: "/tools/gym",
+    action: "Enter the gym",
+  },
+];
+
+const faqs = [
+  {
+    question: "What are OnChainHoodies?",
+    answer:
+      "OnChainHoodies is a collection of 6,000 1-bit Hoodies living as a fully on-chain neighborhood. Each Hoodie has its own traits, artwork and identity inside a growing ecosystem of tools and experiences.",
+    href: "/tools/explorer",
+    linkLabel: "Explore the Hoodies",
+  },
+  {
+    question: "What does fully on-chain mean?",
+    answer:
+      "The data needed to reconstruct each Hoodie lives on-chain. Traits, PixelData and rendering are part of the on-chain system instead of depending on a traditional hosted image file.",
+    href: "/tools/explorer",
+    linkLabel: "Inspect a Hoodie",
+  },
+  {
+    question: "What can I do with my Hoodie?",
+    answer:
+      "Explore traits and rarity, give your Hoodie a permanent Hood Talk, make collages and wallet grids, use Hoodie Cam, create a Gym Hoodie and discover more experiences built around the collection.",
+    href: "#builds",
+    linkLabel: "Explore the tools",
+  },
+  {
+    question: "What is Hood Talk?",
+    answer:
+      "Hood Talk gives a Hoodie a permanent on-chain voice. Each message becomes part of that Hoodie's public history and can be read through the site and the public API.",
+    href: "/hood-talk",
+    linkLabel: "Open Hood Talk",
+  },
+  {
+    question: "What are HoodWallet and HoodOS?",
+    answer:
+      "HoodWallet gives a Hoodie its own programmable on-chain wallet. HoodOS helps the holder use that wallet and optionally delegate actions while ownership of the Hoodie stays with the holder.",
+    href: "/hoodwallet",
+    linkLabel: "Explore HoodWallet",
+  },
+  {
+    question: "What is $OCH?",
+    answer:
+      "$OCH is the planned fixed-supply currency of the Hood for citizens, contributors and the wider ecosystem. No OCH contract has been deployed yet, so beware of fake tokens and links.",
+    href: "/och",
+    linkLabel: "Explore the Hood Economy",
+  },
+  {
+    question: "Can I build with OnChainHoodies?",
+    answer:
+      "Yes. OnChainHoodies is CC0, so the artwork and culture are open for people to build with. The public Builder API also exposes collection, ownership, market, Hood Talk and intelligence data for new tools and experiments.",
     href: "/api",
-    action: "Build in the Hood",
+    linkLabel: "Open the Builder API",
+  },
+  {
+    question: "Where can I see community projects?",
+    answer:
+      "The Builders page collects tools, experiments and projects created around OnChainHoodies. The homepage keeps only a smaller selection so the full ecosystem has room to grow elsewhere.",
+    href: "/builders",
+    linkLabel: "See community builds",
+  },
+  {
+    question: "Where can I follow what happens next?",
+    answer:
+      "New tools and ecosystem updates appear across the site, while the community pages and Discord are the best places to follow what is shipping and talk with other Hoodie holders.",
+    href: "/community",
+    linkLabel: "Enter the community",
   },
 ];
 
@@ -815,6 +881,8 @@ export default function Home() {
     return () => controller.abort();
   }, [marketRange]);
 
+
+
   const activePoints = useMemo(() => {
     if (marketPoints.length <= 60) return marketPoints;
 
@@ -939,7 +1007,7 @@ export default function Home() {
           <div className="mt-12 grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
             <div>
               <h2 className="section-title">
-                Four neighbors.
+                Four Hoodies.
                 <br />
                 One Hood.
               </h2>
@@ -951,7 +1019,7 @@ export default function Home() {
               </p>
 
               <p className="mt-5 text-[10px] uppercase tracking-[0.16em] opacity-60">
-                Tap a neighbor to meet another.
+                Tap a Hoodie to meet another.
               </p>
             </div>
 
@@ -1402,85 +1470,118 @@ export default function Home() {
   </div>
 </section>
 
-      <section id="builds" className="px-6 py-24">
+      <section id="builds" className="px-6 py-20 md:py-24">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>04 / Builds</p>
-            <p>Built in the Hood</p>
+            <p>04 / Things to do</p>
+            <p>Use your Hoodie</p>
           </div>
 
-          <div className="mt-12 grid border-l-2 border-t-2 border-black md:grid-cols-2">
-            {builds.map((build, index) => (
+          <div className="mt-10 grid border-l-2 border-t-2 border-black sm:grid-cols-2 lg:grid-cols-3">
+            {tools.map((tool, index) => (
               <article
-                key={build.title}
-                className="flex min-h-[330px] flex-col justify-between border-b-2 border-r-2 border-black p-6 md:p-10"
+                key={tool.title}
+                className="flex min-h-[190px] flex-col justify-between border-b-2 border-r-2 border-black p-5 md:p-6"
               >
                 <div>
-                  <div className="flex items-start justify-between gap-6">
-                    <span className="text-[10px] uppercase tracking-[0.18em] opacity-60">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-[8px] uppercase tracking-[0.16em] opacity-50">
                       {String(index + 1).padStart(2, "0")}
                     </span>
-
-                    <span className="border border-black px-2 py-1 text-[9px] uppercase tracking-[0.14em]">
-                      {build.label}
+                    <span className="border border-black px-2 py-1 text-[8px] uppercase tracking-[0.13em]">
+                      {tool.label}
                     </span>
                   </div>
 
-                  <h3 className="mt-12 text-4xl leading-none md:text-5xl">
-                    {build.title}
+                  <h3 className="mt-7 text-2xl leading-none tracking-[-0.04em] md:text-3xl">
+                    {tool.title}
                   </h3>
 
-                  <p className="mt-6 max-w-xl text-base leading-relaxed opacity-75 md:text-lg">
-                    {build.copy}
+                  <p className="mt-4 max-w-sm text-sm leading-relaxed opacity-70">
+                    {tool.copy}
                   </p>
                 </div>
 
                 <Link
-                  href={build.href}
-                  className="mt-10 text-xs uppercase tracking-[0.18em] underline underline-offset-4"
+                  href={tool.href}
+                  className="mt-6 text-[9px] uppercase tracking-[0.15em] underline underline-offset-4"
                 >
-                  {build.action} →
+                  {tool.action} →
                 </Link>
               </article>
             ))}
           </div>
+
+          <div className="mt-5 flex flex-col gap-4 border-2 border-black bg-black p-5 text-[#ccff00] md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[8px] uppercase tracking-[0.16em] opacity-50">
+                Community ecosystem
+              </p>
+              <p className="mt-2 text-lg md:text-xl">
+                These are only the front doors. See what the Hood is building.
+              </p>
+            </div>
+
+            <Link
+              href="/builders"
+              className="pixel-cta shrink-0 border-[#ccff00] bg-[#ccff00] text-black"
+            >
+              Explore community builds →
+            </Link>
+          </div>
         </div>
       </section>
 
-      <section id="agents" className="bg-black px-6 py-24 text-[#ccff00]">
-        <div className="mx-auto grid max-w-[1440px] gap-12 lg:grid-cols-2">
-          <div>
-            <div className="section-heading-row">
-              <p>05 / Agents</p>
-              <p>Humans + machines</p>
-            </div>
-
-            <h2 className="section-title mt-12">
-              Readable by humans.
-              <br />
-              Ready for agents.
-            </h2>
+      <section id="hoodos" className="bg-black px-6 py-24 text-[#ccff00]">
+        <div className="mx-auto max-w-[1440px]">
+          <div className="section-heading-row">
+            <p>05 / HoodOS + HoodWallet</p>
+            <p>A wallet for your Hoodie</p>
           </div>
 
-          <div className="flex flex-col justify-end">
-            <p className="max-w-2xl text-lg leading-relaxed opacity-80 md:text-2xl">
-              Fully on-chain data gives collectors, builders and agents an open
-              foundation to inspect traits, interpret artwork, read markets and
-              create new ways to explore the collection.
-            </p>
+          <div className="mt-12 grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+            <div>
+              <p className="text-[9px] uppercase tracking-[0.18em] opacity-55">
+                More than a collectible
+              </p>
 
-            <div className="mt-10 grid grid-cols-2 border-l border-t border-[#ccff00] text-[10px] uppercase tracking-[0.14em]">
+              <h2 className="section-title mt-5">
+                Your Hoodie
+                <br />
+                gets its own wallet.
+              </h2>
+
+              <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-78 md:text-xl">
+                HoodWallet gives every Hoodie its own on-chain account. It can hold
+                assets and interact with the on-chain world, while HoodOS keeps the
+                Hoodie owner in control and makes optional delegation possible.
+              </p>
+
+              <Link
+                href="/hoodwallet"
+                className="pixel-cta mt-9 inline-flex border-[#ccff00]"
+              >
+                Explore HoodWallet →
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-2 border-l-2 border-t-2 border-[#ccff00]">
               {[
-                "On-chain metadata",
-                "Market intelligence",
-                "Machine-readable artwork",
-                "Builder API",
-              ].map((item) => (
+                ["Own assets", "A wallet address that belongs to the Hoodie."],
+                ["Use on-chain apps", "Let the Hoodie interact beyond the collection itself."],
+                ["Delegate actions", "Give approved access without handing over the Hoodie."],
+                ["Stay in control", "Ownership of the Hoodie remains with its holder."],
+              ].map(([title, copy]) => (
                 <div
-                  key={item}
-                  className="border-b border-r border-[#ccff00] p-4"
+                  key={title}
+                  className="min-h-[190px] border-b-2 border-r-2 border-[#ccff00] p-5 md:p-6"
                 >
-                  {item}
+                  <h3 className="text-xl leading-none tracking-[-0.03em] md:text-2xl">
+                    {title}
+                  </h3>
+                  <p className="mt-4 text-sm leading-relaxed opacity-65">
+                    {copy}
+                  </p>
                 </div>
               ))}
             </div>
@@ -1488,10 +1589,84 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="contracts" className="px-6 py-24">
+      <section id="builders" className="px-6 py-20 md:py-24">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>06 / On-chain</p>
+            <p>06 / Builders</p>
+            <p>Build in the Hood</p>
+          </div>
+
+          <div className="mt-10 grid gap-8 lg:grid-cols-[0.7fr_1.3fr] lg:items-end">
+            <div>
+              <h2 className="section-title">
+                Build on
+                <br />
+                the Hood.
+              </h2>
+
+              <p className="mt-6 max-w-lg text-base leading-relaxed opacity-70 md:text-lg">
+                Build with an open CC0 collection, use the public infrastructure or
+                discover what the community is already creating around the Hood.
+              </p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <Link
+                href="/api"
+                className="flex min-h-[180px] flex-col justify-between border-2 border-black p-5 transition-opacity hover:opacity-85 md:p-6"
+                style={{
+                  backgroundColor: "var(--black)",
+                  color: "var(--green)",
+                }}
+              >
+                <div>
+                  <p className="text-[8px] uppercase tracking-[0.16em] opacity-50">
+                    Infrastructure
+                  </p>
+                  <h3 className="mt-5 text-3xl leading-none tracking-[-0.04em]">
+                    Builder API
+                  </h3>
+                  <p className="mt-4 max-w-sm text-sm leading-relaxed opacity-65">
+                    Open data and APIs for building with the Hood.
+                  </p>
+                </div>
+                <span className="mt-6 text-[9px] uppercase tracking-[0.15em] underline underline-offset-4">
+                  Open API →
+                </span>
+              </Link>
+
+              <Link
+                href="/builders"
+                className="flex min-h-[180px] flex-col justify-between border-2 border-black p-5 transition-opacity hover:opacity-85 md:p-6"
+                style={{
+                  backgroundColor: "var(--black)",
+                  color: "var(--green)",
+                }}
+              >
+                <div>
+                  <p className="text-[8px] uppercase tracking-[0.16em] opacity-50">
+                    Ecosystem
+                  </p>
+                  <h3 className="mt-5 text-3xl leading-none tracking-[-0.04em]">
+                    Community Builds
+                  </h3>
+                  <p className="mt-4 max-w-sm text-sm leading-relaxed opacity-65">
+                    Discover what other Hoodie holders are shipping.
+                  </p>
+                </div>
+                <span className="mt-6 text-[9px] uppercase tracking-[0.15em] underline underline-offset-4">
+                  Explore builds →
+                </span>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="contracts" className="bg-black px-6 py-24 text-[#ccff00]">
+        <div className="mx-auto max-w-[1440px]">
+          <div className="section-heading-row">
+            <p>07 / On-chain</p>
             <p>Verify everything</p>
           </div>
 
@@ -1500,19 +1675,20 @@ export default function Home() {
               <h2 className="section-title">Contracts, not promises.</h2>
 
               <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75">
-                Collection data, rendering and pixels live on-chain. Inspect
-                the contracts, read the code and verify the Hood yourself.
+                Collection data, rendering, pixels and the programmable wallet
+                layer live on-chain. Inspect the contracts and verify the Hood
+                yourself.
               </p>
             </div>
 
-            <div className="border-l-2 border-t-2 border-black">
+            <div className="border-l-2 border-t-2 border-[#ccff00]">
               {contracts.map((contract) => {
                 const href = contractExplorerUrl(contract.address);
 
                 return (
                   <div
                     key={contract.label}
-                    className="grid gap-3 border-b-2 border-r-2 border-black p-5 md:grid-cols-[160px_1fr_auto] md:items-center"
+                    className="grid gap-3 border-b-2 border-r-2 border-[#ccff00] p-5 md:grid-cols-[160px_1fr_auto] md:items-center"
                   >
                     <span className="text-[10px] uppercase tracking-[0.16em] opacity-60">
                       {contract.label}
@@ -1544,7 +1720,63 @@ export default function Home() {
         </div>
       </section>
 
-            <section className="bg-black px-6 py-7 text-[#ccff00]">
+      <section id="faq" className="px-6 py-24">
+        <div className="mx-auto max-w-[1440px]">
+          <div className="section-heading-row border-black">
+            <p>08 / FAQ</p>
+            <p>Read the Hood</p>
+          </div>
+
+          <div className="mt-12 grid gap-10 lg:grid-cols-[0.55fr_1.45fr]">
+            <div>
+              <h2 className="section-title">
+                Know the Hood.
+                <br />
+                Go deeper.
+              </h2>
+              <p className="mt-7 max-w-md text-base leading-relaxed opacity-70">
+                The essentials about the collection, what your Hoodie can do and where to explore next.
+              </p>
+            </div>
+
+            <div className="border-t-2 border-black">
+              {faqs.map((faq, index) => (
+                <details
+                  key={faq.question}
+                  className="group border-b-2 border-black"
+                >
+                  <summary className="flex cursor-pointer list-none items-center gap-4 py-5 md:py-6 [&::-webkit-details-marker]:hidden">
+                    <span className="w-9 shrink-0 text-[8px] uppercase tracking-[0.15em] opacity-45">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="flex-1 text-sm uppercase tracking-[0.1em] md:text-base">
+                      {faq.question}
+                    </span>
+                    <span className="text-2xl leading-none group-open:hidden">+</span>
+                    <span className="hidden text-2xl leading-none group-open:inline">−</span>
+                  </summary>
+
+                  <div className="pb-6 pl-[52px] pr-10">
+                    <p className="max-w-3xl text-sm leading-relaxed opacity-70 md:text-base">
+                      {faq.answer}
+                    </p>
+                    {faq.href ? (
+                      <Link
+                        href={faq.href}
+                        className="mt-4 inline-block text-[9px] uppercase tracking-[0.15em] underline underline-offset-4"
+                      >
+                        {faq.linkLabel} →
+                      </Link>
+                    ) : null}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-black px-6 py-7 text-[#ccff00]">
         <div className="mx-auto flex max-w-[1440px] flex-col gap-5 border-y border-[#ccff00] py-6 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
@@ -1552,13 +1784,12 @@ export default function Home() {
             </p>
 
             <h2 className="mt-2 text-2xl leading-none tracking-[-0.04em] md:text-3xl">
-              Build with your neighbors.
+              Build with your Hoodies.
             </h2>
 
             <p className="mt-3 max-w-2xl text-sm leading-relaxed opacity-70 md:text-base">
-              Meet builders, collectors and holders inside the Hood. Share what
-              you are working on, find collaborators and stay close to what
-              ships next.
+              Meet other Hoodie holders inside the Hood. Share what you are working on,
+              find collaborators and stay close to what ships next.
             </p>
           </div>
 
