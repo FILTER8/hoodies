@@ -50,5 +50,31 @@
     "description": "Give every Hoodie a personality, House, soulmate, rival and a deeper social identity.",
     "tags": ["Identity", "Social" ],
     "status": "Live"
-  }
+  },
+  {
+  "id": "005",
+  "title": "Under the Hoodie",
+  "creator": "Scabanel",
+  "xHandle": "@Scabanel_",
+  "xUrl": "https://x.com/Scabanel_",
+  "websiteUrl": "https://under-the-hoodie.vercel.app",
+  "featurePostUrl": "https://x.com/OnChainHoodies/status/2084371834586223053?s=20",
+  "image": "/builders/under-the-hoodie.png",
+  "description": "A creator toolkit for Hoodie market data, daily news, shareable Hood Talk GIFs and content prompts.",
+  "tags": ["Creator Tools", "Data"],
+  "status": "Live"
+},
+{
+  "id": "006",
+  "title": "HoodLab",
+  "creator": "Geruzzi",
+  "xHandle": "@LtGeruzzi",
+  "xUrl": "https://x.com/LtGeruzzi",
+  "websiteUrl": "https://hoodlab.vercel.app/",
+  "featurePostUrl": "",
+  "image": "/builders/hoodlab.png",
+  "description": "A growing lab of Hoodie tools, data visualizations and shareable experiences built around the collection.",
+  "tags": ["Tools", "Data"],
+  "status": "Live"
+}
 ]
