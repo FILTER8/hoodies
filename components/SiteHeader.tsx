@@ -8,8 +8,8 @@ import WalletButton from "./WalletButton";
 const links = [
   { href: "/och", label: "$OCH" },
   { href: "/passport", label: "Passport" },
-  { href: "/community", label: "community" },
-  { href: "/hood-talk", label: "Hood Talk" },
+  { href: "/hood-talk", label: "HoodTalk" },
+  { href: "/hoodwallet", label: "hoodwallet" },
   { href: "/api", label: "API" },
 ];
 

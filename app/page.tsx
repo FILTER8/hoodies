@@ -155,14 +155,14 @@ const faqs = [
   {
     question: "What are HoodWallet and HoodOS?",
     answer:
-      "HoodWallet gives a Hoodie its own programmable on-chain wallet. HoodOS helps the holder use that wallet and optionally delegate actions while ownership of the Hoodie stays with the holder.",
+      "HoodWallet gives every Hoodie its own programmable on-chain account. $OCH is used to activate it for the current owner, while HoodOS handles the wallet logic and permissions. When the Hoodie changes owners, the HoodWallet becomes inactive and the new owner activates it again.",
     href: "/hoodwallet",
     linkLabel: "Explore HoodWallet",
   },
   {
     question: "What is $OCH?",
     answer:
-      "$OCH is the planned fixed-supply currency of the Hood for citizens, contributors and the wider ecosystem. No OCH contract has been deployed yet, so beware of fake tokens and links.",
+      "$OCH is the fixed-supply currency of the Hood. It powers participation across the OnChainHoodies ecosystem and is used to activate HoodWallets. Season 01 participation is complete and the first $OCH distribution is being prepared. No $OCH contract has been deployed yet, so beware of fake tokens and links.",
     href: "/och",
     linkLabel: "Explore the Hood Economy",
   },
@@ -963,7 +963,7 @@ export default function Home() {
         </h1>
 
         <p className="mt-10 max-w-xl text-lg leading-relaxed md:text-2xl">
-          A fully on-chain neighborhood.
+          Fully on-chain Hoodies. One growing Hood.
         </p>
 
         <div className="mt-10 flex flex-wrap justify-center gap-3">
@@ -1330,145 +1330,198 @@ export default function Home() {
       </section>
 
       <section id="och" className="bg-black px-6 py-24 text-[#ccff00]">
-  <div className="mx-auto max-w-[1440px]">
-    <div className="section-heading-row">
-      <p>03 / The Hood Economy</p>
-      <p>OCH / Coming Soon</p>
-    </div>
+        <div className="mx-auto max-w-[1440px]">
+          <div className="section-heading-row">
+            <p>03 / The Hood Economy</p>
+            <p>$OCH / Drop Preparation</p>
+          </div>
 
-    <div className="mt-12 grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
-      <div>
-        <img
-          src="/coin1.gif"
-          alt="Animated OCH coin"
-          className="image-render-pixel h-36 w-36 object-contain md:h-52 md:w-52"
-        />
+          <div className="mt-12 grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+            <div>
+              <img
+                src="/coin1.gif"
+                alt="Animated OCH coin"
+                className="image-render-pixel h-36 w-36 object-contain md:h-52 md:w-52"
+              />
 
-        <p className="mt-8 text-[10px] uppercase tracking-[0.18em] opacity-60">
-          The Currency of the Hood
-        </p>
+              <p className="mt-8 text-[10px] uppercase tracking-[0.18em] opacity-60">
+                The Currency of the Hood
+              </p>
 
-        <h2 className="section-title mt-4">
-          $OCH
-          <br />
-          Built for the Hood.
-        </h2>
+              <h2 className="section-title mt-4">
+                $OCH
+                <br />
+                Built for the Hood.
+              </h2>
 
-        <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-75 md:text-xl">
-          A fixed-supply ERC-20 planned for citizens, contributors and the
-          wider OnChainHoodies ecosystem.
-        </p>
+              <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-75 md:text-xl">
+                A fixed-supply ERC-20 powering participation, HoodWallet
+                activation and the wider OnChainHoodies ecosystem.
+              </p>
 
-        <Link
-          href="/och"
-          className="mt-10 inline-block text-xs uppercase tracking-[0.18em] underline underline-offset-4"
-        >
-          Explore the Economy →
-        </Link>
-      </div>
+              <div className="mt-8 grid max-w-xl grid-cols-2 border-l border-t border-[#ccff00] text-[9px] uppercase tracking-[0.14em] sm:grid-cols-4">
+                {[
+                  ["Supply", "100M"],
+                  ["Inflation", "None"],
+                  ["Trading Tax", "0%"],
+                  ["Season 01", "Complete"],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="border-b border-r border-[#ccff00] p-3"
+                  >
+                    <p className="opacity-50">{label}</p>
+                    <p className="mt-2 text-base tracking-normal">{value}</p>
+                  </div>
+                ))}
+              </div>
 
-      <div className="grid gap-10 md:grid-cols-[0.75fr_1.25fr] md:items-center">
-        <div className="mx-auto aspect-square w-full max-w-[260px]">
-          <svg
-            viewBox="0 0 240 240"
-            role="img"
-            aria-label="Proposed OCH allocation chart"
-            className="h-full w-full"
-          >
-            <circle
-              cx="120"
-              cy="120"
-              r="86"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="30"
-              opacity="0.12"
-            />
-
-            <g transform="rotate(-90 120 120)">
-              {[
-                { dash: "30 70", offset: 0, opacity: 1 },
-                { dash: "35 65", offset: -30, opacity: 0.82 },
-                { dash: "15 85", offset: -65, opacity: 0.64 },
-                { dash: "10 90", offset: -80, opacity: 0.48 },
-                { dash: "5 95", offset: -90, opacity: 0.34 },
-                { dash: "5 95", offset: -95, opacity: 0.22 },
-              ].map((segment, index) => (
-                <circle
-                  key={index}
-                  cx="120"
-                  cy="120"
-                  r="86"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="30"
-                  pathLength="100"
-                  strokeDasharray={segment.dash}
-                  strokeDashoffset={segment.offset}
-                  strokeLinecap="butt"
-                  opacity={segment.opacity}
-                />
-              ))}
-            </g>
-
-            <circle
-              cx="120"
-              cy="120"
-              r="58"
-              fill="black"
-              stroke="currentColor"
-              strokeWidth="1"
-            />
-
-            <text
-              x="120"
-              y="111"
-              textAnchor="middle"
-              fill="currentColor"
-              fontSize="10"
-              letterSpacing="2"
-            >
-              PROPOSED
-            </text>
-
-            <text
-              x="120"
-              y="137"
-              textAnchor="middle"
-              fill="currentColor"
-              fontSize="24"
-            >
-              100M
-            </text>
-          </svg>
-        </div>
-
-        <div className="border-l-2 border-t-2 border-[#ccff00]">
-          {[
-            ["Citizens", "30%"],
-            ["Community Fund", "35%"],
-            ["Liquidity", "15%"],
-            ["Treasury", "10%"],
-            ["Robinhood Ecosystem", "5%"],
-            ["Team", "5%"],
-          ].map(([label, value]) => (
-            <div
-              key={label}
-              className="flex items-center justify-between gap-4 border-b-2 border-r-2 border-[#ccff00] p-4"
-            >
-              <span className="text-sm md:text-base">{label}</span>
-              <span className="text-xl leading-none md:text-2xl">{value}</span>
+              <Link
+                href="/och"
+                className="mt-10 inline-block text-xs uppercase tracking-[0.18em] underline underline-offset-4"
+              >
+                Explore the Economy →
+              </Link>
             </div>
-          ))}
-        </div>
-      </div>
-    </div>
 
-    <div className="mt-10 border border-[#ccff00] px-4 py-3 text-center text-[8px] uppercase leading-relaxed tracking-[0.14em] opacity-70">
-      No OCH contract has been deployed. Beware of fake tokens and links.
-    </div>
-  </div>
-</section>
+            <div className="grid gap-10 md:grid-cols-[0.75fr_1.25fr] md:items-center">
+              <div className="mx-auto aspect-square w-full max-w-[260px]">
+                <svg
+                  viewBox="0 0 240 240"
+                  role="img"
+                  aria-label="OCH allocation chart"
+                  className="h-full w-full"
+                >
+                  <circle
+                    cx="120"
+                    cy="120"
+                    r="86"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="30"
+                    opacity="0.12"
+                  />
+
+                  <g transform="rotate(-90 120 120)">
+                    {[
+                      { dash: "30 70", offset: 0, opacity: 1 },
+                      { dash: "35 65", offset: -30, opacity: 0.82 },
+                      { dash: "20 80", offset: -65, opacity: 0.66 },
+                      { dash: "5 95", offset: -85, opacity: 0.5 },
+                      { dash: "5 95", offset: -90, opacity: 0.34 },
+                      { dash: "5 95", offset: -95, opacity: 0.22 },
+                    ].map((segment, index) => (
+                      <circle
+                        key={index}
+                        cx="120"
+                        cy="120"
+                        r="86"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="30"
+                        pathLength="100"
+                        strokeDasharray={segment.dash}
+                        strokeDashoffset={segment.offset}
+                        strokeLinecap="butt"
+                        opacity={segment.opacity}
+                      />
+                    ))}
+                  </g>
+
+                  <circle
+                    cx="120"
+                    cy="120"
+                    r="58"
+                    fill="black"
+                    stroke="currentColor"
+                    strokeWidth="1"
+                  />
+
+                  <text
+                    x="120"
+                    y="111"
+                    textAnchor="middle"
+                    fill="currentColor"
+                    fontSize="10"
+                    letterSpacing="2"
+                  >
+                    FIXED
+                  </text>
+
+                  <text
+                    x="120"
+                    y="137"
+                    textAnchor="middle"
+                    fill="currentColor"
+                    fontSize="24"
+                  >
+                    100M
+                  </text>
+                </svg>
+              </div>
+
+              <div className="border-l-2 border-t-2 border-[#ccff00]">
+                {[
+                  ["Hoodies", "30%"],
+                  ["Community Fund", "35%"],
+                  ["Liquidity", "20%"],
+                  ["Treasury", "5%"],
+                  ["Robinhood Ecosystem", "5%"],
+                  ["Team", "5%"],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="flex items-center justify-between gap-4 border-b-2 border-r-2 border-[#ccff00] p-4"
+                  >
+                    <span className="text-sm md:text-base">{label}</span>
+                    <span className="text-xl leading-none md:text-2xl">
+                      {value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-10 grid border-l border-t border-[#ccff00] md:grid-cols-3">
+            <div className="border-b border-r border-[#ccff00] p-4">
+              <p className="text-[8px] uppercase tracking-[0.14em] opacity-50">
+                Season 01
+              </p>
+              <p className="mt-2 text-xl">Complete</p>
+              <p className="mt-2 text-xs leading-relaxed opacity-60">
+                Early participation has closed and the first distribution is
+                being prepared.
+              </p>
+            </div>
+
+            <div className="border-b border-r border-[#ccff00] p-4">
+              <p className="text-[8px] uppercase tracking-[0.14em] opacity-50">
+                HoodWallet
+              </p>
+              <p className="mt-2 text-xl">2,500 OCH</p>
+              <p className="mt-2 text-xs leading-relaxed opacity-60">
+                Initial activation cost for the current Hoodie owner.
+              </p>
+            </div>
+
+            <div className="border-b border-r border-[#ccff00] p-4">
+              <p className="text-[8px] uppercase tracking-[0.14em] opacity-50">
+                First Activation
+              </p>
+              <p className="mt-2 text-xl">Hoodie + Buddy</p>
+              <p className="mt-2 text-xs leading-relaxed opacity-60">
+                The first activation introduces the Hoodie to its first
+                HoodWallet companion.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 border border-[#ccff00] px-4 py-3 text-center text-[8px] uppercase leading-relaxed tracking-[0.14em] opacity-70">
+            No $OCH contract has been deployed. Beware of fake tokens and links.
+          </div>
+        </div>
+      </section>
 
       <section id="builds" className="px-6 py-20 md:py-24">
         <div className="mx-auto max-w-[1440px]">
