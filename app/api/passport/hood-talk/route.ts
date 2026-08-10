@@ -17,8 +17,19 @@ const COLLECTION_ADDRESS = (
 ).toLowerCase();
 
 const TOKEN_URI_SELECTOR = "c87b56dd";
-const MAX_TOKEN_IDS = 6_000;
+const MAX_TOKEN_IDS = 250;
 const CONCURRENCY = 8;
+const MAX_REQUEST_BODY_BYTES = 64 * 1024;
+const RATE_WINDOW_MS = 60 * 1000;
+const RATE_MAX_COST = 1_000;
+const MAX_METADATA_BYTES = 512 * 1024;
+
+type RateEntry = {
+  cost: number;
+  resetAt: number;
+};
+
+const ipRateLimit = new Map<string, RateEntry>();
 
 type MetadataAttribute = {
   trait_type?: string;
@@ -49,6 +60,193 @@ type TokenMetadata = {
   // New rarity-stable renderer format.
   hood_talk?: HoodTalkMetadata;
 };
+
+function getClientIp(request: NextRequest) {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
+  return request.headers.get("x-real-ip")?.trim() || "unknown";
+}
+
+function pruneRateLimit(now: number) {
+  for (const [key, entry] of ipRateLimit) {
+    if (entry.resetAt <= now) {
+      ipRateLimit.delete(key);
+    }
+  }
+}
+
+function consumeWeightedRateLimit(
+  key: string,
+  requestCost: number,
+  now: number,
+) {
+  const safeCost = Math.max(1, requestCost);
+  const current = ipRateLimit.get(key);
+
+  if (!current || current.resetAt <= now) {
+    ipRateLimit.set(key, {
+      cost: safeCost,
+      resetAt: now + RATE_WINDOW_MS,
+    });
+
+    return {
+      allowed: safeCost <= RATE_MAX_COST,
+      retryAfterSeconds: 0,
+    };
+  }
+
+  if (current.cost + safeCost > RATE_MAX_COST) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.max(
+        1,
+        Math.ceil((current.resetAt - now) / 1000),
+      ),
+    };
+  }
+
+  current.cost += safeCost;
+  ipRateLimit.set(key, current);
+
+  return {
+    allowed: true,
+    retryAfterSeconds: 0,
+  };
+}
+
+function isPrivateIpv4(hostname: string) {
+  const match = hostname.match(
+    /^(?:(\d{1,3})\.){3}(\d{1,3})$/,
+  );
+
+  if (!match) return false;
+
+  const parts = hostname.split(".").map(Number);
+  if (
+    parts.length !== 4 ||
+    parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
+  ) {
+    return true;
+  }
+
+  const [a, b] = parts;
+
+  return (
+    a === 10 ||
+    a === 127 ||
+    a === 0 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
+  );
+}
+
+function isUnsafeMetadataHost(hostname: string) {
+  const normalized = hostname.toLowerCase().replace(/\.$/, "");
+
+  if (
+    normalized === "localhost" ||
+    normalized === "::1" ||
+    normalized.endsWith(".localhost") ||
+    normalized.endsWith(".local") ||
+    normalized.endsWith(".internal")
+  ) {
+    return true;
+  }
+
+  if (isPrivateIpv4(normalized)) {
+    return true;
+  }
+
+  if (
+    normalized.startsWith("fc") ||
+    normalized.startsWith("fd") ||
+    normalized.startsWith("fe80:")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+async function fetchRemoteMetadata(urlValue: string): Promise<TokenMetadata> {
+  const url = new URL(urlValue);
+
+  if (url.protocol !== "https:") {
+    throw new Error("Remote metadata must use HTTPS.");
+  }
+
+  if (isUnsafeMetadataHost(url.hostname)) {
+    throw new Error("Remote metadata host is not allowed.");
+  }
+
+  const response = await fetch(url, {
+    cache: "no-store",
+    redirect: "manual",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get("location");
+    if (!location) {
+      throw new Error("Metadata redirect is invalid.");
+    }
+
+    const redirected = new URL(location, url);
+    if (
+      redirected.protocol !== "https:" ||
+      isUnsafeMetadataHost(redirected.hostname)
+    ) {
+      throw new Error("Metadata redirect is not allowed.");
+    }
+
+    const redirectedResponse = await fetch(redirected, {
+      cache: "no-store",
+      redirect: "error",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!redirectedResponse.ok) {
+      throw new Error(
+        `Metadata returned ${redirectedResponse.status}.`,
+      );
+    }
+
+    const contentLength = Number(
+      redirectedResponse.headers.get("content-length") || 0,
+    );
+    if (contentLength > MAX_METADATA_BYTES) {
+      throw new Error("Metadata response is too large.");
+    }
+
+    const raw = await redirectedResponse.text();
+    if (Buffer.byteLength(raw, "utf8") > MAX_METADATA_BYTES) {
+      throw new Error("Metadata response is too large.");
+    }
+
+    return JSON.parse(raw) as TokenMetadata;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Metadata returned ${response.status}.`);
+  }
+
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  if (contentLength > MAX_METADATA_BYTES) {
+    throw new Error("Metadata response is too large.");
+  }
+
+  const raw = await response.text();
+  if (Buffer.byteLength(raw, "utf8") > MAX_METADATA_BYTES) {
+    throw new Error("Metadata response is too large.");
+  }
+
+  return JSON.parse(raw) as TokenMetadata;
+}
 
 function asNonNegativeInteger(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -202,28 +400,45 @@ async function rpcCall(method: string, params: unknown[]) {
 async function readMetadataUri(uri: string): Promise<TokenMetadata> {
   if (uri.startsWith("data:application/json;base64,")) {
     const encoded = uri.slice("data:application/json;base64,".length);
-    return JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+
+    if (encoded.length > MAX_METADATA_BYTES * 2) {
+      throw new Error("Metadata response is too large.");
+    }
+
+    const raw = Buffer.from(encoded, "base64").toString("utf8");
+
+    if (Buffer.byteLength(raw, "utf8") > MAX_METADATA_BYTES) {
+      throw new Error("Metadata response is too large.");
+    }
+
+    return JSON.parse(raw) as TokenMetadata;
   }
 
   if (uri.startsWith("data:application/json;utf8,")) {
-    return JSON.parse(
-      decodeURIComponent(uri.slice("data:application/json;utf8,".length))
+    const raw = decodeURIComponent(
+      uri.slice("data:application/json;utf8,".length),
     );
+
+    if (Buffer.byteLength(raw, "utf8") > MAX_METADATA_BYTES) {
+      throw new Error("Metadata response is too large.");
+    }
+
+    return JSON.parse(raw) as TokenMetadata;
   }
 
   if (uri.startsWith("data:application/json,")) {
-    return JSON.parse(
-      decodeURIComponent(uri.slice("data:application/json,".length))
+    const raw = decodeURIComponent(
+      uri.slice("data:application/json,".length),
     );
+
+    if (Buffer.byteLength(raw, "utf8") > MAX_METADATA_BYTES) {
+      throw new Error("Metadata response is too large.");
+    }
+
+    return JSON.parse(raw) as TokenMetadata;
   }
 
-  const response = await fetch(uri, { cache: "no-store" });
-
-  if (!response.ok) {
-    throw new Error(`Metadata returned ${response.status}.`);
-  }
-
-  return (await response.json()) as TokenMetadata;
+  return fetchRemoteMetadata(uri);
 }
 
 async function fetchTokenCount(tokenId: string) {
@@ -278,14 +493,88 @@ async function mapWithConcurrency<T, R>(
 export async function POST(request: NextRequest) {
   try {
     if (!RPC_URL) {
+      console.error("Passport Hood Talk RPC unavailable: RPC URL missing.");
       return NextResponse.json(
-        { error: "Robinhood mainnet RPC is not configured." },
-        { status: 500 }
+        { error: "Passport Hood Talk data is temporarily unavailable." },
+        {
+          status: 503,
+          headers: {
+            "Cache-Control": "private, no-store, max-age=0",
+          },
+        },
       );
     }
 
-    const body = (await request.json()) as { tokenIds?: unknown };
+    const contentLength = Number(
+      request.headers.get("content-length") || 0,
+    );
+
+    if (contentLength > MAX_REQUEST_BODY_BYTES) {
+      return NextResponse.json(
+        { error: "Request is too large." },
+        {
+          status: 413,
+          headers: {
+            "Cache-Control": "private, no-store, max-age=0",
+          },
+        },
+      );
+    }
+
+    const rawBody = await request.text();
+
+    if (Buffer.byteLength(rawBody, "utf8") > MAX_REQUEST_BODY_BYTES) {
+      return NextResponse.json(
+        { error: "Request is too large." },
+        {
+          status: 413,
+          headers: {
+            "Cache-Control": "private, no-store, max-age=0",
+          },
+        },
+      );
+    }
+
+    let body: { tokenIds?: unknown };
+
+    try {
+      body = JSON.parse(rawBody) as { tokenIds?: unknown };
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid request body." },
+        {
+          status: 400,
+          headers: {
+            "Cache-Control": "private, no-store, max-age=0",
+          },
+        },
+      );
+    }
+
     const tokenIds = normalizeTokenIds(body.tokenIds);
+
+    const now = Date.now();
+    pruneRateLimit(now);
+
+    const ip = getClientIp(request);
+    const rate = consumeWeightedRateLimit(
+      ip,
+      Math.max(1, tokenIds.length),
+      now,
+    );
+
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: "Too many Passport Hood Talk requests. Please try again shortly." },
+        {
+          status: 429,
+          headers: {
+            "Cache-Control": "private, no-store, max-age=0",
+            "Retry-After": String(rate.retryAfterSeconds),
+          },
+        },
+      );
+    }
 
     if (tokenIds.length === 0) {
       return NextResponse.json({

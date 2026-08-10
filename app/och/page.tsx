@@ -744,14 +744,14 @@ export default function OCHPage() {
  </section>
 
  {/* =====================================================
- 05 / BUDDY
+ 05 / PING
  ===================================================== */}
 
  <section className="bg-black px-6 py-24 text-[#ccff00]">
  <div className="mx-auto max-w-[1440px]">
  <div className="section-heading-row">
  <p>05 / First Activation</p>
- <p>Buddy</p>
+ <p>Ping</p>
  </div>
 
  <div className="mt-12 grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
@@ -763,11 +763,11 @@ export default function OCHPage() {
  <h2 className="section-title mt-4">
  One Hoodie.
  <br />
- One Buddy.
+ One Ping.
  </h2>
 
  <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
- The first successful HoodWallet activation delivers a Buddy
+ The first successful HoodWallet activation delivers a Ping
  directly into the Hoodie&apos;s own on-chain account.
  </p>
 
@@ -777,7 +777,7 @@ export default function OCHPage() {
  <div className="grid sm:grid-cols-3">
  {[
  ["01", "Activate", INITIAL_ACTIVATION_FEE],
- ["02", "Receive", "1 Buddy"],
+ ["02", "Receive", "1 Ping"],
  ["03", "Destination", "HoodWallet"],
  ].map(([number, label, value]) => (
  <div
@@ -801,14 +801,14 @@ export default function OCHPage() {
 
  <div className="border-t-2 border-[#ccff00] p-6 text-center md:p-10">
  {/* Replace this typographic placeholder with the
- final Buddy artwork / animation when ready. */}
+ final Ping artwork / animation when ready. */}
 
  <p className="text-[10px] uppercase tracking-[0.2em] opacity-60">
- First Activation Buddy
+ First Activation Ping
  </p>
 
  <p className="mt-6 text-[clamp(3rem,8vw,7rem)] leading-none tracking-[-0.08em]">
- BUDDY_001
+ Ping
  </p>
 
  <p className="mx-auto mt-6 max-w-xl text-sm leading-relaxed opacity-70 md:text-base">

@@ -97,11 +97,6 @@ type RegistryResponse = {
   error?: string;
 };
 
-type TalkHistory = {
-  quotes: string[];
-  angles: string[];
-};
-
 type HoodTalkView = "talk" | "feed" | "leaderboard";
 
 type IndexedTalk = {
@@ -250,6 +245,7 @@ function normalizeOwnedHoodies(items: OwnedHoodie[]) {
     new Map(items.map((item) => [String(item.tokenId), item])).values(),
   ).sort((left, right) => Number(left.tokenId) - Number(right.tokenId));
 }
+
 
 async function fetchToken(tokenId: string, signal?: AbortSignal) {
   const url = apiConfig.isMainnet
@@ -521,7 +517,6 @@ export default function HoodTalkPage() {
   const [detailTokenId, setDetailTokenId] = useState<number | null>(null);
   const [detailHistory, setDetailHistory] = useState<TokenHistoryResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const talkHistoryRef = useRef<Record<string, TalkHistory>>({});
   const generationRef = useRef(0);
 
 const activeExplorerUrl = apiConfig.isMainnet
@@ -539,8 +534,8 @@ const activeExplorerUrl = apiConfig.isMainnet
   const isHolder = ownedHoodies.length > 0;
 
   const loadOwnership = useCallback(async (signal?: AbortSignal) => {
-    talkHistoryRef.current = {};
     generationRef.current += 1;
+
     setRegistryTalk(null);
     setAuthorization(null);
     setTransactionHash(null);
@@ -648,53 +643,38 @@ const activeExplorerUrl = apiConfig.isMainnet
       setTransactionHash(null);
 
       try {
+        const tokenId = nextToken.token.id;
         const artworkUrl = absoluteApiUrl(
           nextToken.image.svg,
-          tokenArtworkFallback(nextToken.token.id),
+          tokenArtworkFallback(tokenId),
         );
-        const imageDataUrl = await artworkToPngDataUrl(artworkUrl);
+        const imageDataUrl = await artworkToPngDataUrl(artworkUrl, 1024);
 
-        const historyKey = String(nextToken.token.id);
-        const history = talkHistoryRef.current[historyKey] || {
-          quotes: [],
-          angles: [],
-        };
+        if (imageDataUrl.length > 2_900_000) {
+          throw new Error("Hoodie artwork is too large to analyze safely.");
+        }
 
         const response = await fetch("/api/hood-talk", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          cache: "no-store",
           body: JSON.stringify({
-            tokenId: nextToken.token.id,
-            walletAddress: address,
+            tokenId,
             imageDataUrl,
-            previousQuotes: history.quotes,
-            previousAngles: history.angles,
+            walletAddress: address,
           }),
         });
 
         const data = (await response.json()) as HoodTalkResponse;
+
         if (!response.ok || !data.quote) {
-          throw new Error(data.error || "This Hoodie has not spoken on-chain yet.");
+          throw new Error(data.error || "Your Hoodie stayed quiet.");
         }
 
         if (generation === generationRef.current) {
           setQuote(data.quote);
           setAuthorization(data.authorization || null);
           if (data.registry) setRegistryTalk(data.registry);
-          const currentHistory = talkHistoryRef.current[historyKey] || {
-            quotes: [],
-            angles: [],
-          };
-
-          talkHistoryRef.current = {
-            ...talkHistoryRef.current,
-            [historyKey]: {
-              quotes: [...currentHistory.quotes, data.quote].slice(-8),
-              angles: data.angle
-                ? [...currentHistory.angles, data.angle].slice(-8)
-                : currentHistory.angles,
-            },
-          };
         }
       } catch (talkError) {
         if (generation === generationRef.current) {

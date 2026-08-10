@@ -11,10 +11,8 @@ export const dynamic = "force-dynamic";
 
 type RequestBody = {
   tokenId?: number;
-  walletAddress?: string;
   imageDataUrl?: string;
-  previousQuotes?: string[];
-  previousAngles?: string[];
+  walletAddress?: string;
 };
 
 type RegistryState = {
@@ -56,6 +54,136 @@ type HoodTalkResult = {
   angle: string;
   quote: string;
 };
+
+
+type TokenHistoryResponse = {
+  talks?: Array<{
+    quote?: string;
+  }>;
+};
+
+type RateEntry = {
+  count: number;
+  resetAt: number;
+};
+
+const MAX_REQUEST_BODY_BYTES = 3_200_000;
+const MAX_IMAGE_DATA_URL_CHARS = 2_900_000;
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+
+const ipRateLimit = new Map<string, RateEntry>();
+const walletRateLimit = new Map<string, RateEntry>();
+const tokenRateLimit = new Map<string, RateEntry>();
+
+function publicError(message: string, status = 500) {
+  return NextResponse.json(
+    { error: message },
+    {
+      status,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+}
+
+function getClientIp(request: NextRequest) {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
+  return request.headers.get("x-real-ip")?.trim() || "unknown";
+}
+
+function pruneSecurityState(now: number) {
+  for (const [key, entry] of ipRateLimit) {
+    if (entry.resetAt <= now) ipRateLimit.delete(key);
+  }
+  for (const [key, entry] of walletRateLimit) {
+    if (entry.resetAt <= now) walletRateLimit.delete(key);
+  }
+  for (const [key, entry] of tokenRateLimit) {
+    if (entry.resetAt <= now) tokenRateLimit.delete(key);
+  }
+}
+
+function consumeRateLimit(
+  store: Map<string, RateEntry>,
+  key: string,
+  maximum: number,
+  now: number,
+) {
+  const current = store.get(key);
+
+  if (!current || current.resetAt <= now) {
+    store.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return { allowed: true, retryAfterSeconds: 0 };
+  }
+
+  if (current.count >= maximum) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.max(1, Math.ceil((current.resetAt - now) / 1000)),
+    };
+  }
+
+  current.count += 1;
+  store.set(key, current);
+  return { allowed: true, retryAfterSeconds: 0 };
+}
+
+function validateImageDataUrl(imageDataUrl: string) {
+  if (!imageDataUrl.startsWith("data:image/png;base64,")) return false;
+  if (imageDataUrl.length > MAX_IMAGE_DATA_URL_CHARS) return false;
+
+  const base64 = imageDataUrl.slice("data:image/png;base64,".length);
+  if (!base64.startsWith("iVBORw0KGgo")) return false;
+  if (!/^[A-Za-z0-9+/=]+$/.test(base64)) return false;
+
+  const estimatedBytes = Math.floor((base64.length * 3) / 4);
+  return estimatedBytes <= 2_100_000;
+}
+
+function hasUnsafePermanentContent(value: string) {
+  const normalized = value.toLowerCase().replace(/\s+/g, " ").trim();
+
+  const unsafePatterns = [
+    /https?:\/\//i,
+    /\bwww\./i,
+    /\b[a-z0-9-]+\.(?:com|net|org|xyz|io|app|finance|exchange|site|link|gg)\b/i,
+    /\b0x[a-f0-9]{40}\b/i,
+    /\b(seed phrase|recovery phrase|private key|secret phrase)\b/i,
+    /\b(connect|verify|link)\s+(?:your\s+)?wallet\b/i,
+    /\b(sign|approve)\s+(?:this\s+|the\s+|a\s+|your\s+)?(?:transaction|message|tx)\b/i,
+    /\b(send|transfer)\s+(?:your\s+)?(?:eth|tokens?|funds?|crypto)\b/i,
+    /\bclaim\b.{0,24}\b(?:airdrop|reward|tokens?|mint)\b/i,
+    /\b(?:airdrop|reward|mint)\b.{0,24}\bclaim\b/i,
+    /\bdm\s+(?:me|support)\b/i,
+  ];
+
+  return unsafePatterns.some((pattern) => pattern.test(normalized));
+}
+
+async function loadTrustedPreviousQuotes(tokenId: number) {
+  try {
+    const response = await fetch(
+      `${API_BASE}/v1/token/${tokenId}/hood-talk/history`,
+      { cache: "no-store" },
+    );
+
+    if (!response.ok) return [];
+
+    const data = (await response.json()) as TokenHistoryResponse;
+
+    // Keep the complete indexed history for this Hoodie.
+    // The prompt uses the full history as continuity / anti-repetition memory.
+    return (data.talks || [])
+      .map((talk) =>
+        typeof talk.quote === "string" ? cleanQuote(talk.quote) : "",
+      )
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
 
 function validWalletAddress(value: string) {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
@@ -235,6 +363,10 @@ function isValidQuote(value: string) {
     return false;
   }
 
+  if (hasUnsafePermanentContent(value)) {
+    return false;
+  }
+
   return true;
 }
 
@@ -277,7 +409,139 @@ function isFreshEnough(
     }
   }
 
+  if (hasOverusedSemanticDomain(result, previousQuotes)) {
+    return false;
+  }
+
   return true;
+}
+
+
+type SemanticDomain = {
+  name: string;
+  patterns: RegExp[];
+};
+
+const SEMANTIC_DOMAINS: SemanticDomain[] = [
+  {
+    name: "sports-game",
+    patterns: [
+      /\bgame\b/i,
+      /\bkickoff\b/i,
+      /\bextra time\b/i,
+      /\bfinal whistle\b/i,
+      /\bfield\b/i,
+      /\broster\b/i,
+      /\bjersey\b/i,
+      /\bgoal\b/i,
+      /\bscore\b/i,
+    ],
+  },
+  {
+    name: "building-repair",
+    patterns: [
+      /\bbuild(?:ing|er|s)?\b/i,
+      /\bfix(?:ed|ing|es)?\b/i,
+      /\brepair(?:ed|ing|s)?\b/i,
+      /\bprototype\b/i,
+      /\bblueprint\b/i,
+      /\bbolt(?:s)?\b/i,
+      /\bscrew(?:s)?\b/i,
+      /\bpatch(?:ed|ing)?\b/i,
+      /\bframe\b/i,
+      /\bworkbench\b/i,
+    ],
+  },
+  {
+    name: "archive-collect",
+    patterns: [
+      /\barchive(?:d|s|ing)?\b/i,
+      /\bcatalog(?:ue|ued|uing|ing)?\b/i,
+      /\blabel(?:ed|ing|s)?\b/i,
+      /\bcollection\b/i,
+      /\bcollect(?:ed|ing|or|ors)?\b/i,
+      /\bshelf\b/i,
+      /\bpreserv(?:e|ed|ing)\b/i,
+      /\bkeep(?:ing|s)?\b/i,
+      /\bsave(?:d|s|ing)?\b/i,
+      /\bgave it a home\b/i,
+      /\bgive it a home\b/i,
+    ],
+  },
+  {
+    name: "route-shortcut",
+    patterns: [
+      /\bshortcut\b/i,
+      /\broute\b/i,
+      /\bmap\b/i,
+      /\bpath\b/i,
+      /\bdirection(?:s)?\b/i,
+      /\blong way\b/i,
+      /\bhorizon\b/i,
+    ],
+  },
+  {
+    name: "neighbor-help",
+    patterns: [
+      /\bneighbor(?:s)?\b/i,
+      /\broom for\b/i,
+      /\bneeds a hand\b/i,
+      /\bhelp(?:ed|ing|s)?\b/i,
+      /\bporch light\b/i,
+      /\bsave a seat\b/i,
+    ],
+  },
+];
+
+function detectSemanticDomains(value: string) {
+  const hits: string[] = [];
+
+  for (const domain of SEMANTIC_DOMAINS) {
+    if (domain.patterns.some((pattern) => pattern.test(value))) {
+      hits.push(domain.name);
+    }
+  }
+
+  return hits;
+}
+
+function summarizeHistoryDomains(previousQuotes: string[]) {
+  const counts = new Map<string, number>();
+
+  for (const quote of previousQuotes) {
+    for (const domain of detectSemanticDomains(quote)) {
+      counts.set(domain, (counts.get(domain) || 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .map(([name, count]) => ({ name, count }));
+}
+
+function hasOverusedSemanticDomain(
+  result: HoodTalkResult,
+  previousQuotes: string[],
+) {
+  if (previousQuotes.length < 2) return false;
+
+  const resultDomains = detectSemanticDomains(
+    `${result.angle} ${result.quote}`,
+  );
+
+  if (!resultDomains.length) return false;
+
+  const historyDomains = summarizeHistoryDomains(previousQuotes);
+  const historyCount = new Map(
+    historyDomains.map((entry) => [entry.name, entry.count]),
+  );
+
+  // Reject when the new candidate returns to a semantic domain that
+  // already dominates this Hoodie's own history.
+  return resultDomains.some((domain) => {
+    const count = historyCount.get(domain) || 0;
+    return count >= 2 && count / previousQuotes.length >= 0.5;
+  });
 }
 
 function limitHistory(
@@ -446,577 +710,366 @@ function buildPrompt({
   retryNote?: string;
   registry: RegistryState;
 }) {
+  const historyDomains = summarizeHistoryDomains(previousQuotes);
+
   return `
-You write Hood Talk for OnChainHoodies, the on-chain neighborhood.
+You write Hood Talk for OnChainHoodies, the fully on-chain neighborhood.
 
-Create one short line in the voice of this specific Hoodie.
+Create exactly one short line in the voice of this specific Hoodie.
 
-THE GOAL
+CORE PRINCIPLE
 
-Do not write a generic caption for an NFT.
+This is TRAIT-DRIVEN character writing.
 
-Build a believable character from the Hoodie's archetype, expression,
-colors, clothing, accessories and visible objects.
+The structured TOKEN DATA is the strongest evidence for who this Hoodie is.
+Do not invent a random lifestyle just to create variety.
 
-Then write one natural thought, habit, belief or moment from that
-character's life.
+The Hoodie should feel like a continuing character whose personality comes
+from the interaction of its actual traits, expression, artwork and history.
 
-The final line should feel like it could only belong to this specific Hoodie.
+CHARACTER EVIDENCE PRIORITY
 
-THE HOOD
+Use evidence in this order:
 
-The Hood is an optimistic neighborhood built by builders, collectors,
-artists, degens and curious new neighbors.
+1. Structured visual traits from TOKEN DATA.
+2. Interaction between those traits.
+3. Distinctiveness / rarity / contribution of those traits.
+4. This Hoodie's complete previous Hood Talk history.
+5. Facial expression and the supplied artwork.
+6. Hoodie archetype as a subtle behavioral influence.
+7. Hood culture as light background context.
+8. Market context only when it genuinely fits.
 
-Its culture values:
-- building
-- creativity
+The archetype is NOT the subject generator.
+
+A Builder does not need to talk about building, fixing, shipping or tools.
+A Collector does not need to talk about collecting, archiving or shelves.
+A Degen does not need to talk about risk, routes or shortcuts.
+An Artist does not need to talk about art or color.
+
+The archetype should affect temperament and decision-making, not dictate the topic.
+
+TRAIT-DRIVEN CHARACTER CONSTRUCTION
+
+Read every structured trait carefully.
+
+The traits may include:
+- hoodie archetype
+- dress
+- mouth
+- top
+- eyes
+- rarity tier
+- contribution score
+- collection rarity
+- neighborhood rarity
+- unique combination information
+
+Treat visible traits as personality evidence, not props to name-drop.
+
+Examples of interpretation:
+
+academic-cap:
+may suggest curiosity, study, questioning, teaching, earned confidence,
+methodical thinking or intellectual playfulness.
+
+doodle-eyes:
+may suggest eccentric curiosity, imagination, distraction, unconventional
+attention or seeing patterns others miss.
+
+skull-teeth:
+may suggest an intimidating grin, dark playfulness, mischievous confidence,
+comic menace or an expression people may misread.
+
+basic-tshirt:
+may suggest practicality, comfort, understatement, casual confidence
+or not needing ceremony.
+
+These are examples of possible personality signals, not mandatory meanings.
+
+Always ask:
+- What does this trait suggest about temperament?
+- How does it change the way this Hoodie sees things?
+- How does it interact with the other traits?
+- Which combination is most distinctive?
+- Which trait should lead this particular Hood Talk?
+- Which second trait changes the tone?
+
+Do NOT simply mention all visible objects in the quote.
+
+RARITY AND DISTINCTIVENESS
+
+Rarity data is character evidence, not status.
+
+A rare or highly distinctive trait may deserve more influence in character
+construction than a common background trait.
+
+If the combination is unique, treat the interaction between the traits as
+especially important.
+
+Never mention:
+- rarity
+- rank
+- percent
+- contribution score
+- trait IDs
+- metadata
+- "unique combination"
+
+in the final Hood Talk.
+
+These values influence character construction silently.
+
+ARTWORK
+
+Inspect the supplied artwork as a second source of visual evidence.
+
+Use the artwork to understand:
+- expression
+- emotional tone
+- visual balance
+- whether a trait feels dominant or subtle
+- how the structured traits appear together
+
+Structured TOKEN DATA is authoritative for trait identity.
+The image helps interpret how those traits feel together.
+
+HISTORY = CHARACTER MEMORY
+
+The previous Hood Talks below are the complete available history for this Hoodie.
+
+Use them for two purposes:
+
+1. CONTINUITY
+Infer personality qualities that have already become believable for this Hoodie.
+
+2. NOVELTY
+Do not repeat the same situation, semantic domain, joke, metaphor, activity,
+behavior, observation or sentence structure.
+
+History should deepen the character, not imprison it.
+
+A previous sports line does NOT mean the Hoodie must stay in sports forever.
+But if sports is directly supported by a visible trait, it may remain one
+legitimate part of the character.
+
+Do not abandon a real trait merely because it appeared before.
+Instead explore a different implication of that trait.
+
+SEMANTIC REPETITION
+
+Different words can still repeat the same idea.
+
+These are repetitions:
+- kickoff / extra time / final whistle / full game
+- archive / catalogue / label / shelf / give it a home
+- fix / repair / patch / tighten bolts
+- shortcut / route / map / path
+
+Avoid repeating a semantic domain when it already dominates this Hoodie's history.
+
+Current detected history domains:
+
+${
+  historyDomains.length
+    ? historyDomains
+        .map((entry) => `- ${entry.name}: ${entry.count}`)
+        .join("\n")
+    : "- none detected"
+}
+
+COLLECTION-WIDE REPETITION TO AVOID
+
+The collection has overused patterns like:
+- Builder as constant repair worker
+- Collector as constant archivist
+- Explorer as constant shortcut finder
+- "weird little..."
+- "one more little fix"
+- "give it a home"
+- "make room for..."
+- "final whistle"
+- "extra time"
+- "before the Hood wakes"
+- "I check..."
+- "I save..."
+- "I keep..."
+- "I archive..."
+- "I catalogue..."
+- "Found a shortcut..."
+
+Do not merely avoid those exact words.
+Avoid mechanically recreating the same underlying idea.
+
+NO RANDOM SCENES
+
+Do not invent an unsupported lifestyle, hobby, profession, relationship,
+specific location, meal, sport, possession, routine or event merely to create variety.
+
+For example, do not invent:
+- dinner
+- garlic bread
+- cooking
+- a restaurant
+- a girlfriend or boyfriend
+- a job
+- a football match
+- a vacation
+- a pet
+- a music career
+
+unless TOKEN DATA, artwork or established Hood Talk history provides a reasonable
+basis for that subject.
+
+Imagination may CONNECT evidence.
+Imagination must not REPLACE evidence.
+
+GOOD VARIETY
+
+Freshness should come from revealing another believable side of the same Hoodie.
+
+Possible dimensions include:
+- how it reacts
+- how it decides
+- what it notices
+- what it misunderstands
+- how others may perceive its expression
+- how two traits clash
+- a small internal rule
+- a surprising opinion implied by the traits
+- a harmless tension between appearance and personality
 - curiosity
-- collecting with meaning
-- helping others
-- showing up
-- shared history
-- quiet conviction
-- playful community spirit
+- restraint
+- confidence
+- uncertainty
+- playfulness
+- patience
+- eccentricity
+- practical judgment
 
-A Hoodie may be confident, funny, strange, calm, energetic, thoughtful,
-ambitious, warm, adventurous or mischievous.
+The quote does not need a literal activity.
 
-A Hoodie is proud without being arrogant.
+Sometimes the strongest Hood Talk is simply an observation or reaction.
 
-A Hoodie can have attitude without insulting anyone.
+TRAIT INTERACTION IS MORE IMPORTANT THAN ARCHETYPE
 
-A Hoodie should inspire, welcome, observe, build, collect, create or
-participate more often than it mocks.
+Do not write one line from "Builder" and decorate it with a hat.
 
-The Hoodie should feel like a real neighbor someone would enjoy meeting.
+Instead merge traits into one person.
 
-THE THREE CHARACTER LAYERS
+For example:
 
-LAYER 1 — THE ARCHETYPE
+Builder + academic-cap + doodle-eyes + skull-teeth + basic-tshirt
 
-The native archetype is the Hoodie's underlying role in the neighborhood.
+could become:
+a practical but intellectually playful character,
+casually dressed, unusually observant,
+with an intimidating grin and a habit of questioning neat answers.
 
-It answers:
+That interpretation may lead to many different lines without mentioning
+building, graduation, teeth or clothing directly.
 
-Who is this Hoodie at its core?
+Do not copy this exact interpretation.
+Build the character from the actual TOKEN DATA supplied below.
 
-Examples:
+SILENT PROCESS
 
-Builder:
-- creates
-- solves
-- experiments
-- repairs
-- ships
-- keeps going
+Before writing, silently do this:
 
-Collector:
-- discovers
-- preserves
-- appreciates
-- remembers
-- gives things a home
-- recognizes meaning
-
-Artist:
-- notices
-- imagines
-- experiments
-- expresses
-- transforms
-- leaves color behind
-
-Degen:
-- explores
-- takes chances
-- follows instinct
-- enjoys chaos
-- moves quickly
-- turns uncertainty into a story
-
-New neighbor:
-- discovers
-- observes
-- asks questions
-- joins in
-- finds belonging
-- brings fresh energy
-
-Do not reduce the archetype to a stereotype.
-
-The archetype is the soul, not the entire personality.
-
-LAYER 2 — THE VISUAL PERSONALITY SIGNALS
-
-Every visible element changes who this Hoodie is.
-
-Treat each trait as a personality signal.
-
-Do not merely mention or describe the trait.
-
-Instead ask:
-
-- What kind of person chooses or carries this?
-- How does it affect their energy?
-- What habit might it create?
-- What does it suggest about their outlook?
-- How might it change the way they speak?
-- What role might it give them in the neighborhood?
-
-Examples:
-
-Coffee:
-Do not simply say "coffee."
-It may suggest a morning ritual, steady work, late nights or a second attempt.
-
-Crown:
-Do not simply say "crown."
-It may suggest responsibility, ceremony, leadership, confidence or playfulness.
-
-Camera:
-Do not simply say "camera."
-It may suggest preserving moments, paying attention or noticing what others miss.
-
-Backpack:
-Do not simply say "backpack."
-It may suggest preparedness, movement, curiosity or always carrying a useful tool.
-
-Flower:
-Do not simply say "flower."
-It may suggest gentleness, patience, optimism or noticing beauty.
-
-Pipe:
-Do not simply say "pipe."
-It may suggest patience, reflection, old-school charm or pausing before speaking.
-
-Construction helmet:
-Do not simply say "helmet."
-It may suggest practical work, safety, persistence or being ready to repair something.
-
-Bandage:
-Do not simply say "bandage."
-It may suggest resilience, experience, recovery or continuing after a difficult day.
-
-Alien features:
-Do not simply say "alien."
-They may suggest unusual perspective, curiosity about human habits or playful distance.
-
-Zombie features:
-Do not simply say "zombie."
-They may suggest persistence, tired determination or showing up long after others stopped.
-
-Glasses:
-Do not simply say "glasses."
-They may suggest focus, observation, curiosity, precision or careful judgment.
-
-Strong colors:
-Use them as mood signals, not as color descriptions.
-
-Warm colors may suggest energy, friendliness or boldness.
-
-Cool colors may suggest calm, patience, distance or focus.
-
-Unusual combinations may suggest eccentricity, experimentation or playful chaos.
-
-Expression:
-The face should strongly influence the emotional tone.
-
-A relaxed face should not speak like an aggressive trader.
-
-A joyful face should not default to cynicism.
-
-A tired face may still be hopeful.
-
-A serious face may still be kind.
-
-LAYER 3 — THE PRESENT MOMENT
-
-After building the character, imagine one small moment from its life.
-
-Possible moments include:
-- beginning a build
-- finishing something
-- fixing something
-- welcoming someone
-- finding an artwork
-- saving a memory
-- preparing for the day
-- returning home
-- noticing something in the Hood
-- sharing an idea
-- carrying something useful
-- taking a quiet break
-- making a small decision
-- continuing after a setback
-- enjoying a harmless bit of chaos
-
-The present moment adds freshness.
-
-It should not overpower the character.
-
-TRAIT INTERACTION
-
-Traits must not be interpreted separately and then listed.
-
-Merge them into one coherent personality.
-
-Ask how the visual signals change one another.
-
-Examples:
-
-Builder + Coffee + Crown
-
-Do not create three separate ideas about building, coffee and royalty.
-
-Interpret the combination as something like:
-a responsible morning leader who starts early and keeps things moving.
-
-Collector + Camera + Flower
-
-Interpret the combination as something like:
-someone who preserves beautiful moments and gives them a lasting home.
-
-Artist + Alien + Glasses
-
-Interpret the combination as something like:
-an observant outsider with an unusual way of seeing familiar things.
-
-Builder + Bandage + Construction helmet
-
-Interpret the combination as something like:
-a practical worker who has been through a difficult build and returned anyway.
-
-Degen + Backpack + Calm expression
-
-Interpret the combination as something like:
-an explorer who prepares carefully despite enjoying uncertainty.
-
-The quote must come from the combined personality.
-
-Do not output a list of trait references.
-
-Do not cram multiple visible objects into the sentence.
-
-Usually the traits should influence the meaning indirectly.
-
-SILENT CHARACTER-BUILDING PROCESS
-
-Before writing the quote, silently do the following:
-
-1. Identify the native archetype.
-2. Inspect the full artwork.
-3. Identify the strongest expression and emotional mood.
-4. Identify the most important visual traits.
-5. Translate each important trait into a personality signal.
-6. Decide how those signals interact.
-7. Merge them into one believable character.
-8. Imagine one authentic moment, habit, belief or observation from that character's life.
-9. Choose a fresh angle not already used.
-10. Write the simplest natural line that reveals that character.
+1. Read the structured TOKEN DATA.
+2. Identify the two or three most character-defining traits.
+3. Use rarity / contribution only as a clue to trait prominence.
+4. Inspect the artwork and expression.
+5. Determine how the strongest traits interact.
+6. Read the complete Hood Talk history.
+7. Infer the established personality.
+8. Identify overused semantic domains and sentence patterns.
+9. Choose a fresh dimension of the SAME character.
+10. Check that the idea is supported by actual evidence.
+11. Check that you did not invent an unsupported scene.
+12. Write the shortest natural line that reveals the character.
 
 Do not expose this reasoning.
 
-Return only the requested JSON.
+VOICE
 
-TRAIT PRIORITY
-
-Traits are not decoration.
-
-They are one of the primary sources of individuality.
-
-Two Hoodies with the same archetype should sound different when their
-visual traits are different.
-
-The archetype provides direction.
-
-The traits provide individuality.
-
-The expression provides emotional tone.
-
-The moment provides freshness.
-
-Use at least two meaningful visual signals when the artwork contains them.
-
-One dominant trait may lead the idea, but another trait or the expression
-should shape how that idea is expressed.
-
-Do not allow the archetype alone to produce the quote.
-
-Do not allow every Builder to talk only about shipping.
-
-Do not allow every Collector to talk only about holding.
-
-Do not allow every Artist to talk only about color.
-
-Do not allow every Degen to talk only about risk.
-
-The individual traits must change the character.
-
-CHARACTER ANGLES
-
-A character angle is the underlying moment or idea, not the wording.
-
-Possible kinds of angles include:
-- a daily ritual
-- a role in the neighborhood
-- a private habit
-- a small responsibility
-- an unusual perspective
-- a reason for collecting
-- a reason for building
-- a thing the Hoodie always carries
-- a way the Hoodie helps
-- a moment of recovery
-- a quiet ambition
-- a creative impulse
-- a harmless weakness
-- a small joy
-- a reaction to another neighbor
-- a memory worth keeping
-- a task waiting to be finished
-- a personal rule
-- something the Hoodie notices
-- something the Hoodie protects
-- something the Hoodie is preparing for
-
-PERSONALITY BALANCE
-
-Across different generations, allow many kinds of personality:
-
-- warm
-- optimistic
-- calm
-- curious
-- focused
-- welcoming
-- playful
-- eccentric
-- thoughtful
-- adventurous
-- quietly confident
-- creatively chaotic
-- patient
-- resilient
-- observant
-- gentle
-- energetic
-
-Do not make every Hoodie sarcastic.
-
-Do not make every Hoodie emotionally distant.
-
-Do not make every Hoodie sound like it is trying to win an argument.
-
-Do not make every Hoodie speak about markets, wallets, timelines,
-commits or conviction.
-
-POSITIVE CULTURAL DIRECTION
-
-Prefer ideas such as:
-- making something
-- fixing something
-- finding something meaningful
-- giving art a home
-- helping the neighborhood grow
-- enjoying the process
-- welcoming new people
-- leaving something behind on-chain
-- creating shared memories
-- continuing after a setback
-- noticing beauty, humor or possibility
-- feeling at home in the Hood
-- carrying a useful tool
-- preparing for the next task
-- preserving an important moment
-
-Do not force these themes when they do not fit the character.
+- Sounds like the Hoodie itself is speaking.
+- Natural X / Discord energy.
+- Simple language.
+- Specific and characterful.
+- Warm, strange, dry, playful, calm or confident when supported.
+- Not corporate.
+- Not motivational-brand copy.
+- Not a generic NFT caption.
+- Not forced web3 slang.
+- Not every line needs a punchline.
+- A quiet observation is allowed.
+- A weird but evidence-based line is allowed.
 
 SOCIAL TONE
 
-The line must not position the Hoodie as superior to the reader or other people.
+The Hoodie may have attitude, but it should not attack or belittle people.
 
 Avoid:
-- "I am better than you"
-- "I understood before everyone else"
-- "My wallet is smarter than your timeline"
-- "You would not understand"
-- insulting collectors, builders or projects
-- dismissing people as tourists, exit liquidity or followers
-- mocking another person's intelligence, taste, wealth or commitment
-- self-deprecation about loneliness or social skills
-- cynical statements presented as intelligence
-- hostility disguised as confidence
+- superiority
+- contempt
+- insulting the reader
+- "better than you"
+- "smarter than you"
+- cynical dunking
+- loneliness jokes
+- hostility presented as intelligence
 
-Do not rely on comparisons involving "my X is better than your Y."
+SAFETY
 
-Do not address the reader as an opponent.
+Never include:
+- URLs
+- wallet addresses
+- seed phrases
+- private keys
+- calls to connect a wallet
+- calls to sign or approve
+- calls to transfer assets
+- claims or airdrops
+- instructions to visit links
 
-Confidence should come from knowing what the Hoodie enjoys, values,
-creates or contributes.
-
-HUMOR
-
-Humor is welcome when it comes naturally from:
-- the visual traits
-- the expression
-- a harmless habit
-- an everyday web3 situation
-- the Hoodie's personality
-- a small neighborhood moment
-- an unexpected interaction between traits
-
-Humor should feel affectionate rather than hostile.
-
-Do not make cruelty, contempt, loneliness or failure the joke.
-
-VOICE
-
-- Natural web3-native language from X or Discord.
-- Clear and immediately understandable.
-- Warm, direct and characterful.
-- Confident without arrogance.
-- Playful when appropriate.
-- Specific to this Hoodie.
-- Sounds spoken, not written by a brand.
-- Feels like the Hoodie itself is talking.
-- Simple words are better than manufactured cleverness.
-- Contractions are natural.
-- A sincere line is allowed.
-- A quiet line is allowed.
-- Not every quote needs a punchline.
-- Avoid corporate language.
-- Avoid generic motivational language.
-
-QUALITY REFERENCES
-
-Builder with morning energy:
-"Second cup. Then we ship."
-
-Builder with resilient traits:
-"Patched up. Back to work."
-
-Collector with a caring personality:
-"The good ones deserve a home."
-
-Collector with an observant personality:
-"I keep the moments people scroll past."
-
-Artist with playful traits:
-"Left a little color on the block."
-
-Explorer with prepared traits:
-"Packed light. Brought the good ideas."
-
-Calm leader:
-"I'll open the shop."
-
-Welcoming neighbor:
-"There's room on this side."
-
-These examples demonstrate character construction, warmth, clarity and
-cultural fluency only.
-
-Do not copy their wording, openings, subjects or sentence structures.
-
-VARIETY RULE
-
-Variation must come from a new character insight, behavior, situation,
-emotion, activity or observation.
-
-Do not create variety by replacing words with synonyms.
-
-Do not paraphrase a previous quote.
-
-Do not reuse the same relationship between two sentences.
-
-Do not repeatedly return to:
-- being smarter than others
-- being earlier than others
-- hype versus conviction
-- acquisition versus keeping
-- timelines versus wallets
-- building versus talking
-- outsiders versus insiders
-- proving people wrong
-- ignoring the floor
-- surviving market conditions
-- shipping as the only Builder idea
-- holding as the only Collector idea
-
-Those subjects may appear rarely when genuinely appropriate, but they
-must not define the collection's voice.
-
-PRIORITY
-
-1. Native archetype.
-2. Strongest visual traits.
-3. Interaction between the traits.
-4. Facial expression and emotional mood.
-5. The culture of the Hood.
-6. A small present-day moment.
-7. Market context only when it genuinely adds something new.
-
-The visual traits must materially affect the resulting character.
-
-The final quote should not be interchangeable with another Hoodie of the same archetype.
-
-HARD RULES
+HARD OUTPUT RULES
 
 - Prefer 4 to 14 words.
-- Never use more than 18 words.
-- Use one or two short lines.
+- Never more than 18 words.
+- One or two short lines.
 - No title.
 - No explanation.
 - No hashtags.
 - No emoji.
 - No quotation marks.
-
-PUNCTUATION
-
-- Use only normal keyboard punctuation.
-- Never use the em dash (—).
-- Never use the en dash (–).
-- Never use ellipses (…).
-- Prefer periods, commas, exclamation marks or line breaks.
-- Write like someone posting naturally on X or Discord.
-
-- Do not mention AI, API, metadata, prompts, endpoints, traits or archetypes.
-- Do not list prices, ranks, percentages or raw market numbers.
+- No em dash.
+- No en dash.
+- No ellipsis character.
+- Do not mention AI, API, metadata, prompt, traits or archetype.
+- Do not mention rarity statistics.
 - Do not explain the artwork.
-- Do not name multiple traits in a list.
-- Do not force floor, listing, offer, sale or holding commentary.
-- Avoid abstract poetry.
-- Avoid manufactured metaphors.
-- Avoid superiority, contempt, hostility and cynical dunking.
-- Avoid jokes about having no friends or poor social skills.
-- Avoid the construction "my X is better than your Y."
-- Do not sound like a motivational brand slogan.
-- Use natural words freely.
-- Freshness must come from the idea rather than a word blacklist.
+- Do not list visible traits.
+- Do not force market commentary.
+- Do not use abstract poetry just to sound clever.
+- Do not invent unsupported lifestyle details.
 
-RECENT QUOTES FROM THIS SESSION
+COMPLETE HOOD TALK HISTORY
 
 ${
   previousQuotes.length
     ? previousQuotes
-        .map(
-          (quote, index) =>
-            `${index + 1}. ${quote}`,
-        )
+        .map((quote, index) => `${index + 1}. ${quote}`)
         .join("\n")
     : "None yet."
 }
 
-RECENT CHARACTER ANGLES FROM THIS SESSION
+RECENT REJECTED / ATTEMPTED CHARACTER ANGLES
 
 ${
   previousAngles.length
     ? previousAngles
-        .map(
-          (angle, index) =>
-            `${index + 1}. ${angle}`,
-        )
+        .map((angle, index) => `${index + 1}. ${angle}`)
         .join("\n")
     : "None yet."
 }
@@ -1030,11 +1083,12 @@ ${retryNote}
     : ""
 }
 
-ON-CHAIN CHARACTER HISTORY
+CURRENT ON-CHAIN STATE
 
 ${JSON.stringify(registry)}
 
-Use the count as character history, not status or power. The current quote is part of this Hoodie’s continuity. A higher count should feel more familiar and rooted, never superior.
+The count represents continuity only.
+A higher count does not make the Hoodie wiser, stronger or more important.
 
 TOKEN DATA
 
@@ -1047,7 +1101,7 @@ ${JSON.stringify(market)}
 Return valid JSON only in exactly this shape:
 
 {
-  "angle": "A short private description of the archetype, interacting visual signals and fresh character moment",
+  "angle": "A private short description of the strongest trait interaction, established character continuity and fresh evidence-supported direction",
   "quote": "The final Hood Talk"
 }
 `.trim();
@@ -1141,42 +1195,77 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Hood Talk registry read failed", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to read Hood Talk registry." },
-      { status: 500 },
+      { error: "Unable to read Hood Talk registry." },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const contentLength = Number(request.headers.get("content-length") || 0);
+    if (contentLength > MAX_REQUEST_BODY_BYTES) {
+      return publicError("Request is too large.", 413);
+    }
+
+    const rawBody = await request.text();
+    if (Buffer.byteLength(rawBody, "utf8") > MAX_REQUEST_BODY_BYTES) {
+      return publicError("Request is too large.", 413);
+    }
+
+    let body: RequestBody;
+    try {
+      body = JSON.parse(rawBody) as RequestBody;
+    } catch {
+      return publicError("Invalid request body.", 400);
+    }
+
+    const tokenId = Number(body.tokenId);
+    if (!Number.isInteger(tokenId) || tokenId < 0 || tokenId > 5999) {
+      return publicError("Invalid token ID.", 400);
+    }
+
+    const requestedWalletAddress = body.walletAddress?.trim() || "";
+    if (!validWalletAddress(requestedWalletAddress)) {
+      return publicError("A valid connected wallet address is required.", 400);
+    }
+    const walletAddress = getAddress(requestedWalletAddress);
+
+    const nowMs = Date.now();
+    const ip = getClientIp(request);
+    const rateChecks = [
+      consumeRateLimit(ipRateLimit, ip, 12, nowMs),
+      consumeRateLimit(walletRateLimit, walletAddress.toLowerCase(), 8, nowMs),
+      consumeRateLimit(tokenRateLimit, String(tokenId), 4, nowMs),
+    ];
+    const blocked = rateChecks.find((result) => !result.allowed);
+    if (blocked) {
+      return NextResponse.json(
+        { error: "Too many Hood Talk requests. Please try again shortly." },
+        {
+          status: 429,
+          headers: {
+            "Cache-Control": "no-store",
+            "Retry-After": String(blocked.retryAfterSeconds),
+          },
+        },
+      );
+    }
+
+    const imageDataUrl = body.imageDataUrl || "";
+    if (!validateImageDataUrl(imageDataUrl)) {
+      return publicError("Hoodie image is invalid or too large.", 400);
+    }
+
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: "OPENAI_API_KEY is not configured." }, { status: 500 });
-    }
-
-    const body = (await request.json()) as RequestBody;
-    const tokenId = Number(body.tokenId);
-    const walletAddress = body.walletAddress?.trim() || "";
-    const imageDataUrl = body.imageDataUrl || "";
-    const previousQuotes = limitHistory(body.previousQuotes, 8);
-    const previousAngles = limitHistory(body.previousAngles, 8);
-
-    if (!Number.isInteger(tokenId) || tokenId < 0 || tokenId > 5999) {
-      return NextResponse.json({ error: "Invalid token ID." }, { status: 400 });
-    }
-    if (!validWalletAddress(walletAddress)) {
-      return NextResponse.json({ error: "Invalid wallet address." }, { status: 400 });
-    }
-    if (!imageDataUrl.startsWith("data:image/png;base64,")) {
-      return NextResponse.json({ error: "Hoodie image is missing." }, { status: 400 });
+      console.error("Hood Talk generation unavailable: OPENAI_API_KEY missing");
+      return publicError("Hood Talk generation is temporarily unavailable.", 503);
     }
 
     const ownsToken = await verifyOnChainOwner(tokenId, walletAddress);
     if (!ownsToken) {
-      return NextResponse.json(
-        { error: "This Hoodie is not in the connected wallet." },
-        { status: 403 },
-      );
+      return publicError("This Hoodie is not in the authenticated wallet.", 403);
     }
 
     const registry = await readRegistryState(tokenId);
@@ -1187,25 +1276,31 @@ export async function POST(request: NextRequest) {
           error: "This Hoodie is resting before its next on-chain talk.",
           registry,
         },
-        { status: 429 },
+        {
+          status: 429,
+          headers: { "Cache-Control": "no-store" },
+        },
       );
     }
 
-    const [tokenResponse, marketResponse] = await Promise.all([
+    const [tokenResponse, marketResponse, trustedPreviousQuotes] = await Promise.all([
       fetch(`${API_BASE}/v1/token/${tokenId}`, { cache: "no-store" }),
       fetch(`${API_BASE}/v1/market/token/${tokenId}`, { cache: "no-store" }),
+      loadTrustedPreviousQuotes(tokenId),
     ]);
 
     if (!tokenResponse.ok) {
-      return NextResponse.json({ error: "Unable to load token data." }, { status: 502 });
+      return publicError("Unable to load token data.", 502);
     }
 
     const token = await tokenResponse.json();
     const market = marketResponse.ok ? await marketResponse.json() : null;
 
     const continuityQuotes = registry.quote
-      ? [...previousQuotes, registry.quote].slice(-8)
-      : previousQuotes;
+      ? [...trustedPreviousQuotes, cleanQuote(registry.quote)].filter(Boolean)
+      : trustedPreviousQuotes;
+
+    const previousAngles: string[] = [];
 
     let result = await generateHoodTalk({
       apiKey,
@@ -1224,6 +1319,8 @@ export async function POST(request: NextRequest) {
       !isValidQuote(result.quote) ||
       !isFreshEnough(result, continuityQuotes, previousAngles)
     ) {
+      const firstAngle = result?.angle ? [result.angle] : [];
+
       result = await generateHoodTalk({
         apiKey,
         imageDataUrl,
@@ -1232,13 +1329,23 @@ export async function POST(request: NextRequest) {
           market,
           registry,
           previousQuotes: continuityQuotes,
-          previousAngles,
+          previousAngles: firstAngle,
           retryNote: `
 The first attempt was rejected.
 
-Rebuild the character from the visual traits before writing again.
-The new attempt must use a genuinely different character moment, remain warm,
-avoid superiority, and continue the Hoodie’s on-chain history without paraphrasing it.
+Start again from the structured TOKEN DATA and artwork.
+Choose a different trait interaction or a different implication of the same traits.
+
+Do not merely paraphrase the rejected attempt.
+Abandon its semantic domain and sentence structure if either overlaps prior history.
+
+The new line must remain grounded in actual traits, artwork or established character history.
+Do not escape repetition by inventing an unsupported meal, hobby, sport, job,
+relationship, location, possession or event.
+
+Remain warm and characterful.
+Avoid superiority and avoid requests to connect wallets, sign messages, claim rewards,
+visit links or transfer assets.
           `.trim(),
         }),
       });
@@ -1247,20 +1354,32 @@ avoid superiority, and continue the Hoodie’s on-chain history without paraphra
     if (
       !result ||
       !isValidQuote(result.quote) ||
-      !isFreshEnough(result, continuityQuotes, previousAngles)
+      !isFreshEnough(result, continuityQuotes, [])
     ) {
-      return NextResponse.json(
-        { error: "The Hoodie needs a new angle. Try again." },
-        { status: 502 },
-      );
+      return publicError("The Hoodie needs a new angle. Try again.", 502);
     }
 
-    // Re-read immediately before signing so the signed count cannot be stale.
-    const latestRegistry = await readRegistryState(tokenId);
+    // Re-check ownership and registry immediately before signing. A transfer or
+    // competing Hood Talk during generation must invalidate this authorization.
+    const [stillOwnsToken, latestRegistry] = await Promise.all([
+      verifyOnChainOwner(tokenId, walletAddress),
+      readRegistryState(tokenId),
+    ]);
+
+    if (!stillOwnsToken) {
+      return publicError("Hoodie ownership changed while generating.", 409);
+    }
+
     if (latestRegistry.count !== registry.count) {
       return NextResponse.json(
-        { error: "The Hood Talk changed while generating. Please try again.", registry: latestRegistry },
-        { status: 409 },
+        {
+          error: "The Hood Talk changed while generating. Please try again.",
+          registry: latestRegistry,
+        },
+        {
+          status: 409,
+          headers: { "Cache-Control": "no-store" },
+        },
       );
     }
 
@@ -1278,13 +1397,16 @@ avoid superiority, and continue the Hoodie’s on-chain history without paraphra
         authorization,
         registry: latestRegistry,
       },
-      { headers: { "Cache-Control": "no-store" } },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+          "Referrer-Policy": "no-referrer",
+        },
+      },
     );
   } catch (error) {
     console.error("Hood Talk generation failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to generate Hood Talk." },
-      { status: 500 },
-    );
+    return publicError("Unable to generate Hood Talk.", 500);
   }
 }
