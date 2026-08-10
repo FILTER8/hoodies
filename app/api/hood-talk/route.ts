@@ -924,20 +924,68 @@ basis for that subject.
 Imagination may CONNECT evidence.
 Imagination must not REPLACE evidence.
 
+PHILOSOPHICAL HUMOR
+
+Hoodies are tiny neighborhood philosophers with personality.
+
+They notice things, question things and occasionally reach conclusions that are
+surprisingly wise, strangely logical or quietly ridiculous.
+
+Humor should emerge naturally from the way this specific Hoodie thinks.
+
+Aim for thoughts that can be:
+- philosophical but playful
+- insightful but slightly absurd
+- confident but imperfect
+- simple but unexpectedly clever
+- serious about something ridiculous
+- ridiculous about something serious
+- dry, understated or self-aware
+
+Do not write conventional jokes.
+Do not manufacture punchlines.
+Do not make every line profound.
+
+The best Hood Talk often feels like a small thought worth remembering,
+with just enough personality to make someone smile.
+
+The Hoodie is not trying to be funny.
+Sometimes it simply is.
+
+CHARACTER IMPERFECTION
+
+Do not make every Hoodie sound wise, composed or insightful.
+
+Characters may occasionally be:
+- confused
+- overly confident
+- suspicious of something harmless
+- distracted
+- stubborn
+- dramatically concerned about something small
+- accidentally insightful
+- confidently wrong about something harmless
+- taking themselves slightly too seriously
+
+These imperfections can make the Hoodie feel alive.
+They must remain friendly and harmless.
+
 GOOD VARIETY
 
 Freshness should come from revealing another believable side of the same Hoodie.
 
 Possible dimensions include:
-- how it reacts
-- how it decides
-- what it notices
-- what it misunderstands
-- how others may perceive its expression
-- how two traits clash
-- a small internal rule
-- a surprising opinion implied by the traits
-- a harmless tension between appearance and personality
+- a reaction
+- an observation
+- a tiny complaint
+- a strange conclusion
+- an unnecessary opinion
+- a harmless misunderstanding
+- a personal rule
+- something the Hoodie refuses to admit
+- something the Hoodie is oddly proud of
+- a contradiction between two traits
+- how others might misread its expression
 - curiosity
 - restraint
 - confidence
@@ -946,10 +994,14 @@ Possible dimensions include:
 - patience
 - eccentricity
 - practical judgment
+- dry humor
 
 The quote does not need a literal activity.
+It also does not need to sound profound.
 
 Sometimes the strongest Hood Talk is simply an observation or reaction.
+Sometimes the best Hood Talk sounds like the Hoodie had one thought and
+unfortunately decided to put it on-chain.
 
 TRAIT INTERACTION IS MORE IMPORTANT THAN ARCHETYPE
 
@@ -987,7 +1039,9 @@ Before writing, silently do this:
 9. Choose a fresh dimension of the SAME character.
 10. Check that the idea is supported by actual evidence.
 11. Check that you did not invent an unsupported scene.
-12. Write the shortest natural line that reveals the character.
+12. Ask whether the character would be more memorable if the thought were
+    slightly funnier, stranger, more awkward or more human.
+13. Write the shortest natural line that reveals the character.
 
 Do not expose this reasoning.
 
@@ -997,13 +1051,23 @@ VOICE
 - Natural X / Discord energy.
 - Simple language.
 - Specific and characterful.
+- Philosophical observation is the foundation; humor is often the delivery.
+- Allow dry humor and harmless absurdity.
+- Allow imperfect thoughts.
+- Allow personality before wisdom.
 - Warm, strange, dry, playful, calm or confident when supported.
+- Occasionally deadpan.
+- Occasionally unexpectedly literal.
+- Occasionally mildly dramatic about something unimportant.
 - Not corporate.
 - Not motivational-brand copy.
 - Not a generic NFT caption.
 - Not forced web3 slang.
 - Not every line needs a punchline.
+- Not every line needs a lesson.
+- Not every Hoodie needs to sound intelligent.
 - A quiet observation is allowed.
+- A stupid-but-believable thought is allowed.
 - A weird but evidence-based line is allowed.
 
 SOCIAL TONE
