@@ -169,6 +169,12 @@ function explorerTokenUrl(contract: string) {
   return `${siteConfig.explorerUrl.replace(/\/$/, "")}/token/${contract}`;
 }
 
+function nftProxyImageUrl(image?: string) {
+  if (!image) return "";
+
+  return `/api/hoodwallet/nft-image?url=${encodeURIComponent(image)}`;
+}
+
 function formatTokenBalance(
   value: bigint,
   decimals = 18,
@@ -563,9 +569,19 @@ async function downloadHoodWalletPng(
       context.strokeRect(x, tileY, imageSize, imageSize);
 
       if (nft.image) {
-        try {
-          const nftImage = await loadCanvasImage(nft.image);
-          context.drawImage(nftImage, x, tileY, imageSize, imageSize);
+       if (nft.image) {
+  try {
+    const nftImage = await loadCanvasImage(
+      nftProxyImageUrl(nft.image),
+    );
+
+    context.drawImage(
+      nftImage,
+      x,
+      tileY,
+      imageSize,
+      imageSize,
+    );
         } catch (nftImageError) {
           console.warn(
             `Unable to draw NFT ${nft.contract}:${nft.tokenId}.`,
