@@ -1,0 +1,20 @@
+{
+  "erc20": [
+    {
+      "contract": "0x6e9aCBFbdD8b57649ffeAcEa4D26A81aE1395367",
+      "name": "Absolute Goat",
+      "symbol": "GOAT"
+    },
+    {
+      "contract": "0xe934e36a439c94017b64a3fece66af12099abf50",
+      "name": "STONKBROKER",
+      "symbol": "STONKBROKER"
+    }
+  ],
+  "nfts": [
+    {
+      "contract": "0x9ec6c5b9f572a9b02138e553bc5f5882da735f45",
+      "name": "OnChainHoodies"
+    }
+  ]
+}

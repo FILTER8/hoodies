@@ -16,10 +16,7 @@ import SiteFooter from "../../components/SiteFooter";
 import { useWallet } from "../../components/WalletProvider";
 
 import { siteConfig } from "../../lib/config";
-import {
-  apiConfig,
-  collectionApiUrl,
-} from "../../lib/api";
+import { apiConfig, collectionApiUrl } from "../../lib/api";
 
 const BRAND_URL = "ONCHAINHOODIES.XYZ";
 
@@ -41,10 +38,7 @@ type OwnershipResponse = {
   error?: string;
 };
 
-type HoodWalletStatus =
-  | "counterfactual"
-  | "active"
-  | "unknown";
+type HoodWalletStatus = "counterfactual" | "active" | "unknown";
 
 type HoodWalletAsset = {
   symbol: string;
@@ -54,18 +48,32 @@ type HoodWalletAsset = {
   contract?: string;
   decimals: number;
   kind: "native" | "erc20";
+  trusted: boolean;
+};
+
+type HoodWalletNft = {
+  contract: string;
+  tokenId: string;
+  name: string;
+  collectionName: string;
+  symbol?: string;
+  image?: string;
+  balance: string;
+  kind: "erc721" | "erc1155";
+  trusted: boolean;
+  spam: boolean;
+  spamClassifications: string[];
 };
 
 type HoodWalletRecord = {
   tokenId: string;
   hoodieName: string;
   artwork: string;
-
   walletAddress: string;
   status: HoodWalletStatus;
-
   nativeBalance: bigint;
   assets: HoodWalletAsset[];
+  nfts: HoodWalletNft[];
 };
 
 type HoodWalletAssetApiItem = {
@@ -76,18 +84,32 @@ type HoodWalletAssetApiItem = {
   contract?: string;
   decimals: number;
   kind: "erc20";
+  trusted?: boolean;
+};
+
+type HoodWalletNftApiItem = {
+  contract: string;
+  tokenId: string;
+  name: string;
+  collectionName: string;
+  symbol?: string;
+  image?: string;
+  balance: string;
+  kind: "erc721" | "erc1155";
+  trusted?: boolean;
+  spam?: boolean;
+  spamClassifications?: string[];
 };
 
 type HoodWalletAssetApiResponse = {
   assets?: HoodWalletAssetApiItem[];
+  nfts?: HoodWalletNftApiItem[];
   warning?: string;
   error?: string;
 };
 
 type HoodOSReadContract = {
-  walletOf: (
-    tokenId: bigint,
-  ) => Promise<string>;
+  walletOf: (tokenId: bigint) => Promise<string>;
 };
 
 /*//////////////////////////////////////////////////////////////
@@ -98,14 +120,6 @@ const HOOD_OS_ABI = [
   "function walletOf(uint256 tokenId) view returns (address)",
 ];
 
-
-
-/*
- * Native currency label.
- *
- * Change this later if Robinhood Chain exposes a finalized
- * public native-token brand/symbol you want to display instead.
- */
 const NATIVE_SYMBOL = "ETH";
 const NATIVE_NAME = "Native Balance";
 
@@ -113,83 +127,46 @@ const NATIVE_NAME = "Native Balance";
                               HELPERS
 //////////////////////////////////////////////////////////////*/
 
-function passthroughImageLoader({
-  src,
-}: {
-  src: string;
-}) {
+function passthroughImageLoader({ src }: { src: string }) {
   return src;
 }
 
-function normalizeOwnedHoodies(
-  items: OwnedHoodie[],
-) {
+function normalizeOwnedHoodies(items: OwnedHoodie[]) {
   return Array.from(
-    new Map(
-      items.map((item) => [
-        String(item.tokenId),
-        item,
-      ]),
-    ).values(),
+    new Map(items.map((item) => [String(item.tokenId), item])).values(),
   ).sort((left, right) => {
-    const leftId =
-      BigInt(left.tokenId);
+    const leftId = BigInt(left.tokenId);
+    const rightId = BigInt(right.tokenId);
 
-    const rightId =
-      BigInt(right.tokenId);
-
-    return leftId < rightId
-      ? -1
-      : leftId > rightId
-        ? 1
-        : 0;
+    return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
   });
 }
 
-function tokenArtworkFallback(
-  tokenId: string | number,
-) {
+function tokenArtworkFallback(tokenId: string | number) {
   if (apiConfig.isMainnet) {
     return collectionApiUrl(
-      `/images/${encodeURIComponent(
-        String(tokenId),
-      )}.svg`,
+      `/images/${encodeURIComponent(String(tokenId))}.svg`,
     );
   }
 
-  return `/api/hoodies/image?tokenId=${encodeURIComponent(
-    String(tokenId),
-  )}`;
+  return `/api/hoodies/image?tokenId=${encodeURIComponent(String(tokenId))}`;
 }
 
-function ownedArtworkUrl(
-  hoodie: OwnedHoodie,
-) {
-  return tokenArtworkFallback(
-    hoodie.tokenId,
-  );
+function ownedArtworkUrl(hoodie: OwnedHoodie) {
+  return tokenArtworkFallback(hoodie.tokenId);
 }
 
-function shortAddress(
-  address: string,
-) {
-  if (!address) {
-    return "—";
-  }
-
-  return `${address.slice(
-    0,
-    6,
-  )}...${address.slice(-4)}`;
+function shortAddress(address: string) {
+  if (!address) return "—";
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-function explorerAddressUrl(
-  address: string,
-) {
-  return `${siteConfig.explorerUrl.replace(
-    /\/$/,
-    "",
-  )}/address/${address}`;
+function explorerAddressUrl(address: string) {
+  return `${siteConfig.explorerUrl.replace(/\/$/, "")}/address/${address}`;
+}
+
+function explorerTokenUrl(contract: string) {
+  return `${siteConfig.explorerUrl.replace(/\/$/, "")}/token/${contract}`;
 }
 
 function formatTokenBalance(
@@ -197,177 +174,25 @@ function formatTokenBalance(
   decimals = 18,
   maximumDecimals = 6,
 ) {
-  const formatted =
-    formatUnits(
-      value,
-      decimals,
-    );
+  const formatted = formatUnits(value, decimals);
+  const [whole, fraction = ""] = formatted.split(".");
 
-  const [
-    whole,
-    fraction = "",
-  ] = formatted.split(".");
+  if (!fraction) return whole;
 
-  if (!fraction) {
-    return whole;
-  }
+  const trimmed = fraction
+    .slice(0, maximumDecimals)
+    .replace(/0+$/, "");
 
-  const trimmed =
-    fraction
-      .slice(
-        0,
-        maximumDecimals,
-      )
-      .replace(
-        /0+$/,
-        "",
-      );
-
-  return trimmed
-    ? `${whole}.${trimmed}`
-    : whole;
+  return trimmed ? `${whole}.${trimmed}` : whole;
 }
 
-async function fetchWalletTokenAssets(
-  walletAddress: string,
-): Promise<HoodWalletAsset[]> {
-  const params = new URLSearchParams({
-    address: walletAddress,
-  });
-
-  const url =
-    `/api/hoodwallet/assets?${params.toString()}`;
-
-  const MAX_ATTEMPTS = 3;
-
-  for (
-    let attempt = 1;
-    attempt <= MAX_ATTEMPTS;
-    attempt += 1
-  ) {
-    try {
-      const response = await fetch(
-        url,
-        {
-          headers: {
-            accept: "application/json",
-          },
-        },
-      );
-
-      const payload =
-        (await response.json()) as HoodWalletAssetApiResponse;
-
-      if (!response.ok) {
-        throw new Error(
-          payload.error ||
-            `Unable to load HoodWallet token balances (${response.status}).`,
-        );
-      }
-
-      const assets =
-        Array.isArray(payload.assets)
-          ? payload.assets
-          : [];
-
-      return assets
-        .map(
-          (
-            asset,
-          ): HoodWalletAsset | null => {
-            let balanceRaw: bigint;
-
-            try {
-              balanceRaw =
-                BigInt(
-                  asset.balanceRaw,
-                );
-            } catch {
-              return null;
-            }
-
-            if (
-              balanceRaw <= BigInt(0)
-            ) {
-              return null;
-            }
-
-            return {
-              symbol:
-                asset.symbol,
-
-              name:
-                asset.name,
-
-              balanceRaw,
-
-              balanceFormatted:
-                asset.balanceFormatted,
-
-              contract:
-                asset.contract,
-
-              decimals:
-                asset.decimals,
-
-              kind:
-                "erc20",
-            };
-          },
-        )
-        .filter(
-          (
-            asset,
-          ): asset is HoodWalletAsset =>
-            asset !== null,
-        )
-        .sort(
-          (left, right) =>
-            left.symbol.localeCompare(
-              right.symbol,
-            ),
-        );
-    } catch (error) {
-      if (
-        attempt ===
-        MAX_ATTEMPTS
-      ) {
-        console.warn(
-          `Token balances unavailable for ${walletAddress} after ${MAX_ATTEMPTS} attempts.`,
-          error,
-        );
-
-        /*
-         * Token discovery is supplementary.
-         * Never break the entire HoodWallet page.
-         */
-        return [];
-      }
-
-      /*
-       * Small backoff:
-       *
-       * retry 1 -> 250ms
-       * retry 2 -> 500ms
-       */
-      await new Promise<void>(
-        (resolve) => {
-          window.setTimeout(
-            resolve,
-            250 * attempt,
-          );
-        },
-      );
-    }
-  }
-
-  return [];
+function statusLabel(status: HoodWalletStatus) {
+  if (status === "active") return "Active";
+  if (status === "counterfactual") return "Counterfactual";
+  return "Unknown";
 }
 
-function downloadBlob(
-  blob: Blob,
-  filename: string,
-) {
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -377,6 +202,160 @@ function downloadBlob(
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+async function loadCanvasImage(source: string) {
+  const response = await fetch(source, {
+    headers: {
+      accept: "image/*",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Unable to load image (${response.status}).`);
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+
+  try {
+    const image = new window.Image();
+    image.decoding = "sync";
+
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Unable to render image."));
+      image.src = objectUrl;
+    });
+
+    return image;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function fetchWalletInventory(
+  walletAddress: string,
+): Promise<{
+  assets: HoodWalletAsset[];
+  nfts: HoodWalletNft[];
+}> {
+  const params = new URLSearchParams({
+    address: walletAddress,
+  });
+
+  const url = `/api/hoodwallet/assets?${params.toString()}`;
+  const MAX_ATTEMPTS = 3;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        cache: "no-store",
+        headers: {
+          accept: "application/json",
+        },
+      });
+
+      const payload = (await response.json()) as HoodWalletAssetApiResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error ||
+            `Unable to load HoodWallet inventory (${response.status}).`,
+        );
+      }
+
+      const assets = (Array.isArray(payload.assets) ? payload.assets : [])
+        .map((asset): HoodWalletAsset | null => {
+          let balanceRaw: bigint;
+
+          try {
+            balanceRaw = BigInt(asset.balanceRaw);
+          } catch {
+            return null;
+          }
+
+          if (balanceRaw <= BigInt(0)) return null;
+
+          return {
+            symbol: asset.symbol,
+            name: asset.name,
+            balanceRaw,
+            balanceFormatted: asset.balanceFormatted,
+            contract: asset.contract,
+            decimals: asset.decimals,
+            kind: "erc20",
+            trusted: asset.trusted === true,
+          };
+        })
+        .filter((asset): asset is HoodWalletAsset => asset !== null)
+        .sort((left, right) => {
+          if (left.trusted !== right.trusted) {
+            return left.trusted ? -1 : 1;
+          }
+
+          return left.symbol.localeCompare(right.symbol);
+        });
+
+      const nfts = (Array.isArray(payload.nfts) ? payload.nfts : [])
+        .filter(
+          (nft) =>
+            !!nft.contract &&
+            !!nft.tokenId &&
+            (nft.kind === "erc721" || nft.kind === "erc1155"),
+        )
+        .map(
+          (nft): HoodWalletNft => ({
+            contract: nft.contract,
+            tokenId: nft.tokenId,
+            name: nft.name || `NFT #${nft.tokenId}`,
+            collectionName: nft.collectionName || "NFT Collection",
+            symbol: nft.symbol,
+            image: nft.image,
+            balance: nft.balance || "1",
+            kind: nft.kind,
+            trusted: nft.trusted === true,
+            spam: nft.spam === true,
+            spamClassifications: Array.isArray(nft.spamClassifications)
+              ? nft.spamClassifications
+              : [],
+          }),
+        );
+
+      if (payload.warning) {
+        console.warn(
+          `HoodWallet inventory warning for ${walletAddress}: ${payload.warning}`,
+        );
+      }
+
+      return { assets, nfts };
+    } catch (inventoryError) {
+      if (attempt === MAX_ATTEMPTS) {
+        console.warn(
+          `Inventory unavailable for ${walletAddress} after ${MAX_ATTEMPTS} attempts.`,
+          inventoryError,
+        );
+
+        return {
+          assets: [],
+          nfts: [],
+        };
+      }
+
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 250 * attempt);
+      });
+    }
+  }
+
+  return {
+    assets: [],
+    nfts: [],
+  };
+}
+
+/*//////////////////////////////////////////////////////////////
+                         PNG EXPORT
+//////////////////////////////////////////////////////////////*/
 
 async function downloadHoodWalletPng(
   hoodie: OwnedHoodie,
@@ -389,7 +368,7 @@ async function downloadHoodWalletPng(
 
   const width = 2400;
   const height = 1200;
-  const artworkSize = 1200;
+  const sidebarWidth = 660;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -401,128 +380,265 @@ async function downloadHoodWalletPng(
 
   const background = darkHood ? "#000000" : "#ccff00";
   const foreground = darkHood ? "#ccff00" : "#000000";
+  const opposite = darkHood ? "#000000" : "#ccff00";
 
   context.imageSmoothingEnabled = false;
   context.fillStyle = background;
   context.fillRect(0, 0, width, height);
 
-  context.fillStyle = "#ccff00";
-  context.fillRect(0, 0, artworkSize, artworkSize);
-
-  const artworkResponse = await fetch(ownedArtworkUrl(hoodie));
-
-  if (!artworkResponse.ok) {
-    throw new Error("Unable to load Hoodie artwork.");
-  }
-
-  const artworkBlob = await artworkResponse.blob();
-  const artworkUrl = URL.createObjectURL(artworkBlob);
-
-  try {
-    const artwork = new window.Image();
-    artwork.decoding = "sync";
-
-    await new Promise<void>((resolve, reject) => {
-      artwork.onload = () => resolve();
-      artwork.onerror = () =>
-        reject(new Error("Unable to render Hoodie artwork."));
-      artwork.src = artworkUrl;
-    });
-
-    context.drawImage(artwork, 0, 0, artworkSize, artworkSize);
-  } finally {
-    URL.revokeObjectURL(artworkUrl);
-  }
-
   context.strokeStyle = foreground;
   context.lineWidth = 4;
   context.beginPath();
-  context.moveTo(artworkSize, 0);
-  context.lineTo(artworkSize, height);
+  context.moveTo(sidebarWidth, 0);
+  context.lineTo(sidebarWidth, height);
   context.stroke();
 
-  const left = 1280;
-  const right = width - 90;
+  /* Smaller Hoodie avatar */
+  const avatarSize = 520;
+  const avatarX = Math.round((sidebarWidth - avatarSize) / 2);
+  const avatarY = 58;
+
+  context.fillStyle = "#ccff00";
+  context.fillRect(avatarX, avatarY, avatarSize, avatarSize);
+
+  try {
+    const artwork = await loadCanvasImage(ownedArtworkUrl(hoodie));
+    context.drawImage(artwork, avatarX, avatarY, avatarSize, avatarSize);
+  } catch (artworkError) {
+    console.warn("Unable to draw Hoodie artwork in export.", artworkError);
+    context.fillStyle = foreground;
+    context.font = "22px DepartureMono, monospace";
+    context.textAlign = "center";
+    context.fillText(
+      "ARTWORK UNAVAILABLE",
+      avatarX + avatarSize / 2,
+      avatarY + avatarSize / 2,
+    );
+  }
 
   context.fillStyle = foreground;
   context.textAlign = "left";
   context.textBaseline = "alphabetic";
+  context.font = "22px DepartureMono, monospace";
+  context.fillText("ONCHAINHOODIE", 56, 660);
 
-  context.font = "28px DepartureMono, monospace";
-  context.fillText("HOODWALLET", left, 92);
-
-  context.font = "74px DepartureMono, monospace";
-  context.fillText(`#${wallet.tokenId}`, left, 185);
-
-  context.font = "25px DepartureMono, monospace";
-  context.fillText(statusLabel(wallet.status).toUpperCase(), left, 245);
+  context.font = "68px DepartureMono, monospace";
+  context.fillText(`#${wallet.tokenId}`, 56, 744);
 
   context.globalAlpha = 0.62;
-  context.font = "22px DepartureMono, monospace";
-  context.fillText("DETERMINISTIC ADDRESS", left, 318);
+  context.font = "20px DepartureMono, monospace";
+  context.fillText("HOODWALLET", 56, 810);
   context.globalAlpha = 1;
 
+  context.font = "24px DepartureMono, monospace";
+  context.fillText(shortAddress(wallet.walletAddress), 56, 854);
+
+  context.font = "20px DepartureMono, monospace";
+  context.fillText(statusLabel(wallet.status).toUpperCase(), 56, 908);
+
+  context.globalAlpha = 0.6;
+  context.font = "18px DepartureMono, monospace";
+  context.fillText("TRUSTED INVENTORY ONLY", 56, 1010);
+  context.globalAlpha = 1;
+
+  context.font = "18px DepartureMono, monospace";
+  context.fillText(BRAND_URL.toLowerCase(), 56, height - 58);
+
+  /* Main inventory area */
+  const left = sidebarWidth + 70;
+  const right = width - 70;
+
+  context.fillStyle = foreground;
+  context.textAlign = "left";
   context.font = "25px DepartureMono, monospace";
-  context.fillText(wallet.walletAddress, left, 360);
+  context.fillText("HOODWALLET INVENTORY", left, 82);
+
+  context.globalAlpha = 0.6;
+  context.font = "18px DepartureMono, monospace";
+  context.fillText("DETERMINISTIC ADDRESS", left, 132);
+  context.globalAlpha = 1;
+  context.font = "21px DepartureMono, monospace";
+  context.fillText(wallet.walletAddress, left, 170);
 
   context.lineWidth = 2;
   context.beginPath();
-  context.moveTo(left, 405);
-  context.lineTo(right, 405);
+  context.moveTo(left, 210);
+  context.lineTo(right, 210);
   context.stroke();
 
-  context.font = "25px DepartureMono, monospace";
-  context.fillText("ASSETS", left, 458);
+  const trustedAssets = wallet.assets.filter((asset) => asset.trusted);
+  const trustedNfts = wallet.nfts.filter((nft) => nft.trusted);
 
-  const visibleAssets = wallet.assets.slice(0, 7);
-  let y = 535;
+  context.font = "22px DepartureMono, monospace";
+  context.fillText("ASSETS", left, 260);
 
-  for (const asset of visibleAssets) {
-    context.globalAlpha = 0.62;
-    context.font = "20px DepartureMono, monospace";
-    context.fillText(asset.name.toUpperCase(), left, y);
+  const visibleAssets = trustedAssets.slice(0, 4);
+  let assetY = 310;
+
+  if (visibleAssets.length === 0) {
+    context.globalAlpha = 0.55;
+    context.font = "18px DepartureMono, monospace";
+    context.fillText("NO TRUSTED TOKEN BALANCES", left, assetY + 20);
     context.globalAlpha = 1;
+    assetY += 70;
+  } else {
+    for (const asset of visibleAssets) {
+      context.globalAlpha = 0.58;
+      context.font = "17px DepartureMono, monospace";
+      context.fillText(asset.name.toUpperCase(), left, assetY);
+      context.globalAlpha = 1;
 
-    context.font = "31px DepartureMono, monospace";
-    context.fillText(asset.symbol.toUpperCase(), left, y + 43);
+      context.font = "27px DepartureMono, monospace";
+      context.fillText(asset.symbol.toUpperCase(), left, assetY + 38);
 
-    context.textAlign = "right";
-    context.font = "38px DepartureMono, monospace";
-    context.fillText(asset.balanceFormatted, right, y + 43);
-    context.textAlign = "left";
+      context.textAlign = "right";
+      context.font = "31px DepartureMono, monospace";
+      context.fillText(asset.balanceFormatted, right, assetY + 38);
+      context.textAlign = "left";
 
-    y += 108;
+      assetY += 78;
+    }
   }
 
-  if (wallet.assets.length > visibleAssets.length) {
-    const remaining = wallet.assets.length - visibleAssets.length;
-    context.globalAlpha = 0.62;
-    context.font = "20px DepartureMono, monospace";
+  if (trustedAssets.length > visibleAssets.length) {
+    context.globalAlpha = 0.6;
+    context.font = "16px DepartureMono, monospace";
     context.fillText(
-      `+${remaining} MORE ASSET${remaining === 1 ? "" : "S"}`,
+      `+${trustedAssets.length - visibleAssets.length} MORE TOKEN ASSET${
+        trustedAssets.length - visibleAssets.length === 1 ? "" : "S"
+      }`,
       left,
-      Math.min(y, height - 105),
+      assetY,
     );
     context.globalAlpha = 1;
+    assetY += 38;
   }
 
-  context.fillStyle = "#000000";
-  context.textAlign = "left";
-  context.font = "22px DepartureMono, monospace";
-  context.fillText(`ONCHAINHOODIE #${wallet.tokenId}`, 54, height - 48);
+  const inventoryTop = Math.max(600, assetY + 35);
 
-  context.fillStyle = foreground;
+  context.beginPath();
+  context.moveTo(left, inventoryTop - 35);
+  context.lineTo(right, inventoryTop - 35);
+  context.stroke();
+
+  context.font = "22px DepartureMono, monospace";
+  context.fillText("NFT INVENTORY", left, inventoryTop);
+
   context.textAlign = "right";
-  context.font = "20px DepartureMono, monospace";
-  context.fillText(BRAND_URL.toLowerCase(), right, height - 48);
+  context.globalAlpha = 0.6;
+  context.font = "17px DepartureMono, monospace";
+  context.fillText(
+    `${trustedNfts.length} ITEM${trustedNfts.length === 1 ? "" : "S"}`,
+    right,
+    inventoryTop,
+  );
+  context.globalAlpha = 1;
+  context.textAlign = "left";
+
+  if (trustedNfts.length === 0) {
+    context.globalAlpha = 0.55;
+    context.font = "18px DepartureMono, monospace";
+    context.fillText(
+      "NO TRUSTED NFTS IN THIS HOODWALLET",
+      left,
+      inventoryTop + 70,
+    );
+    context.globalAlpha = 1;
+  } else {
+    const visibleNfts = trustedNfts.slice(0, 6);
+    const gap = 20;
+    const tileWidth = Math.floor(
+      (right - left - gap * Math.max(0, visibleNfts.length - 1)) /
+        Math.max(1, visibleNfts.length),
+    );
+    const imageSize = Math.min(tileWidth, 230);
+    const tileY = inventoryTop + 42;
+
+    for (let index = 0; index < visibleNfts.length; index += 1) {
+      const nft = visibleNfts[index];
+      const x = left + index * (tileWidth + gap);
+
+      context.strokeStyle = foreground;
+      context.lineWidth = 2;
+      context.strokeRect(x, tileY, imageSize, imageSize);
+
+      if (nft.image) {
+        try {
+          const nftImage = await loadCanvasImage(nft.image);
+          context.drawImage(nftImage, x, tileY, imageSize, imageSize);
+        } catch (nftImageError) {
+          console.warn(
+            `Unable to draw NFT ${nft.contract}:${nft.tokenId}.`,
+            nftImageError,
+          );
+
+          context.fillStyle = foreground;
+          context.font = "14px DepartureMono, monospace";
+          context.textAlign = "center";
+          context.fillText(
+            "NFT",
+            x + imageSize / 2,
+            tileY + imageSize / 2,
+          );
+          context.textAlign = "left";
+        }
+      } else {
+        context.fillStyle = foreground;
+        context.font = "14px DepartureMono, monospace";
+        context.textAlign = "center";
+        context.fillText(
+          "NFT",
+          x + imageSize / 2,
+          tileY + imageSize / 2,
+        );
+        context.textAlign = "left";
+      }
+
+      context.fillStyle = foreground;
+      context.globalAlpha = 0.62;
+      context.font = "13px DepartureMono, monospace";
+      context.fillText(
+        nft.collectionName.toUpperCase().slice(0, 20),
+        x,
+        tileY + imageSize + 28,
+      );
+      context.globalAlpha = 1;
+      context.font = "17px DepartureMono, monospace";
+      context.fillText(
+        `#${nft.tokenId}`.slice(0, 22),
+        x,
+        tileY + imageSize + 55,
+      );
+    }
+
+    if (trustedNfts.length > visibleNfts.length) {
+      context.globalAlpha = 0.62;
+      context.font = "16px DepartureMono, monospace";
+      context.textAlign = "right";
+      context.fillText(
+        `+${trustedNfts.length - visibleNfts.length} MORE NFT${
+          trustedNfts.length - visibleNfts.length === 1 ? "" : "S"
+        }`,
+        right,
+        height - 58,
+      );
+      context.globalAlpha = 1;
+      context.textAlign = "left";
+    }
+  }
+
+  /* Small trust mark */
+  context.fillStyle = foreground;
+  context.fillRect(right - 208, 50, 208, 42);
+  context.fillStyle = opposite;
+  context.font = "15px DepartureMono, monospace";
+  context.textAlign = "center";
+  context.fillText("TRUSTED VIEW", right - 104, 78);
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((result) => {
-      if (result) {
-        resolve(result);
-      } else {
-        reject(new Error("Unable to create HoodWallet PNG."));
-      }
+      if (result) resolve(result);
+      else reject(new Error("Unable to create HoodWallet PNG."));
     }, "image/png");
   });
 
@@ -533,36 +649,12 @@ async function downloadHoodWalletPng(
   downloadBlob(blob, filename);
 }
 
-function statusLabel(
-  status: HoodWalletStatus,
-) {
-  if (
-    status === "active"
-  ) {
-    return "Active";
-  }
-
-  if (
-    status ===
-    "counterfactual"
-  ) {
-    return "Counterfactual";
-  }
-
-  return "Unknown";
-}
-
 /*//////////////////////////////////////////////////////////////
                              ARTWORK
 //////////////////////////////////////////////////////////////*/
 
-function HoodieArtwork({
-  hoodie,
-}: {
-  hoodie: OwnedHoodie;
-}) {
-  const [failed, setFailed] =
-    useState(false);
+function HoodieArtwork({ hoodie }: { hoodie: OwnedHoodie }) {
+  const [failed, setFailed] = useState(false);
 
   if (failed) {
     return (
@@ -574,24 +666,41 @@ function HoodieArtwork({
 
   return (
     <Image
-      loader={
-        passthroughImageLoader
-      }
+      loader={passthroughImageLoader}
       unoptimized
-      src={ownedArtworkUrl(
-        hoodie,
-      )}
-      alt={
-        hoodie.name ||
-        `OnChainHoodies #${hoodie.tokenId}`
-      }
+      src={ownedArtworkUrl(hoodie)}
+      alt={hoodie.name || `OnChainHoodies #${hoodie.tokenId}`}
       width={768}
       height={768}
       sizes="(max-width: 768px) 100vw, 320px"
-      onError={() =>
-        setFailed(true)
-      }
+      onError={() => setFailed(true)}
       className="image-render-pixel h-full w-full object-cover"
+    />
+  );
+}
+
+function NftArtwork({ nft }: { nft: HoodWalletNft }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!nft.image || failed) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[var(--hood-fg)] p-3 text-center text-[8px] uppercase tracking-[0.12em] text-[var(--hood-bg)]">
+        NFT
+      </div>
+    );
+  }
+
+  return (
+    // A normal img is intentional here: NFT image hosts are dynamic and should
+    // not require every remote host to be added to next.config remotePatterns.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={nft.image}
+      alt={nft.name}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+      className="h-full w-full object-cover"
     />
   );
 }
@@ -600,11 +709,7 @@ function HoodieArtwork({
                          LOADING COMPONENT
 //////////////////////////////////////////////////////////////*/
 
-function LoadingBlock({
-  label,
-}: {
-  label: string;
-}) {
+function LoadingBlock({ label }: { label: string }) {
   return (
     <div className="flex min-h-[260px] items-center justify-center border border-[var(--hood-fg)] p-6 text-center">
       <p className="text-[10px] uppercase tracking-[0.18em] opacity-65">
@@ -618,27 +723,90 @@ function LoadingBlock({
                            ASSET ROW
 //////////////////////////////////////////////////////////////*/
 
-function AssetRow({
-  asset,
-}: {
-  asset: HoodWalletAsset;
-}) {
+function AssetRow({ asset }: { asset: HoodWalletAsset }) {
   return (
     <div className="grid grid-cols-[1fr_auto] items-center gap-4 border-t border-[var(--hood-fg)] px-4 py-4 first:border-t-0">
       <div className="min-w-0">
-        <p className="text-[9px] uppercase tracking-[0.15em] opacity-60">
-          {asset.name}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-[9px] uppercase tracking-[0.15em] opacity-60">
+            {asset.name}
+          </p>
+
+          {!asset.trusted && asset.kind === "erc20" && (
+            <span className="border border-[var(--hood-fg)] px-1.5 py-0.5 text-[7px] uppercase tracking-[0.12em]">
+              Unverified
+            </span>
+          )}
+        </div>
 
         <p className="mt-1 text-sm uppercase tracking-[0.08em]">
           {asset.symbol}
         </p>
+
+        {asset.contract && !asset.trusted && (
+          <a
+            href={explorerTokenUrl(asset.contract)}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-1 block text-[7px] uppercase tracking-[0.1em] opacity-55 underline underline-offset-2"
+          >
+            {shortAddress(asset.contract)} ↗
+          </a>
+        )}
       </div>
 
       <p className="text-right text-xl leading-none tracking-[-0.04em] md:text-2xl">
         {asset.balanceFormatted}
       </p>
     </div>
+  );
+}
+
+/*//////////////////////////////////////////////////////////////
+                           NFT CARD
+//////////////////////////////////////////////////////////////*/
+
+function NftCard({ nft }: { nft: HoodWalletNft }) {
+  return (
+    <article className="min-w-0 border border-[var(--hood-fg)]">
+      <div className="aspect-square overflow-hidden bg-[var(--hood-fg)]">
+        <NftArtwork nft={nft} />
+      </div>
+
+      <div className="border-t border-[var(--hood-fg)] p-2.5">
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 truncate text-[8px] uppercase tracking-[0.12em] opacity-60">
+            {nft.collectionName}
+          </p>
+
+          {!nft.trusted && (
+            <span className="shrink-0 border border-[var(--hood-fg)] px-1 py-0.5 text-[6px] uppercase tracking-[0.1em]">
+              {nft.spam ? "Spam" : "Unverified"}
+            </span>
+          )}
+        </div>
+
+        <p className="mt-2 truncate text-[11px] uppercase tracking-[0.05em]">
+          {nft.name || `#${nft.tokenId}`}
+        </p>
+
+        <div className="mt-2 flex items-center justify-between gap-2 text-[7px] uppercase tracking-[0.1em] opacity-60">
+          <span>#{nft.tokenId}</span>
+          {nft.kind === "erc1155" && <span>× {nft.balance}</span>}
+        </div>
+
+        {!nft.trusted && (
+          <a
+            href={explorerTokenUrl(nft.contract)}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 block truncate text-[7px] uppercase tracking-[0.1em] opacity-55 underline underline-offset-2"
+          >
+            {shortAddress(nft.contract)} ↗
+          </a>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -650,16 +818,33 @@ function HoodWalletCard({
   hoodie,
   wallet,
   darkHood,
+  trustedOnly,
 }: {
   hoodie: OwnedHoodie;
   wallet: HoodWalletRecord;
   darkHood: boolean;
+  trustedOnly: boolean;
 }) {
-  const statusIsActive =
-    wallet.status === "active";
+  const statusIsActive = wallet.status === "active";
+  const [downloading, setDownloading] = useState(false);
 
-  const [downloading, setDownloading] =
-    useState(false);
+  const visibleAssets = useMemo(
+    () =>
+      wallet.assets.filter(
+        (asset) => asset.kind === "native" || !trustedOnly || asset.trusted,
+      ),
+    [trustedOnly, wallet.assets],
+  );
+
+  const visibleNfts = useMemo(
+    () => wallet.nfts.filter((nft) => !trustedOnly || nft.trusted),
+    [trustedOnly, wallet.nfts],
+  );
+
+  const hiddenAssetCount =
+    wallet.assets.filter(
+      (asset) => asset.kind === "erc20" && !asset.trusted,
+    ).length + wallet.nfts.filter((nft) => !nft.trusted).length;
 
   const downloadCard = useCallback(async () => {
     if (downloading) return;
@@ -667,11 +852,7 @@ function HoodWalletCard({
     setDownloading(true);
 
     try {
-      await downloadHoodWalletPng(
-        hoodie,
-        wallet,
-        darkHood,
-      );
+      await downloadHoodWalletPng(hoodie, wallet, darkHood);
     } catch (downloadError) {
       console.error(downloadError);
       window.alert(
@@ -686,14 +867,11 @@ function HoodWalletCard({
 
   return (
     <article className="border border-[var(--hood-fg)]">
-      <div className="grid lg:grid-cols-[280px_minmax(0,1fr)]">
-        {/* Artwork */}
-
+      <div className="grid lg:grid-cols-[230px_minmax(0,1fr)]">
+        {/* Smaller Hoodie avatar */}
         <div className="border-b border-[var(--hood-fg)] bg-[#ccff00] lg:border-b-0 lg:border-r">
           <div className="aspect-square overflow-hidden">
-            <HoodieArtwork
-              hoodie={hoodie}
-            />
+            <HoodieArtwork hoodie={hoodie} />
           </div>
 
           <div className="border-t border-black bg-[#ccff00] px-4 py-3 text-black">
@@ -707,8 +885,7 @@ function HoodWalletCard({
           </div>
         </div>
 
-        {/* Wallet */}
-
+        {/* Wallet + inventory */}
         <div className="min-w-0">
           <div className="border-b border-[var(--hood-fg)] p-4 md:p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -718,9 +895,7 @@ function HoodWalletCard({
                 </p>
 
                 <h2 className="mt-3 break-all text-2xl leading-none tracking-[-0.04em] md:text-3xl">
-                  {shortAddress(
-                    wallet.walletAddress,
-                  )}
+                  {shortAddress(wallet.walletAddress)}
                 </h2>
               </div>
 
@@ -741,9 +916,7 @@ function HoodWalletCard({
                       : ""
                   }`}
                 >
-                  {statusLabel(
-                    wallet.status,
-                  )}
+                  {statusLabel(wallet.status)}
                 </span>
               </div>
             </div>
@@ -757,15 +930,11 @@ function HoodWalletCard({
 
               <div className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <code className="break-all text-[10px] leading-relaxed">
-                  {
-                    wallet.walletAddress
-                  }
+                  {wallet.walletAddress}
                 </code>
 
                 <a
-                  href={explorerAddressUrl(
-                    wallet.walletAddress,
-                  )}
+                  href={explorerAddressUrl(wallet.walletAddress)}
                   target="_blank"
                   rel="noreferrer"
                   className="shrink-0 text-[9px] uppercase tracking-[0.14em] underline underline-offset-4"
@@ -775,48 +944,76 @@ function HoodWalletCard({
               </div>
             </div>
 
-            {wallet.status ===
-              "counterfactual" && (
+            {wallet.status === "counterfactual" && (
               <p className="mt-4 text-[9px] uppercase leading-relaxed tracking-[0.12em] opacity-65">
-                This HoodWallet
-                already has a
-                permanent address.
-                Its account contract
-                has not been deployed
-                yet.
+                This HoodWallet already has a permanent address. Its account
+                contract has not been deployed yet.
               </p>
             )}
 
-            {wallet.status ===
-              "active" && (
+            {wallet.status === "active" && (
               <p className="mt-4 text-[9px] uppercase leading-relaxed tracking-[0.12em] opacity-65">
-                The ERC-6551 account
-                is deployed at this
-                address.
+                The ERC-6551 account is deployed at this address.
+              </p>
+            )}
+
+            {trustedOnly && hiddenAssetCount > 0 && (
+              <p className="mt-4 text-[8px] uppercase leading-relaxed tracking-[0.11em] opacity-55">
+                {hiddenAssetCount} unverified asset
+                {hiddenAssetCount === 1 ? "" : "s"} hidden by Trusted View.
               </p>
             )}
           </div>
 
-          {/* Asset balances */}
-
+          {/* Fungible assets */}
           <div>
             <div className="flex items-center justify-between border-b border-[var(--hood-fg)] px-4 py-3">
-              <p className="text-[9px] uppercase tracking-[0.16em]">
-                Assets
-              </p>
+              <p className="text-[9px] uppercase tracking-[0.16em]">Assets</p>
 
               <p className="text-[8px] uppercase tracking-[0.13em] opacity-60">
                 On-chain balance
               </p>
             </div>
 
-            {wallet.assets.map(
-              (asset) => (
+            {visibleAssets.length > 0 ? (
+              visibleAssets.map((asset) => (
                 <AssetRow
                   key={`${wallet.tokenId}-${asset.contract || asset.symbol}-${asset.kind}`}
                   asset={asset}
                 />
-              ),
+              ))
+            ) : (
+              <div className="px-4 py-5 text-[9px] uppercase tracking-[0.14em] opacity-55">
+                No visible token balances.
+              </div>
+            )}
+          </div>
+
+          {/* NFT inventory */}
+          <div className="border-t border-[var(--hood-fg)]">
+            <div className="flex items-center justify-between border-b border-[var(--hood-fg)] px-4 py-3">
+              <p className="text-[9px] uppercase tracking-[0.16em]">
+                NFT Inventory
+              </p>
+
+              <p className="text-[8px] uppercase tracking-[0.13em] opacity-60">
+                {visibleNfts.length} item{visibleNfts.length === 1 ? "" : "s"}
+              </p>
+            </div>
+
+            {visibleNfts.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-5">
+                {visibleNfts.map((nft) => (
+                  <NftCard
+                    key={`${wallet.tokenId}-${nft.contract}-${nft.tokenId}-${nft.kind}`}
+                    nft={nft}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="px-4 py-6 text-[9px] uppercase tracking-[0.14em] opacity-55">
+                No visible NFTs in this HoodWallet.
+              </div>
             )}
           </div>
         </div>
@@ -830,179 +1027,85 @@ function HoodWalletCard({
 //////////////////////////////////////////////////////////////*/
 
 export default function HoodWalletPage() {
-  const {
-    address,
-    connect,
-  } = useWallet();
+  const { address, connect } = useWallet();
 
-  const [
-    ownedHoodies,
-    setOwnedHoodies,
-  ] = useState<
-    OwnedHoodie[]
-  >([]);
+  const [ownedHoodies, setOwnedHoodies] = useState<OwnedHoodie[]>([]);
+  const [hoodWallets, setHoodWallets] = useState<HoodWalletRecord[]>([]);
+  const [ownershipLoading, setOwnershipLoading] = useState(false);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [ownershipChecked, setOwnershipChecked] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [darkHood, setDarkHood] = useState(false);
 
-  const [
-    hoodWallets,
-    setHoodWallets,
-  ] = useState<
-    HoodWalletRecord[]
-  >([]);
+  /* Trusted View is deliberately the default. */
+  const [trustedOnly, setTrustedOnly] = useState(true);
 
-  const [
-    ownershipLoading,
-    setOwnershipLoading,
-  ] = useState(false);
-
-  const [
-    walletLoading,
-    setWalletLoading,
-  ] = useState(false);
-
-  const [
-    ownershipChecked,
-    setOwnershipChecked,
-  ] = useState(false);
-
-  const [
-    error,
-    setError,
-  ] = useState<
-    string | null
-  >(null);
-
-  const [
-    refreshKey,
-    setRefreshKey,
-  ] = useState(0);
-
-  const [darkHood, setDarkHood] =
-    useState(false);
-
-  const isHolder =
-    ownedHoodies.length > 0;
+  const isHolder = ownedHoodies.length > 0;
 
   /*//////////////////////////////////////////////////////////////
                            PROVIDER
   //////////////////////////////////////////////////////////////*/
 
-  const provider =
-    useMemo(() => {
-      if (
-        !siteConfig.rpcUrl
-      ) {
-        return null;
-      }
+  const provider = useMemo(() => {
+    if (!siteConfig.rpcUrl) return null;
 
-      return new JsonRpcProvider(
-        siteConfig.rpcUrl,
-        Number(
-          siteConfig.chainId,
-        ),
-        {
-          staticNetwork: true,
-        },
-      );
-    }, []);
+    return new JsonRpcProvider(
+      siteConfig.rpcUrl,
+      Number(siteConfig.chainId),
+      {
+        staticNetwork: true,
+      },
+    );
+  }, []);
 
   /*//////////////////////////////////////////////////////////////
                       LOAD OWNED HOODIES
   //////////////////////////////////////////////////////////////*/
 
-  const loadOwnership =
-    useCallback(async () => {
-      if (!address) {
-        setOwnedHoodies(
-          [],
-        );
-
-        setHoodWallets(
-          [],
-        );
-
-        setOwnershipChecked(
-          false,
-        );
-
-        setError(null);
-
-        return;
-      }
-
-      setOwnershipLoading(
-        true,
-      );
-
-      setOwnershipChecked(
-        false,
-      );
-
+  const loadOwnership = useCallback(async () => {
+    if (!address) {
+      setOwnedHoodies([]);
+      setHoodWallets([]);
+      setOwnershipChecked(false);
       setError(null);
+      return;
+    }
 
-      try {
-        const params =
-          new URLSearchParams({
-            owner:
-              address,
-          });
+    setOwnershipLoading(true);
+    setOwnershipChecked(false);
+    setError(null);
 
-        const response =
-          await fetch(
-            `/api/hoodies?${params.toString()}`,
-            {
-              cache:
-                "no-store",
-            },
-          );
+    try {
+      const params = new URLSearchParams({
+        owner: address,
+      });
 
-        const data =
-          (await response.json()) as OwnershipResponse;
+      const response = await fetch(`/api/hoodies?${params.toString()}`, {
+        cache: "no-store",
+      });
 
-        if (
-          !response.ok
-        ) {
-          throw new Error(
-            data.error ||
-              "Unable to read Hoodie ownership.",
-          );
-        }
+      const data = (await response.json()) as OwnershipResponse;
 
-        const unique =
-          normalizeOwnedHoodies(
-            data.items ||
-              [],
-          );
-
-        setOwnedHoodies(
-          unique,
-        );
-      } catch (
-        loadError
-      ) {
-        setOwnedHoodies(
-          [],
-        );
-
-        setHoodWallets(
-          [],
-        );
-
-        setError(
-          loadError instanceof
-            Error
-            ? loadError.message
-            : "Unable to read Hoodie ownership.",
-        );
-      } finally {
-        setOwnershipLoading(
-          false,
-        );
-
-        setOwnershipChecked(
-          true,
-        );
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to read Hoodie ownership.");
       }
-    }, [address]);
+
+      const unique = normalizeOwnedHoodies(data.items || []);
+      setOwnedHoodies(unique);
+    } catch (loadError) {
+      setOwnedHoodies([]);
+      setHoodWallets([]);
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to read Hoodie ownership.",
+      );
+    } finally {
+      setOwnershipLoading(false);
+      setOwnershipChecked(true);
+    }
+  }, [address]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1012,215 +1115,122 @@ export default function HoodWalletPage() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [
-    loadOwnership,
-    refreshKey,
-  ]);
+  }, [loadOwnership, refreshKey]);
 
   /*//////////////////////////////////////////////////////////////
                     LOAD HOODWALLET DATA
   //////////////////////////////////////////////////////////////*/
 
   useEffect(() => {
-    let cancelled =
-      false;
+    let cancelled = false;
 
     async function loadHoodWallets() {
-      if (
-        !address ||
-        !provider ||
-        ownedHoodies.length ===
-          0
-      ) {
-        setHoodWallets(
-          [],
-        );
-
+      if (!address || !provider || ownedHoodies.length === 0) {
+        setHoodWallets([]);
         return;
       }
 
-      if (
-        !siteConfig.hoodOSAddress
-      ) {
-        setError(
-          "HoodOS address is not configured.",
-        );
-
+      if (!siteConfig.hoodOSAddress) {
+        setError("HoodOS address is not configured.");
         return;
       }
 
-      setWalletLoading(
-        true,
-      );
-
+      setWalletLoading(true);
       setError(null);
 
       try {
-        const hoodOS =
-          new Contract(
-            siteConfig.hoodOSAddress,
-            HOOD_OS_ABI,
-            provider,
-          ) as unknown as HoodOSReadContract;
+        const hoodOS = new Contract(
+          siteConfig.hoodOSAddress,
+          HOOD_OS_ABI,
+          provider,
+        ) as unknown as HoodOSReadContract;
 
-        /*
-         * Process sequentially in small chunks.
-         *
-         * A collector will normally own far fewer
-         * than 6,000 Hoodies, but this avoids creating
-         * an uncontrolled number of RPC requests for
-         * large wallets.
-         */
-        const results: HoodWalletRecord[] =
-          [];
-
-        const concurrency =
-          4;
+        const results: HoodWalletRecord[] = [];
+        const concurrency = 4;
 
         for (
           let index = 0;
-          index <
-          ownedHoodies.length;
-          index +=
-            concurrency
+          index < ownedHoodies.length;
+          index += concurrency
         ) {
-          const batch =
-            ownedHoodies.slice(
-              index,
-              index +
-                concurrency,
-            );
+          const batch = ownedHoodies.slice(index, index + concurrency);
 
-          const batchResults =
-            await Promise.all(
-              batch.map(
-                async (
-                  hoodie,
-                ) => {
-                  const tokenId =
-                    BigInt(
-                      hoodie.tokenId,
+          const batchResults = await Promise.all(
+            batch.map(async (hoodie) => {
+              const tokenId = BigInt(hoodie.tokenId);
+              const walletAddress = await hoodOS.walletOf(tokenId);
+
+              const [code, nativeBalance, inventory] = await Promise.all([
+                provider.getCode(walletAddress),
+                provider.getBalance(walletAddress),
+                fetchWalletInventory(walletAddress).catch(
+                  (inventoryError) => {
+                    console.error(
+                      `Unable to load inventory for ${walletAddress}:`,
+                      inventoryError,
                     );
 
-                  /*
-                   * Derive the deterministic
-                   * HoodWallet from HoodOS.
-                   */
-                  const walletAddress =
-                    await hoodOS.walletOf(
-                      tokenId,
-                    );
+                    return {
+                      assets: [],
+                      nfts: [],
+                    };
+                  },
+                ),
+              ]);
 
-                  /*
-                   * Load account deployment
-                   * state + balances.
-                   */
-                  const [
-                    code,
+              const status: HoodWalletStatus =
+                code === "0x" ? "counterfactual" : "active";
+
+              const assets: HoodWalletAsset[] = [
+                ...inventory.assets,
+                {
+                  symbol: NATIVE_SYMBOL,
+                  name: NATIVE_NAME,
+                  balanceRaw: nativeBalance,
+                  balanceFormatted: formatTokenBalance(
                     nativeBalance,
-                    tokenAssets,
-                  ] =
-                    await Promise.all([
-                      provider.getCode(
-                        walletAddress,
-                      ),
-
-                      provider.getBalance(
-                        walletAddress,
-                      ),
-
-                      fetchWalletTokenAssets(
-                        walletAddress,
-                      ).catch((tokenError) => {
-                        console.error(
-                          `Unable to load ERC-20 balances for ${walletAddress}:`,
-                          tokenError,
-                        );
-
-                        return [];
-                      }),
-                    ]);
-
-                  const status: HoodWalletStatus =
-                    code ===
-                    "0x"
-                      ? "counterfactual"
-                      : "active";
-
-                  const assets: HoodWalletAsset[] = [
-                    ...tokenAssets,
-                    {
-                      symbol: NATIVE_SYMBOL,
-                      name: NATIVE_NAME,
-                      balanceRaw: nativeBalance,
-                      balanceFormatted: formatTokenBalance(
-                        nativeBalance,
-                        18,
-                        6,
-                      ),
-                      decimals: 18,
-                      kind: "native",
-                    },
-                  ];
-
-                  return {
-                    tokenId:
-                      hoodie.tokenId,
-
-                    hoodieName:
-                      hoodie.name,
-
-                    artwork:
-                      ownedArtworkUrl(
-                        hoodie,
-                      ),
-
-                    walletAddress,
-
-                    status,
-
-                    nativeBalance,
-
-                    assets,
-                  } satisfies HoodWalletRecord;
+                    18,
+                    6,
+                  ),
+                  decimals: 18,
+                  kind: "native",
+                  trusted: true,
                 },
-              ),
-            );
+              ];
 
-          results.push(
-            ...batchResults,
+              return {
+                tokenId: hoodie.tokenId,
+                hoodieName: hoodie.name,
+                artwork: ownedArtworkUrl(hoodie),
+                walletAddress,
+                status,
+                nativeBalance,
+                assets,
+                nfts: inventory.nfts,
+              } satisfies HoodWalletRecord;
+            }),
           );
+
+          results.push(...batchResults);
         }
 
         if (!cancelled) {
-          setHoodWallets(
-            results,
-          );
+          setHoodWallets(results);
         }
-      } catch (
-        loadError
-      ) {
-        console.error(
-          loadError,
-        );
+      } catch (loadError) {
+        console.error(loadError);
 
         if (!cancelled) {
-          setHoodWallets(
-            [],
-          );
-
+          setHoodWallets([]);
           setError(
-            loadError instanceof
-              Error
+            loadError instanceof Error
               ? loadError.message
               : "Unable to load HoodWallet balances.",
           );
         }
       } finally {
         if (!cancelled) {
-          setWalletLoading(
-            false,
-          );
+          setWalletLoading(false);
         }
       }
     }
@@ -1230,77 +1240,86 @@ export default function HoodWalletPage() {
     return () => {
       cancelled = true;
     };
-  }, [
-    address,
-    ownedHoodies,
-    provider,
-    refreshKey,
-  ]);
+  }, [address, ownedHoodies, provider, refreshKey]);
 
   /*//////////////////////////////////////////////////////////////
                          PORTFOLIO TOTALS
   //////////////////////////////////////////////////////////////*/
 
-  const portfolioTokenTotals =
-    useMemo(() => {
-      const totals = new Map<
-        string,
-        {
-          symbol: string;
-          name: string;
-          contract?: string;
-          decimals: number;
-          balanceRaw: bigint;
-        }
-      >();
+  const portfolioTokenTotals = useMemo(() => {
+    const totals = new Map<
+      string,
+      {
+        symbol: string;
+        name: string;
+        contract?: string;
+        decimals: number;
+        balanceRaw: bigint;
+        trusted: boolean;
+      }
+    >();
 
-      for (const wallet of hoodWallets) {
-        for (const asset of wallet.assets) {
-          if (asset.kind !== "erc20") {
-            continue;
-          }
+    for (const wallet of hoodWallets) {
+      for (const asset of wallet.assets) {
+        if (asset.kind !== "erc20") continue;
+        if (trustedOnly && !asset.trusted) continue;
 
-          const key =
-            asset.contract?.toLowerCase() ||
-            `${asset.symbol}:${asset.name}`;
+        const key =
+          asset.contract?.toLowerCase() || `${asset.symbol}:${asset.name}`;
 
-          const current = totals.get(key);
+        const current = totals.get(key);
 
-          totals.set(key, {
-            symbol: asset.symbol,
-            name: asset.name,
-            contract: asset.contract,
-            decimals: asset.decimals,
-            balanceRaw:
-              (current?.balanceRaw ?? BigInt(0)) +
-              asset.balanceRaw,
-          });
-        }
+        totals.set(key, {
+          symbol: asset.symbol,
+          name: asset.name,
+          contract: asset.contract,
+          decimals: asset.decimals,
+          balanceRaw: (current?.balanceRaw ?? BigInt(0)) + asset.balanceRaw,
+          trusted: asset.trusted,
+        });
+      }
+    }
+
+    return Array.from(totals.values()).sort((left, right) => {
+      if (left.trusted !== right.trusted) {
+        return left.trusted ? -1 : 1;
       }
 
-      return Array.from(totals.values()).sort((left, right) =>
-        left.symbol.localeCompare(right.symbol),
-      );
-    }, [hoodWallets]);
+      return left.symbol.localeCompare(right.symbol);
+    });
+  }, [hoodWallets, trustedOnly]);
 
-  const totalNative =
-    useMemo(() => {
-      return hoodWallets.reduce(
-        (total, wallet) =>
-          total +
-          wallet.nativeBalance,
-        BigInt(0),
-      );
-    }, [hoodWallets]);
+  const totalNative = useMemo(() => {
+    return hoodWallets.reduce(
+      (total, wallet) => total + wallet.nativeBalance,
+      BigInt(0),
+    );
+  }, [hoodWallets]);
 
-  const activeWalletCount =
-    useMemo(() => {
-      return hoodWallets.filter(
-        (wallet) =>
-          wallet.status ===
-          "active",
+  const activeWalletCount = useMemo(() => {
+    return hoodWallets.filter((wallet) => wallet.status === "active").length;
+  }, [hoodWallets]);
+
+  const visibleNftCount = useMemo(() => {
+    return hoodWallets.reduce(
+      (total, wallet) =>
+        total +
+        wallet.nfts.filter((nft) => !trustedOnly || nft.trusted).length,
+      0,
+    );
+  }, [hoodWallets, trustedOnly]);
+
+  const hiddenUnverifiedCount = useMemo(() => {
+    return hoodWallets.reduce((total, wallet) => {
+      const untrustedTokens = wallet.assets.filter(
+        (asset) => asset.kind === "erc20" && !asset.trusted,
       ).length;
-    }, [hoodWallets]);
+
+      const untrustedNfts = wallet.nfts.filter((nft) => !nft.trusted).length;
+
+      return total + untrustedTokens + untrustedNfts;
+    }, 0);
+  }, [hoodWallets]);
 
   /*//////////////////////////////////////////////////////////////
                               UI
@@ -1311,13 +1330,8 @@ export default function HoodWalletPage() {
       className="min-h-screen bg-[var(--hood-bg)] text-[var(--hood-fg)]"
       style={
         {
-          "--hood-bg": darkHood
-            ? "#000000"
-            : "#ccff00",
-
-          "--hood-fg": darkHood
-            ? "#ccff00"
-            : "#000000",
+          "--hood-bg": darkHood ? "#000000" : "#ccff00",
+          "--hood-fg": darkHood ? "#ccff00" : "#000000",
         } as CSSProperties
       }
     >
@@ -1325,32 +1339,24 @@ export default function HoodWalletPage() {
 
       <section className="mx-auto max-w-[1500px] px-4 pb-24 pt-20 md:px-6 md:pt-24">
         {/* Header */}
-
         <div className="section-heading-row border-[var(--hood-fg)]">
-          <p>
-            Build 04 / ERC-6551
-          </p>
+          <p>Build 04 / ERC-6551</p>
 
           <div className="flex items-center gap-4">
             <button
               type="button"
-              onClick={() =>
-                setDarkHood((current) => !current)
-              }
+              onClick={() => setDarkHood((current) => !current)}
               className="uppercase"
             >
               {darkHood ? "Lights on" : "Lights off"}
             </button>
 
-            <Link href="/">
-              Back to the Hood
-            </Link>
+            <Link href="/">Back to the Hood</Link>
           </div>
         </div>
 
         <div className="mt-6 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
           {/* Sidebar */}
-
           <aside className="min-w-0 xl:sticky xl:top-20 xl:self-start">
             <p className="text-[9px] uppercase tracking-[0.18em]">
               Hoodie infrastructure
@@ -1363,17 +1369,11 @@ export default function HoodWalletPage() {
             </h1>
 
             <p className="mt-5 max-w-md text-sm leading-relaxed opacity-75">
-              Every Hoodie has its
-              own deterministic
-              on-chain wallet.
-              Connect the wallet
-              holding your Hoodies
-              to inspect what each
-              Hoodie owns.
+              Every Hoodie has its own deterministic on-chain wallet. Connect
+              the wallet holding your Hoodies to inspect what each Hoodie owns.
             </p>
 
             {/* Connected wallet */}
-
             {address ? (
               <div className="mt-6 border border-[var(--hood-fg)]">
                 <div className="border-b border-[var(--hood-fg)] px-3 py-2">
@@ -1391,71 +1391,142 @@ export default function HoodWalletPage() {
             ) : (
               <button
                 type="button"
-                onClick={
-                  connect
-                }
+                onClick={connect}
                 className="pixel-cta mt-6 w-full"
               >
                 Connect wallet
               </button>
             )}
 
-            {/* Holder summary */}
+            {/* Asset safety switch */}
+            {address && isHolder && !ownershipLoading && (
+              <div className="mt-3 border border-[var(--hood-fg)]">
+                <div className="border-b border-[var(--hood-fg)] px-3 py-2">
+                  <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
+                    Asset view
+                  </p>
+                </div>
 
-            {address &&
-              !ownershipLoading &&
-              isHolder && (
-                <>
-                  <div className="mt-3 grid grid-cols-2 border border-[var(--hood-fg)]">
-                    <div className="border-r border-[var(--hood-fg)] p-3">
-                      <p className="text-[8px] uppercase tracking-[0.15em] opacity-60">
-                        Hoodies
-                      </p>
-
-                      <p className="mt-2 text-3xl leading-none tracking-[-0.05em]">
-                        {
-                          ownedHoodies.length
-                        }
-                      </p>
-                    </div>
-
-                    <div className="p-3">
-                      <p className="text-[8px] uppercase tracking-[0.15em] opacity-60">
-                        Active wallets
-                      </p>
-
-                      <p className="mt-2 text-3xl leading-none tracking-[-0.05em]">
-                        {
-                          activeWalletCount
-                        }
-                      </p>
-                    </div>
-                  </div>
+                <div className="grid grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setTrustedOnly(true)}
+                    className={`border-r border-[var(--hood-fg)] px-3 py-3 text-[8px] uppercase tracking-[0.14em] ${
+                      trustedOnly
+                        ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                        : ""
+                    }`}
+                    aria-pressed={trustedOnly}
+                  >
+                    {trustedOnly ? "■" : "□"} Trusted
+                  </button>
 
                   <button
                     type="button"
-                    onClick={() =>
-                      setRefreshKey(
-                        (
-                          current,
-                        ) =>
-                          current +
-                          1,
-                      )
-                    }
-                    disabled={
-                      ownershipLoading ||
-                      walletLoading
-                    }
-                    className="mt-2 w-full border border-[var(--hood-fg)] px-3 py-3 text-[9px] uppercase tracking-[0.14em] disabled:opacity-40"
+                    onClick={() => setTrustedOnly(false)}
+                    className={`px-3 py-3 text-[8px] uppercase tracking-[0.14em] ${
+                      !trustedOnly
+                        ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                        : ""
+                    }`}
+                    aria-pressed={!trustedOnly}
                   >
-                    {ownershipLoading ||
-                    walletLoading
-                      ? "Refreshing"
-                      : "Refresh balances"}
+                    {!trustedOnly ? "■" : "□"} All
                   </button>
-                </>
-              )}
+                </div>
+
+                <div className="border-t border-[var(--hood-fg)] px-3 py-3">
+                  <p className="text-[8px] uppercase leading-relaxed tracking-[0.11em] opacity-65">
+                    Trusted View only shows contracts approved by OnChainHoodies.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!trustedOnly && address && isHolder && (
+              <div className="mt-2 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-3 text-[var(--hood-bg)]">
+                <p className="text-[8px] uppercase tracking-[0.15em]">
+                  Unverified mode
+                </p>
+                <p className="mt-2 text-[8px] uppercase leading-relaxed tracking-[0.1em] opacity-75">
+                  Unknown tokens and NFTs can be spam. Do not interact with
+                  contracts you do not recognize.
+                </p>
+              </div>
+            )}
+
+            {/* Holder summary */}
+            {address && !ownershipLoading && isHolder && (
+              <>
+                <div className="mt-3 grid grid-cols-2 border border-[var(--hood-fg)]">
+                  <div className="border-r border-[var(--hood-fg)] p-3">
+                    <p className="text-[8px] uppercase tracking-[0.15em] opacity-60">
+                      Hoodies
+                    </p>
+
+                    <p className="mt-2 text-3xl leading-none tracking-[-0.05em]">
+                      {ownedHoodies.length}
+                    </p>
+                  </div>
+
+                  <div className="p-3">
+                    <p className="text-[8px] uppercase tracking-[0.15em] opacity-60">
+                      Active wallets
+                    </p>
+
+                    <p className="mt-2 text-3xl leading-none tracking-[-0.05em]">
+                      {activeWalletCount}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setRefreshKey((current) => current + 1)}
+                  disabled={ownershipLoading || walletLoading}
+                  className="mt-2 w-full border border-[var(--hood-fg)] px-3 py-3 text-[9px] uppercase tracking-[0.14em] disabled:opacity-40"
+                >
+                  {ownershipLoading || walletLoading
+                    ? "Refreshing"
+                    : "Refresh balances"}
+                </button>
+              </>
+            )}
+
+            {address && !ownershipLoading && isHolder && (
+              <>
+                <div className="mt-3 border border-[var(--hood-fg)] p-3">
+                  <p className="text-[8px] uppercase tracking-[0.16em]">
+                    {trustedOnly ? "Trusted inventory" : "All on-chain assets"}
+                  </p>
+
+                  <p className="mt-3 text-[9px] leading-relaxed opacity-70">
+                    {trustedOnly
+                      ? "Trusted View only displays ERC-20 and NFT contracts approved by OnChainHoodies. Native ETH is always visible."
+                      : "All View exposes every token and NFT returned by the indexers. Unknown assets can be spam and are not endorsed by OnChainHoodies."}
+                  </p>
+
+                  {trustedOnly && hiddenUnverifiedCount > 0 && (
+                    <p className="mt-3 text-[8px] uppercase leading-relaxed tracking-[0.11em] opacity-55">
+                      {hiddenUnverifiedCount} unverified asset
+                      {hiddenUnverifiedCount === 1 ? "" : "s"} currently hidden.
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-2 border border-[var(--hood-fg)] p-3">
+                  <p className="text-[8px] uppercase tracking-[0.16em]">
+                    Deterministic by design
+                  </p>
+
+                  <p className="mt-3 text-[9px] leading-relaxed opacity-70">
+                    Assets can be sent to a HoodWallet before its ERC-6551
+                    account is deployed. Activation deploys the account at the
+                    address the Hoodie already owns.
+                  </p>
+                </div>
+              </>
+            )}
 
             {error && (
               <div className="mt-3 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-3 text-xs leading-relaxed text-[var(--hood-bg)]">
@@ -1465,7 +1536,6 @@ export default function HoodWalletPage() {
           </aside>
 
           {/* Main content */}
-
           <div className="min-w-0">
             {!address ? (
               <div className="grid min-h-[680px] place-items-center border border-[var(--hood-fg)] p-6 text-center">
@@ -1481,22 +1551,14 @@ export default function HoodWalletPage() {
                   </h2>
 
                   <p className="mx-auto mt-6 max-w-lg text-sm leading-relaxed opacity-75 md:text-base">
-                    Connect your
-                    owner wallet to
-                    discover the
-                    deterministic
-                    HoodWallet behind
-                    every Hoodie you
-                    own and inspect
-                    the assets already
-                    waiting there.
+                    Connect your owner wallet to discover the deterministic
+                    HoodWallet behind every Hoodie you own and inspect the
+                    assets already waiting there.
                   </p>
 
                   <button
                     type="button"
-                    onClick={
-                      connect
-                    }
+                    onClick={connect}
                     className="pixel-cta mt-8"
                   >
                     Connect wallet
@@ -1505,8 +1567,7 @@ export default function HoodWalletPage() {
               </div>
             ) : ownershipLoading ? (
               <LoadingBlock label="Reading Hoodie ownership" />
-            ) : ownershipChecked &&
-              !isHolder ? (
+            ) : ownershipChecked && !isHolder ? (
               <div className="grid min-h-[680px] place-items-center border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-6 text-center text-[var(--hood-bg)]">
                 <div className="max-w-xl">
                   <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
@@ -1520,16 +1581,12 @@ export default function HoodWalletPage() {
                   </h2>
 
                   <p className="mx-auto mt-6 max-w-md text-sm leading-relaxed opacity-75">
-                    This connected
-                    wallet does not
-                    currently hold an
+                    This connected wallet does not currently hold an
                     OnChainHoodie.
                   </p>
 
                   <a
-                    href={
-                      siteConfig.openSeaUrl
-                    }
+                    href={siteConfig.openSeaUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="pixel-cta mt-8 inline-block border-[#ccff00]"
@@ -1539,19 +1596,53 @@ export default function HoodWalletPage() {
                 </div>
               </div>
             ) : walletLoading ? (
-              <LoadingBlock label="Loading HoodWallet assets" />
+              <LoadingBlock label="Loading HoodWallet inventory" />
             ) : (
               <>
                 {/* Portfolio summary */}
-
                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                   <div className="border border-[var(--hood-fg)] p-4">
                     <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
                       HoodWallets
                     </p>
-
                     <p className="mt-4 text-4xl leading-none tracking-[-0.06em]">
                       {hoodWallets.length}
+                    </p>
+                  </div>
+
+                  <div className="border border-[var(--hood-fg)] p-4">
+                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
+                      NFT inventory
+                    </p>
+                    <p className="mt-4 text-4xl leading-none tracking-[-0.06em]">
+                      {visibleNftCount}
+                    </p>
+                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
+                      {trustedOnly ? "Trusted" : "All visible"}
+                    </p>
+                  </div>
+
+                  <div className="border border-[var(--hood-fg)] p-4">
+                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
+                      Native across HoodWallets
+                    </p>
+                    <p className="mt-4 text-3xl leading-none tracking-[-0.05em]">
+                      {formatTokenBalance(totalNative, 18, 6)}
+                    </p>
+                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
+                      {NATIVE_SYMBOL}
+                    </p>
+                  </div>
+
+                  <div className="border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-4 text-[var(--hood-bg)]">
+                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
+                      Wallet state
+                    </p>
+                    <p className="mt-4 text-3xl leading-none tracking-[-0.05em]">
+                      {activeWalletCount} / {hoodWallets.length}
+                    </p>
+                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
+                      Active
                     </p>
                   </div>
 
@@ -1560,9 +1651,17 @@ export default function HoodWalletPage() {
                       key={token.contract || `${token.symbol}-${token.name}`}
                       className="border border-[var(--hood-fg)] p-4"
                     >
-                      <p className="truncate text-[8px] uppercase tracking-[0.16em] opacity-60">
-                        {token.name} across HoodWallets
-                      </p>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="truncate text-[8px] uppercase tracking-[0.16em] opacity-60">
+                          {token.name} across HoodWallets
+                        </p>
+
+                        {!token.trusted && (
+                          <span className="shrink-0 border border-[var(--hood-fg)] px-1 py-0.5 text-[6px] uppercase tracking-[0.1em]">
+                            Unverified
+                          </span>
+                        )}
+                      </div>
 
                       <p className="mt-4 break-all text-3xl leading-none tracking-[-0.05em]">
                         {formatTokenBalance(
@@ -1577,123 +1676,36 @@ export default function HoodWalletPage() {
                       </p>
                     </div>
                   ))}
-
-                  <div className="border border-[var(--hood-fg)] p-4">
-                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
-                      Native across HoodWallets
-                    </p>
-
-                    <p className="mt-4 text-3xl leading-none tracking-[-0.05em]">
-                      {formatTokenBalance(
-                        totalNative,
-                        18,
-                        6,
-                      )}
-                    </p>
-
-                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
-                      {NATIVE_SYMBOL}
-                    </p>
-                  </div>
-
-                  <div className="border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-4 text-[var(--hood-bg)]">
-                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
-                      Wallet state
-                    </p>
-
-                    <p className="mt-4 text-3xl leading-none tracking-[-0.05em]">
-                      {activeWalletCount} / {hoodWallets.length}
-                    </p>
-
-                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
-                      Active
-                    </p>
-                  </div>
-                </div>
-
-                {/* Explanation */}
-
-                <div className="mt-4 border border-[var(--hood-fg)] p-4 md:p-5">
-                  <div className="grid gap-4 md:grid-cols-[1fr_1.5fr]">
-                    <p className="text-[9px] uppercase tracking-[0.18em]">
-                      Deterministic by design
-                    </p>
-
-                    <p className="text-sm leading-relaxed opacity-75">
-                      Assets can be
-                      sent to a
-                      HoodWallet
-                      before its
-                      ERC-6551 account
-                      is deployed.
-                      Activation does
-                      not create a new
-                      address — it
-                      deploys the
-                      account at the
-                      address the
-                      Hoodie already
-                      owns.
-                    </p>
-                  </div>
                 </div>
 
                 {/* Wallet list */}
-
-                <div className="mt-8">
+                <div className="mt-4">
                   <div className="section-heading-row border-[var(--hood-fg)]">
+                    <p>Your HoodWallets</p>
                     <p>
-                      Your HoodWallets
-                    </p>
-
-                    <p>
-                      {
-                        hoodWallets.length
-                      }{" "}
-                      Hoodie
-                      {hoodWallets.length ===
-                      1
-                        ? ""
-                        : "s"}
+                      {hoodWallets.length} Hoodie
+                      {hoodWallets.length === 1 ? "" : "s"}
                     </p>
                   </div>
 
                   <div className="mt-4 grid gap-4">
-                    {hoodWallets.map(
-                      (
-                        wallet,
-                      ) => {
-                        const hoodie =
-                          ownedHoodies.find(
-                            (
-                              item,
-                            ) =>
-                              item.tokenId ===
-                              wallet.tokenId,
-                          );
+                    {hoodWallets.map((wallet) => {
+                      const hoodie = ownedHoodies.find(
+                        (item) => item.tokenId === wallet.tokenId,
+                      );
 
-                        if (!hoodie) {
-                          return null;
-                        }
+                      if (!hoodie) return null;
 
-                        return (
-                          <HoodWalletCard
-                            key={
-                              wallet.tokenId
-                            }
-                            hoodie={
-                              hoodie
-                            }
-                            wallet={
-                              wallet
-                            }
-                            darkHood={
-                              darkHood
-                            }
-                          />
-                        );
-                      },
-                    )}
+                      return (
+                        <HoodWalletCard
+                          key={wallet.tokenId}
+                          hoodie={hoodie}
+                          wallet={wallet}
+                          darkHood={darkHood}
+                          trustedOnly={trustedOnly}
+                        />
+                      );
+                    })}
                   </div>
                 </div>
               </>
