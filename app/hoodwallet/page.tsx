@@ -569,7 +569,6 @@ async function downloadHoodWalletPng(
       context.strokeRect(x, tileY, imageSize, imageSize);
 
       if (nft.image) {
-       if (nft.image) {
   try {
     const nftImage = await loadCanvasImage(
       nftProxyImageUrl(nft.image),
@@ -582,33 +581,33 @@ async function downloadHoodWalletPng(
       imageSize,
       imageSize,
     );
-        } catch (nftImageError) {
-          console.warn(
-            `Unable to draw NFT ${nft.contract}:${nft.tokenId}.`,
-            nftImageError,
-          );
+  } catch (nftImageError) {
+    console.warn(
+      `Unable to draw NFT ${nft.contract}:${nft.tokenId}.`,
+      nftImageError,
+    );
 
-          context.fillStyle = foreground;
-          context.font = "14px DepartureMono, monospace";
-          context.textAlign = "center";
-          context.fillText(
-            "NFT",
-            x + imageSize / 2,
-            tileY + imageSize / 2,
-          );
-          context.textAlign = "left";
-        }
-      } else {
-        context.fillStyle = foreground;
-        context.font = "14px DepartureMono, monospace";
-        context.textAlign = "center";
-        context.fillText(
-          "NFT",
-          x + imageSize / 2,
-          tileY + imageSize / 2,
-        );
-        context.textAlign = "left";
-      }
+    context.fillStyle = foreground;
+    context.font = "14px DepartureMono, monospace";
+    context.textAlign = "center";
+    context.fillText(
+      "NFT",
+      x + imageSize / 2,
+      tileY + imageSize / 2,
+    );
+    context.textAlign = "left";
+  }
+} else {
+  context.fillStyle = foreground;
+  context.font = "14px DepartureMono, monospace";
+  context.textAlign = "center";
+  context.fillText(
+    "NFT",
+    x + imageSize / 2,
+    tileY + imageSize / 2,
+  );
+  context.textAlign = "left";
+}
 
       context.fillStyle = foreground;
       context.globalAlpha = 0.62;
