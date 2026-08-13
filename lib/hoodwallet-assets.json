@@ -15,6 +15,10 @@
     {
       "contract": "0x9ec6c5b9f572a9b02138e553bc5f5882da735f45",
       "name": "OnChainHoodies"
+    },
+    {
+      "contract": "0x1caac5859ff4544ce513e9fbdcc3ae1f430ae75f",
+      "name": "CRPT FACES"
     }
   ]
 }
