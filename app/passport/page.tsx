@@ -472,6 +472,30 @@ export default function PassportPage() {
     return String(activation + hoodieBonuses);
   }, [season01]);
 
+  const season01HoodieBaseOCH = useMemo(() => {
+    if (!season01) return "0";
+
+    return String(
+      season01.hoodies.reduce(
+        (total, hoodie) =>
+          total + safeNumber(hoodie.allocation.baseOCH),
+        0
+      )
+    );
+  }, [season01]);
+
+  const season01HoodTalkBonusOCH = useMemo(() => {
+    if (!season01) return "0";
+
+    return String(
+      season01.hoodies.reduce(
+        (total, hoodie) =>
+          total + safeNumber(hoodie.allocation.hoodTalkBonusOCH),
+        0
+      )
+    );
+  }, [season01]);
+
   const loadHoodies = useCallback(async () => {
     if (!address) {
       setHoodies([]);
@@ -1728,14 +1752,17 @@ export default function PassportPage() {
                       <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
                         Final Season 01 Allocation
                       </p>
+
                       <h2 className="mt-4 text-5xl leading-none tracking-[-0.05em] md:text-7xl">
                         {formatOch(season01.allocation.totalOCH)} OCH
                       </h2>
                     </div>
+
                     <div className="md:text-right">
                       <p className="text-[9px] uppercase tracking-[0.15em] opacity-60">
                         Snapshot Status
                       </p>
+
                       <p className="mt-2 text-sm uppercase tracking-[0.14em]">
                         Final / Recorded
                       </p>
@@ -1743,52 +1770,110 @@ export default function PassportPage() {
                   </div>
 
                   <div className="grid border-l border-t border-[#ccff00] sm:grid-cols-2">
-                    {[
-                      ["Your Wallet", season01.allocation.walletOCH],
-                      ["Your Hoodies / TBA", season01.allocation.hoodWalletOCH],
-                    ].map(([label, value]) => (
-                      <div
-                        key={label}
-                        className="border-b border-r border-[#ccff00] p-5 md:p-6"
-                      >
-                        <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
-                          {label}
-                        </p>
-                        <p className="mt-3 text-3xl leading-none md:text-4xl">
-                          {formatOch(value)} OCH
-                        </p>
-                      </div>
-                    ))}
+                    <div className="border-b border-r border-[#ccff00] p-5 md:p-6">
+                      <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
+                        Your Wallet
+                      </p>
+
+                      <p className="mt-3 text-3xl leading-none md:text-4xl">
+                        {formatOch(season01.allocation.walletOCH)} OCH
+                      </p>
+                    </div>
+
+                    <div className="border-b border-r border-[#ccff00] p-5 md:p-6">
+                      <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
+                        Your HoodWallets
+                      </p>
+
+                      <p className="mt-3 text-3xl leading-none md:text-4xl">
+                        {formatOch(season01.allocation.hoodWalletOCH)} OCH
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="grid border-l border-t border-[#ccff00] sm:grid-cols-3">
-                    {[
-                      ["Hood Talk", season01HoodTalkOCH],
-                      ["X Contribution", season01.walletRewards.xOCH],
-                      ["Verified PFP", season01.walletRewards.pfpOCH],
-                    ].map(([label, value]) => (
-                      <div
-                        key={label}
-                        className="border-b border-r border-[#ccff00] p-5 md:p-6"
-                      >
-                        <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
-                          {label}
-                        </p>
-                        <p className="mt-3 text-2xl leading-none md:text-3xl">
-                          {formatOch(value)} OCH
+                  <div className="grid border-t border-[#ccff00] lg:grid-cols-2">
+                    <div className="border-b border-[#ccff00] lg:border-r">
+                      <div className="border-b border-[#ccff00] p-5 md:p-6">
+                        <p className="text-[9px] uppercase tracking-[0.15em] opacity-60">
+                          Your Wallet Breakdown
                         </p>
                       </div>
-                    ))}
+
+                      <div className="grid sm:grid-cols-3">
+                        {[
+                          [
+                            "Hood Talk",
+                            season01.walletRewards.hoodTalkActivationOCH,
+                          ],
+                          [
+                            "X Contribution",
+                            season01.walletRewards.xOCH,
+                          ],
+                          [
+                            "Verified PFP",
+                            season01.walletRewards.pfpOCH,
+                          ],
+                        ].map(([label, value]) => (
+                          <div
+                            key={label}
+                            className="border-b border-r border-[#ccff00] p-5 md:p-6"
+                          >
+                            <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
+                              {label}
+                            </p>
+
+                            <p className="mt-3 text-2xl leading-none md:text-3xl">
+                              {formatOch(value)} OCH
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="border-b border-[#ccff00]">
+                      <div className="border-b border-[#ccff00] p-5 md:p-6">
+                        <p className="text-[9px] uppercase tracking-[0.15em] opacity-60">
+                          Your HoodWallets Breakdown
+                        </p>
+                      </div>
+
+                      <div className="grid sm:grid-cols-2">
+                        {[
+                          [
+                            "Hoodie Allocation",
+                            season01HoodieBaseOCH,
+                          ],
+                          [
+                            "Hood Talk Bonus",
+                            season01HoodTalkBonusOCH,
+                          ],
+                        ].map(([label, value]) => (
+                          <div
+                            key={label}
+                            className="border-b border-r border-[#ccff00] p-5 md:p-6"
+                          >
+                            <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
+                              {label}
+                            </p>
+
+                            <p className="mt-3 text-2xl leading-none md:text-3xl">
+                              {formatOch(value)} OCH
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="p-5 text-xs leading-relaxed opacity-60 md:p-6">
-                    Your Wallet shows rewards sent directly to your recorded wallet.
-                    Your Hoodies / TBA shows allocations assigned to the individual
-                    Hoodie wallets from the Season 01 snapshot. Hood Talk includes
-                    all Season 01 Hood Talk rewards across Talk 1, 2 and 3.
+                    Your Wallet contains Hood Talk activation rewards,
+                    X contribution rewards and Verified PFP rewards.
+                    Your HoodWallets contain the Hoodie base allocation
+                    plus Hood Talk bonuses assigned directly to each Hoodie wallet.
                   </div>
                 </div>
               ) : null}
+
             </div>
           </section>
 
