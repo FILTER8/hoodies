@@ -48,30 +48,6 @@ type PassportStats = {
   postsEngaged: number;
 };
 
-type Season01AllocationResponse = {
-  ok: boolean;
-  season: number;
-  status: string;
-  snapshot: boolean;
-  wallet: string;
-  identity: { xUserId: string | null; xUsername: string | null };
-  allocation: { walletOCH: string; hoodWalletOCH: string; totalOCH: string };
-  walletRewards: {
-    hoodTalkActivationOCH: string;
-    xOCH: string;
-    pfpOCH: string;
-    communityVaultOCH: string;
-    totalOCH: string;
-  };
-  hoodies: Array<{
-    tokenId: string;
-    hoodWallet: string;
-    snapshotOwner: string;
-    hoodTalk: { count: number; rewardTier: number };
-    allocation: { baseOCH: string; hoodTalkBonusOCH: string; totalOCH: string };
-  }>;
-};
-
 type PassportAccountResponse = {
   x?: {
     x_username?: string | null;
@@ -143,15 +119,6 @@ function formatNumber(value: number, maximumFractionDigits = 0) {
 function safeNumber(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function formatOch(value: string | number | null | undefined, maximumFractionDigits = 2) {
-  const parsed = Number(value ?? 0);
-  if (!Number.isFinite(parsed)) return "0";
-
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits,
-  }).format(parsed);
 }
 
 function normalizePfpStatus(value: unknown): PfpStatus {
@@ -282,8 +249,6 @@ export default function PassportPage() {
   const [loadingHoodies, setLoadingHoodies] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [season01, setSeason01] = useState<Season01AllocationResponse | null>(null);
-  const [loadingSeason01, setLoadingSeason01] = useState(false);
 
   const [stats, setStats] = useState<PassportStats>({
     hoodTalkCounts: {},
@@ -430,7 +395,6 @@ export default function PassportPage() {
         postsEngaged: 0,
       });
 
-      setSeason01(null);
       setError(null);
       return;
     }
@@ -594,27 +558,12 @@ export default function PassportPage() {
             )
           ),
         }));
-
-        setLoadingSeason01(true);
-        try {
-          const allocation =
-            await passportApiFetch<Season01AllocationResponse>(
-              "/v1/season/1/allocation"
-            );
-          setSeason01(allocation);
-        } finally {
-          setLoadingSeason01(false);
-        }
       } catch {
         // No Passport session yet.
-        setSeason01(null);
-        setLoadingSeason01(false);
       }
     } catch (loadError) {
       setHoodies([]);
       setSelectedTokenId("");
-      setSeason01(null);
-      setLoadingSeason01(false);
 
       setError(
         loadError instanceof Error
@@ -1002,9 +951,7 @@ export default function PassportPage() {
         "32px DepartureMono, monospace";
 
       context.fillText(
-        season01
-          ? `${formatOch(season01.allocation.totalOCH)} OCH`
-          : "UNAVAILABLE",
+        "CALCULATING",
         size / 2,
         footerY + 74
       );
@@ -1080,7 +1027,6 @@ export default function PassportPage() {
     maximumCountedTalks,
     pfpExportValue,
     selectedHoodie,
-    season01,
     stats.pfpHoodieImageUrl,
     stats.pfpTokenId,
     stats.xLikes,
@@ -1299,16 +1245,12 @@ export default function PassportPage() {
                       </p>
 
                       <p className="mt-2 text-4xl leading-none">
-                        {loadingSeason01
-                          ? "LOADING"
-                          : season01
-                            ? `${formatOch(season01.allocation.hoodWalletOCH)} OCH`
-                            : "—"}
+                        CALCULATING
                       </p>
 
                       <p className="mt-4 text-xs leading-relaxed opacity-55">
-                        Base Hoodie allocation and Hood Talk bonuses are
-                        assigned to the snapshot HoodWallets.
+                        Final allocation is calculated from snapshot
+                        data, not the current wallet balance.
                       </p>
                     </div>
                   </article>
@@ -1542,57 +1484,6 @@ export default function PassportPage() {
                   </article>
                 </div>
               ) : null}
-              {season01 ? (
-                <div className="mt-10 border-2 border-[#ccff00]">
-                  <div className="flex flex-col justify-between gap-4 border-b-2 border-[#ccff00] p-6 md:flex-row md:items-end md:p-8">
-                    <div>
-                      <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
-                        Final Season 01 Allocation
-                      </p>
-                      <h2 className="mt-4 text-5xl leading-none tracking-[-0.05em] md:text-7xl">
-                        {formatOch(season01.allocation.totalOCH)} OCH
-                      </h2>
-                    </div>
-                    <div className="md:text-right">
-                      <p className="text-[9px] uppercase tracking-[0.15em] opacity-60">
-                        Snapshot Status
-                      </p>
-                      <p className="mt-2 text-sm uppercase tracking-[0.14em]">
-                        Final / Recorded
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid border-l border-t border-[#ccff00] sm:grid-cols-2 lg:grid-cols-3">
-                    {[
-                      ["Wallet Rewards", season01.allocation.walletOCH],
-                      ["HoodWallet Rewards", season01.allocation.hoodWalletOCH],
-                      ["Hood Talk Activations", season01.walletRewards.hoodTalkActivationOCH],
-                      ["X Contribution", season01.walletRewards.xOCH],
-                      ["Verified PFP", season01.walletRewards.pfpOCH],
-                      ["Season Total", season01.allocation.totalOCH],
-                    ].map(([label, value]) => (
-                      <div
-                        key={label}
-                        className="border-b border-r border-[#ccff00] p-5 md:p-6"
-                      >
-                        <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
-                          {label}
-                        </p>
-                        <p className="mt-3 text-2xl leading-none md:text-3xl">
-                          {formatOch(value)} OCH
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="p-5 text-xs leading-relaxed opacity-60 md:p-6">
-                    Wallet rewards are assigned to the recorded wallet.
-                    Hoodie base rewards and Hood Talk bonuses belong to
-                    the individual HoodWallets captured in the Season 01 snapshot.
-                  </div>
-                </div>
-              ) : null}
             </div>
           </section>
 
@@ -1769,11 +1660,7 @@ export default function PassportPage() {
                           </p>
 
                           <p className="mt-2 text-[10px] opacity-100">
-                            {season01
-                              ? `${formatOch(season01.allocation.totalOCH)} OCH`
-                              : loadingSeason01
-                                ? "Loading"
-                                : "—"}
+                            Calculating
                           </p>
                         </div>
 
@@ -1790,8 +1677,8 @@ export default function PassportPage() {
                     </div>
 
                     <p className="mt-3 text-center text-[8px] uppercase leading-relaxed tracking-[0.13em] opacity-55">
-                      Final Season 01 allocation shown above is read
-                      directly from the recorded snapshot data.
+                      Final Season 01 allocations are calculated
+                      from recorded snapshot data.
                     </p>
 
                     <button
