@@ -546,109 +546,105 @@ export default function PassportPage() {
           );
 
         if (
-          !passport.wallet ||
-          passport.wallet.toLowerCase() !== address.toLowerCase()
+          passport.wallet &&
+          passport.wallet.toLowerCase() === address.toLowerCase()
         ) {
-          setSeason01(null);
+          const pfpSimilarity =
+            passport.pfp?.hoodie_similarity;
+
+          setStats((current) => ({
+            ...current,
+
+            xUsername:
+              passport.x?.x_username || null,
+
+            xLikes: safeNumber(
+              passport.posts?.likes
+            ),
+
+            xReplies: safeNumber(
+              passport.posts?.replies
+            ),
+
+            xReposts: safeNumber(
+              passport.posts?.reposts
+            ),
+
+            xQuotes: safeNumber(
+              passport.posts?.quotes
+            ),
+
+            postsEngaged: safeNumber(
+              passport.support?.posts_engaged
+            ),
+
+            pfpStatus: normalizePfpStatus(
+              passport.pfp?.status
+            ),
+
+            pfpTokenId:
+              passport.pfp?.token_id === null ||
+              passport.pfp?.token_id === undefined
+                ? null
+                : String(passport.pfp.token_id),
+
+            pfpHoodieImageUrl:
+              passport.pfp?.hoodie_image_url || null,
+
+            pfpMatchPercentage:
+              pfpSimilarity === null ||
+              pfpSimilarity === undefined
+                ? null
+                : Math.max(
+                    0,
+                    Math.min(
+                      100,
+                      safeNumber(pfpSimilarity) * 100
+                    )
+                  ),
+
+            pfpStreakDays: Math.max(
+              0,
+              Math.floor(
+                safeNumber(
+                  passport.pfp
+                    ?.current_streak_days ??
+                    passport.pfp
+                      ?.currentStreakDays
+                )
+              )
+            ),
+          }));
+        }
+      } catch {
+        // X / live Passport data is optional.
+        // Season 01 allocation is loaded independently below.
+      }
+
+      setLoadingSeason01(true);
+
+      try {
+        const allocation =
+          await passportApiFetch<Season01AllocationResponse>(
+            "/v1/season/1/allocation"
+          );
+
+        if (
+          allocation.wallet.toLowerCase() !==
+          address.toLowerCase()
+        ) {
           throw new Error(
-            "Passport session belongs to another wallet. Please authenticate the connected wallet."
+            "Season 01 allocation belongs to another wallet."
           );
         }
 
-        const pfpSimilarity =
-          passport.pfp?.hoodie_similarity;
-
-        setStats((current) => ({
-          ...current,
-
-          xUsername:
-            passport.x?.x_username || null,
-
-          xLikes: safeNumber(
-            passport.posts?.likes
-          ),
-
-          xReplies: safeNumber(
-            passport.posts?.replies
-          ),
-
-          xReposts: safeNumber(
-            passport.posts?.reposts
-          ),
-
-          xQuotes: safeNumber(
-            passport.posts?.quotes
-          ),
-
-          postsEngaged: safeNumber(
-            passport.support?.posts_engaged
-          ),
-
-          pfpStatus: normalizePfpStatus(
-            passport.pfp?.status
-          ),
-
-          pfpTokenId:
-            passport.pfp?.token_id === null ||
-            passport.pfp?.token_id === undefined
-              ? null
-              : String(passport.pfp.token_id),
-
-          pfpHoodieImageUrl:
-            passport.pfp?.hoodie_image_url || null,
-
-          pfpMatchPercentage:
-            pfpSimilarity === null ||
-            pfpSimilarity === undefined
-              ? null
-              : Math.max(
-                  0,
-                  Math.min(
-                    100,
-                    safeNumber(pfpSimilarity) * 100
-                  )
-                ),
-
-          pfpStreakDays: Math.max(
-            0,
-            Math.floor(
-              safeNumber(
-                passport.pfp
-                  ?.current_streak_days ??
-                  passport.pfp
-                    ?.currentStreakDays
-              )
-            )
-          ),
-        }));
-
-        setLoadingSeason01(true);
-        try {
-          const allocation =
-            await passportApiFetch<Season01AllocationResponse>(
-              "/v1/season/1/allocation"
-            );
-
-          if (
-            allocation.wallet.toLowerCase() !==
-            address.toLowerCase()
-          ) {
-            setSeason01(null);
-
-            throw new Error(
-              "Season 01 allocation belongs to another wallet. Please authenticate the connected wallet."
-            );
-          }
-
-          setSeason01(allocation);
-        } finally {
-          setLoadingSeason01(false);
-        }
+        setSeason01(allocation);
       } catch {
-        // No Passport session yet.
         setSeason01(null);
+      } finally {
         setLoadingSeason01(false);
       }
+
     } catch (loadError) {
       setHoodies([]);
       setSelectedTokenId("");
