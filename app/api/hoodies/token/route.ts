@@ -39,6 +39,7 @@ type NetworkConfiguration = {
 };
 
 const TOKEN_URI_SELECTOR = "c87b56dd";
+const METADATA_CACHE_SECONDS = 86400;
 
 function getNetwork(): NetworkName {
   return process.env.NEXT_PUBLIC_NETWORK
@@ -263,7 +264,8 @@ async function readMetadata(
       accept: "application/json",
     },
 
-    cache: "no-store",
+    cache: "force-cache",
+    next: { revalidate: METADATA_CACHE_SECONDS },
   });
 
   if (!response.ok) {
@@ -518,7 +520,7 @@ export async function GET(
 
         headers: {
           "Cache-Control":
-            "no-store, no-cache, must-revalidate, max-age=0",
+            `public, max-age=0, s-maxage=${METADATA_CACHE_SECONDS}, stale-while-revalidate=604800`,
         },
       },
     );

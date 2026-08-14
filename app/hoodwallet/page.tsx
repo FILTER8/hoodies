@@ -74,6 +74,8 @@ type HoodWalletRecord = {
   nativeBalance: bigint;
   assets: HoodWalletAsset[];
   nfts: HoodWalletNft[];
+  inventoryLoaded: boolean;
+  inventoryLoading: boolean;
 };
 
 type HoodWalletAssetApiItem = {
@@ -250,12 +252,12 @@ async function fetchWalletInventory(
   });
 
   const url = `/api/hoodwallet/assets?${params.toString()}`;
-  const MAX_ATTEMPTS = 3;
+  const MAX_ATTEMPTS = 1;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     try {
       const response = await fetch(url, {
-        cache: "no-store",
+        cache: "default",
         headers: {
           accept: "application/json",
         },
@@ -834,11 +836,13 @@ function HoodWalletCard({
   wallet,
   darkHood,
   trustedOnly,
+  onLoadInventory,
 }: {
   hoodie: OwnedHoodie;
   wallet: HoodWalletRecord;
   darkHood: boolean;
   trustedOnly: boolean;
+  onLoadInventory: (walletAddress: string) => void;
 }) {
   const statusIsActive = wallet.status === "active";
   const [downloading, setDownloading] = useState(false);
@@ -979,6 +983,22 @@ function HoodWalletCard({
               </p>
             )}
           </div>
+
+          {!wallet.inventoryLoaded && (
+            <div className="border-b border-[var(--hood-fg)] p-4 md:p-6">
+              <button
+                type="button"
+                onClick={() => onLoadInventory(wallet.walletAddress)}
+                disabled={wallet.inventoryLoading}
+                className="w-full border border-[var(--hood-fg)] px-3 py-3 text-[9px] uppercase tracking-[0.14em] disabled:opacity-40"
+              >
+                {wallet.inventoryLoading ? "Loading inventory" : "Load token + NFT inventory"}
+              </button>
+              <p className="mt-2 text-[8px] uppercase leading-relaxed tracking-[0.11em] opacity-55">
+                Inventory loads on demand to avoid unnecessary indexer requests.
+              </p>
+            </div>
+          )}
 
           {/* Fungible assets */}
           <div>
@@ -1175,29 +1195,20 @@ export default function HoodWalletPage() {
               const tokenId = BigInt(hoodie.tokenId);
               const walletAddress = await hoodOS.walletOf(tokenId);
 
-              const [code, nativeBalance, inventory] = await Promise.all([
+              // IMPORTANT: Do not load indexed ERC-20/NFT inventory here.
+              // A holder may own many Hoodies, and eager inventory discovery
+              // creates one Alchemy getNFTsForOwner workflow per HoodWallet.
+              // Only cheap RPC state is loaded for the list. Inventory is
+              // fetched on demand when the user clicks Load inventory.
+              const [code, nativeBalance] = await Promise.all([
                 provider.getCode(walletAddress),
                 provider.getBalance(walletAddress),
-                fetchWalletInventory(walletAddress).catch(
-                  (inventoryError) => {
-                    console.error(
-                      `Unable to load inventory for ${walletAddress}:`,
-                      inventoryError,
-                    );
-
-                    return {
-                      assets: [],
-                      nfts: [],
-                    };
-                  },
-                ),
               ]);
 
               const status: HoodWalletStatus =
                 code === "0x" ? "counterfactual" : "active";
 
               const assets: HoodWalletAsset[] = [
-                ...inventory.assets,
                 {
                   symbol: NATIVE_SYMBOL,
                   name: NATIVE_NAME,
@@ -1221,7 +1232,9 @@ export default function HoodWalletPage() {
                 status,
                 nativeBalance,
                 assets,
-                nfts: inventory.nfts,
+                nfts: [],
+                inventoryLoaded: false,
+                inventoryLoading: false,
               } satisfies HoodWalletRecord;
             }),
           );
@@ -1256,6 +1269,71 @@ export default function HoodWalletPage() {
       cancelled = true;
     };
   }, [address, ownedHoodies, provider, refreshKey]);
+
+  const loadInventoryForWallet = useCallback(
+    async (walletAddress: string) => {
+      const normalizedAddress = walletAddress.toLowerCase();
+      const targetWallet = hoodWallets.find(
+        (wallet) => wallet.walletAddress.toLowerCase() === normalizedAddress,
+      );
+
+      if (
+        !targetWallet ||
+        targetWallet.inventoryLoading ||
+        targetWallet.inventoryLoaded
+      ) {
+        return;
+      }
+
+      setHoodWallets((current) =>
+        current.map((wallet) =>
+          wallet.walletAddress.toLowerCase() === normalizedAddress
+            ? { ...wallet, inventoryLoading: true }
+            : wallet,
+        ),
+      );
+
+      try {
+        const inventory = await fetchWalletInventory(walletAddress);
+
+        setHoodWallets((current) =>
+          current.map((wallet) => {
+            if (wallet.walletAddress.toLowerCase() !== normalizedAddress) {
+              return wallet;
+            }
+
+            // Keep the native ETH row that was loaded via RPC and add the
+            // on-demand indexed ERC-20 inventory beside it.
+            const nativeAssets = wallet.assets.filter(
+              (asset) => asset.kind === "native",
+            );
+
+            return {
+              ...wallet,
+              assets: [...nativeAssets, ...inventory.assets],
+              nfts: inventory.nfts,
+              inventoryLoaded: true,
+              inventoryLoading: false,
+            };
+          }),
+        );
+      } catch (inventoryError) {
+        console.error(
+          `Unable to load inventory for ${walletAddress}:`,
+          inventoryError,
+        );
+
+        setHoodWallets((current) =>
+          current.map((wallet) =>
+            wallet.walletAddress.toLowerCase() === normalizedAddress
+              ? { ...wallet, inventoryLoading: false }
+              : wallet,
+          ),
+        );
+      }
+    },
+    [hoodWallets],
+  );
 
   /*//////////////////////////////////////////////////////////////
                          PORTFOLIO TOTALS
@@ -1718,6 +1796,9 @@ export default function HoodWalletPage() {
                           wallet={wallet}
                           darkHood={darkHood}
                           trustedOnly={trustedOnly}
+                          onLoadInventory={(walletAddress) =>
+                            void loadInventoryForWallet(walletAddress)
+                          }
                         />
                       );
                     })}

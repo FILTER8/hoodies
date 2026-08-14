@@ -33,6 +33,7 @@ type NetworkConfiguration = {
 
 const MAX_PAGES = 100;
 const PAGE_SIZE = 100;
+const OWNERSHIP_CACHE_SECONDS = 60;
 
 const network: NetworkName =
   process.env.NEXT_PUBLIC_NETWORK?.trim().toLowerCase() === "mainnet"
@@ -136,7 +137,8 @@ async function fetchAlchemyPage(
       accept: "application/json",
       "X-Alchemy-Token": apiKey,
     },
-    cache: "no-store",
+    cache: "force-cache",
+    next: { revalidate: OWNERSHIP_CACHE_SECONDS },
   });
 
   if (!response.ok) {
@@ -347,7 +349,7 @@ export async function GET(request: NextRequest) {
         status: 200,
         headers: {
           "Cache-Control":
-            "no-store, no-cache, must-revalidate, max-age=0",
+            `public, max-age=0, s-maxage=${OWNERSHIP_CACHE_SECONDS}, stale-while-revalidate=300`,
         },
       },
     );

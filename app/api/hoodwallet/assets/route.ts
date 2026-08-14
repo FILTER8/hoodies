@@ -5,6 +5,12 @@ import { siteConfig } from "../../../../lib/config";
 import trustedAssetRegistryJson from "../../../../lib/hoodwallet-assets.json";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 300;
+export const runtime = "nodejs";
+
+const HOODWALLET_ASSET_CACHE_SECONDS = 300;
+const HOODWALLET_ASSET_STALE_SECONDS = 3600;
+
 
 /*//////////////////////////////////////////////////////////////
                               TYPES
@@ -455,13 +461,11 @@ async function fetchBlockscoutBalances(
             "application/json",
         },
 
-        /*
-         * Keep this uncached while
-         * trusted asset matching is
-         * being tested.
-         */
         cache:
-          "no-store",
+          "force-cache",
+        next: {
+          revalidate: 60,
+        },
       },
     );
 
@@ -693,13 +697,12 @@ async function fetchAlchemyNfts(
               "application/json",
           },
 
-          /*
-           * Keep uncached while
-           * NFT inventory is being
-           * tested.
-           */
           cache:
-            "no-store",
+            "force-cache",
+          next: {
+            revalidate:
+              HOODWALLET_ASSET_CACHE_SECONDS,
+          },
         },
       );
 
@@ -963,15 +966,10 @@ export async function GET(
         200,
 
       headers: {
-        /*
-         * Important while testing.
-         *
-         * Prevent stale trusted flags
-         * from Cloudflare / Next /
-         * browser caches.
-         */
         "Cache-Control":
-          "no-store",
+          `public, max-age=60, s-maxage=${HOODWALLET_ASSET_CACHE_SECONDS}, stale-while-revalidate=${HOODWALLET_ASSET_STALE_SECONDS}`,
+        "X-HoodWallet-Cache-TTL":
+          String(HOODWALLET_ASSET_CACHE_SECONDS),
       },
     },
   );
