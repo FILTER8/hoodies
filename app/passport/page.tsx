@@ -164,12 +164,21 @@ function normalizePfpStatus(value: unknown): PfpStatus {
     : "not_submitted";
 }
 
-async function passportApiFetch<T>(path: string): Promise<T> {
+type PassportApiError = Error & {
+  status?: number;
+};
+
+async function passportApiFetch<T>(
+  path: string,
+  init: RequestInit = {}
+): Promise<T> {
   const response = await fetch(`${PASSPORT_API_BASE}${path}`, {
+    ...init,
     credentials: "include",
     cache: "no-store",
     headers: {
       "content-type": "application/json",
+      ...(init.headers || {}),
     },
   });
 
@@ -178,12 +187,28 @@ async function passportApiFetch<T>(path: string): Promise<T> {
   };
 
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       data.error || `Passport request failed (${response.status})`
-    );
+    ) as PassportApiError;
+
+    error.status = response.status;
+    throw error;
   }
 
   return data;
+}
+
+function passportErrorStatus(error: unknown) {
+  if (
+    error &&
+    typeof error === "object" &&
+    "status" in error &&
+    typeof (error as PassportApiError).status === "number"
+  ) {
+    return (error as PassportApiError).status;
+  }
+
+  return null;
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -276,15 +301,18 @@ function HoodiePreview({ hoodie }: { hoodie: Hoodie }) {
 }
 
 export default function PassportPage() {
-  const { address, connect } = useWallet();
+  const { address, connect, getWalletClient } = useWallet();
 
   const [hoodies, setHoodies] = useState<Hoodie[]>([]);
   const [selectedTokenId, setSelectedTokenId] = useState("");
   const [loadingHoodies, setLoadingHoodies] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [season01, setSeason01] = useState<Season01AllocationResponse | null>(null);
+  const [season01, setSeason01] =
+    useState<Season01AllocationResponse | null>(null);
   const [loadingSeason01, setLoadingSeason01] = useState(false);
+  const [season01NeedsAuth, setSeason01NeedsAuth] = useState(false);
+  const [signingPassport, setSigningPassport] = useState(false);
 
   const [stats, setStats] = useState<PassportStats>({
     hoodTalkCounts: {},
@@ -300,6 +328,23 @@ export default function PassportPage() {
     xQuotes: 0,
     postsEngaged: 0,
   });
+
+  const resetLivePassportStats = useCallback(() => {
+    setStats({
+      hoodTalkCounts: {},
+      pfpStatus: "not_submitted",
+      pfpTokenId: null,
+      pfpHoodieImageUrl: null,
+      pfpMatchPercentage: null,
+      pfpStreakDays: 0,
+      xUsername: null,
+      xLikes: 0,
+      xReplies: 0,
+      xReposts: 0,
+      xQuotes: 0,
+      postsEngaged: 0,
+    });
+  }, []);
 
   const selectedHoodie = useMemo(
     () =>
@@ -432,28 +477,23 @@ export default function PassportPage() {
       setHoodies([]);
       setSelectedTokenId("");
 
-      setStats({
-        hoodTalkCounts: {},
-        pfpStatus: "not_submitted",
-        pfpTokenId: null,
-        pfpHoodieImageUrl: null,
-        pfpMatchPercentage: null,
-        pfpStreakDays: 0,
-        xUsername: null,
-        xLikes: 0,
-        xReplies: 0,
-        xReposts: 0,
-        xQuotes: 0,
-        postsEngaged: 0,
-      });
-
+      resetLivePassportStats();
       setSeason01(null);
+      setSeason01NeedsAuth(false);
+      setLoadingSeason01(false);
       setError(null);
       return;
     }
 
     setLoadingHoodies(true);
     setError(null);
+
+    // A wallet switch must never keep X/PFP data or allocations
+    // from the previously connected wallet on screen.
+    resetLivePassportStats();
+    setSeason01(null);
+    setSeason01NeedsAuth(false);
+    setLoadingSeason01(false);
 
     try {
       const params = new URLSearchParams({
@@ -639,8 +679,15 @@ export default function PassportPage() {
         }
 
         setSeason01(allocation);
-      } catch {
+        setSeason01NeedsAuth(false);
+      } catch (allocationError) {
         setSeason01(null);
+
+        if (passportErrorStatus(allocationError) === 401) {
+          setSeason01NeedsAuth(true);
+        } else {
+          setSeason01NeedsAuth(false);
+        }
       } finally {
         setLoadingSeason01(false);
       }
@@ -649,6 +696,7 @@ export default function PassportPage() {
       setHoodies([]);
       setSelectedTokenId("");
       setSeason01(null);
+      setSeason01NeedsAuth(false);
       setLoadingSeason01(false);
 
       setError(
@@ -659,7 +707,76 @@ export default function PassportPage() {
     } finally {
       setLoadingHoodies(false);
     }
-  }, [address]);
+  }, [address, resetLivePassportStats]);
+
+  const createPassportSession = useCallback(async () => {
+    if (!address) {
+      await connect();
+      return;
+    }
+
+    setSigningPassport(true);
+    setError(null);
+
+    try {
+      const nonce = await passportApiFetch<{
+        message: string;
+      }>("/v1/auth/nonce", {
+        method: "POST",
+        body: JSON.stringify({
+          wallet: address,
+        }),
+      });
+
+      const walletClient =
+        await getWalletClient();
+
+      const signature =
+        await walletClient.signMessage({
+          account: address as `0x${string}`,
+          message: nonce.message,
+        });
+
+      const session =
+        await passportApiFetch<{
+          wallet: string;
+        }>("/v1/auth/wallet", {
+          method: "POST",
+          body: JSON.stringify({
+            wallet: address,
+            signature,
+          }),
+        });
+
+      if (
+        session.wallet.toLowerCase() !==
+        address.toLowerCase()
+      ) {
+        throw new Error(
+          "Passport session was created for another wallet."
+        );
+      }
+
+      setSeason01NeedsAuth(false);
+
+      // Reload all Passport data now that this wallet has
+      // its own authenticated session. X is still optional.
+      await loadHoodies();
+    } catch (sessionError) {
+      setError(
+        sessionError instanceof Error
+          ? sessionError.message
+          : "Unable to authenticate this wallet."
+      );
+    } finally {
+      setSigningPassport(false);
+    }
+  }, [
+    address,
+    connect,
+    getWalletClient,
+    loadHoodies,
+  ]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -1577,7 +1694,34 @@ export default function PassportPage() {
                   </article>
                 </div>
               ) : null}
-              {season01 ? (
+              {season01NeedsAuth ? (
+                <div className="mt-10 border-2 border-[#ccff00] p-6 md:p-8">
+                  <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
+                    Season 01 Allocation
+                  </p>
+
+                  <h2 className="mt-4 text-3xl leading-none tracking-[-0.04em] md:text-5xl">
+                    SIGN TO VIEW YOUR ALLOCATION
+                  </h2>
+
+                  <p className="mt-5 max-w-2xl text-sm leading-relaxed opacity-70 md:text-base">
+                    Your Season 01 allocation is tied to your wallet, not
+                    to X. Sign one message to confirm the connected wallet.
+                    No X connection or PFP verification is required.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => void createPassportSession()}
+                    disabled={signingPassport}
+                    className="mt-7 border-2 border-[#ccff00] px-5 py-3 text-[9px] uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {signingPassport
+                      ? "Signing..."
+                      : "Sign wallet to view allocation"}
+                  </button>
+                </div>
+              ) : season01 ? (
                 <div className="mt-10 border-2 border-[#ccff00]">
                   <div className="flex flex-col justify-between gap-4 border-b-2 border-[#ccff00] p-6 md:flex-row md:items-end md:p-8">
                     <div>
