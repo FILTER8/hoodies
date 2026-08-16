@@ -33,7 +33,10 @@ type CachedArtwork = {
   etag: string;
 };
 
-type TestnetConfiguration = {
+type NetworkName = "mainnet" | "testnet";
+
+type NetworkConfiguration = {
+  network: NetworkName;
   rpcUrl: string;
   contractAddress: string;
 };
@@ -67,8 +70,35 @@ function normalizeTokenId(value: string) {
   }
 }
 
-function getTestnetConfiguration(): TestnetConfiguration {
+function getNetwork(): NetworkName {
+  return process.env.NEXT_PUBLIC_NETWORK?.trim().toLowerCase() === "mainnet"
+    ? "mainnet"
+    : "testnet";
+}
+
+function getNetworkConfiguration(): NetworkConfiguration {
+  const network = getNetwork();
+
+  if (network === "mainnet") {
+    return {
+      network,
+
+      rpcUrl:
+        process.env.ALCHEMY_RPC_URL_MAINNET?.trim() ||
+        process.env.ROBINHOOD_MAINNET_RPC_URL?.trim() ||
+        process.env.RPC_URL_MAINNET?.trim() ||
+        "",
+
+      contractAddress:
+        process.env.NEXT_PUBLIC_COLLECTION_MAINNET_ADDRESS?.trim() ||
+        process.env.NEXT_PUBLIC_COLLECTION_ADDRESS?.trim() ||
+        "",
+    };
+  }
+
   return {
+    network,
+
     rpcUrl:
       process.env.ROBINHOOD_TESTNET_RPC_URL?.trim() ||
       process.env.ALCHEMY_RPC_URL_TESTNET?.trim() ||
@@ -77,6 +107,7 @@ function getTestnetConfiguration(): TestnetConfiguration {
 
     contractAddress:
       process.env.NEXT_PUBLIC_COLLECTION_TESTNET_ADDRESS?.trim() ||
+      process.env.NEXT_PUBLIC_COLLECTION_ADDRESS?.trim() ||
       "",
   };
 }
@@ -643,9 +674,10 @@ export async function GET(
     normalizeTokenId(tokenIdValue);
 
   const {
+    network,
     rpcUrl,
     contractAddress,
-  } = getTestnetConfiguration();
+  } = getNetworkConfiguration();
 
   if (tokenId === null) {
     return NextResponse.json(
@@ -665,9 +697,11 @@ export async function GET(
     return NextResponse.json(
       {
         error:
-          "ROBINHOOD_TESTNET_RPC_URL is not configured.",
+          network === "mainnet"
+            ? "ALCHEMY_RPC_URL_MAINNET or ROBINHOOD_MAINNET_RPC_URL is not configured."
+            : "ROBINHOOD_TESTNET_RPC_URL is not configured.",
         debug: {
-          network: "testnet",
+          network,
         },
       },
       {
@@ -683,9 +717,11 @@ export async function GET(
     return NextResponse.json(
       {
         error:
-          "NEXT_PUBLIC_COLLECTION_TESTNET_ADDRESS is missing or invalid.",
+          network === "mainnet"
+            ? "NEXT_PUBLIC_COLLECTION_MAINNET_ADDRESS is missing or invalid."
+            : "NEXT_PUBLIC_COLLECTION_TESTNET_ADDRESS is missing or invalid.",
         debug: {
-          network: "testnet",
+          network,
           contractAddress,
         },
       },
@@ -699,7 +735,7 @@ export async function GET(
   }
 
   const cacheKey = [
-    "testnet",
+    network,
     contractAddress.toLowerCase(),
     tokenId.toString(),
   ].join(":");
@@ -741,7 +777,7 @@ export async function GET(
               ? "MEMORY-HIT"
               : "MISS",
           "X-Hoodie-Network":
-            "testnet",
+            network,
         },
       });
     }
@@ -783,15 +819,15 @@ export async function GET(
               : "MISS",
 
           "X-Hoodie-Network":
-            "testnet",
+            network,
         },
       },
     );
   } catch (error) {
     console.error(
-      `Unable to render testnet Hoodie #${tokenId.toString()}`,
+      `Unable to render ${network} Hoodie #${tokenId.toString()}`,
       {
-        network: "testnet",
+        network,
         contractAddress,
         rpcHost:
           safelyGetRpcHost(rpcUrl),
@@ -804,10 +840,10 @@ export async function GET(
         error:
           error instanceof Error
             ? error.message
-            : "Unable to read testnet token artwork.",
+            : `Unable to read ${network} token artwork.`,
 
         debug: {
-          network: "testnet",
+          network,
           tokenId:
             tokenId.toString(),
           contractAddress,

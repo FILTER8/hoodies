@@ -1193,9 +1193,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const [tokenResponse, marketResponse, trustedPreviousQuotes] = await Promise.all([
-      fetch(`${API_BASE}/v1/token/${tokenId}`, { cache: "no-store" }),
-      fetch(`${API_BASE}/v1/market/token/${tokenId}`, { cache: "no-store" }),
+    const [tokenResponse, trustedPreviousQuotes] = await Promise.all([
+      fetch(new URL(`/api/hoodies/token?tokenId=${tokenId}`, request.url), {
+        cache: "no-store",
+      }),
       loadTrustedPreviousQuotes(tokenId),
     ]);
 
@@ -1204,7 +1205,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = await tokenResponse.json();
-    const market = marketResponse.ok ? await marketResponse.json() : null;
+    const market = null;
 
     const continuityQuotes = registry.quote
       ? [...trustedPreviousQuotes, cleanQuote(registry.quote)].filter(Boolean)
