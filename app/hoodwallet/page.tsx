@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+
 import {
   useCallback,
   useEffect,
@@ -9,19 +10,115 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { Contract, JsonRpcProvider, formatUnits } from "ethers";
+
+import {
+  Contract,
+  Interface,
+  JsonRpcProvider,
+  formatUnits,
+  getAddress,
+  isAddress,
+  parseUnits,
+} from "ethers";
+
+import type {
+  Address,
+  Hex,
+} from "viem";
 
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
 import { useWallet } from "../../components/WalletProvider";
 
 import { siteConfig } from "../../lib/config";
-import { apiConfig, collectionApiUrl } from "../../lib/api";
 
-const BRAND_URL = "ONCHAINHOODIES.XYZ";
+import {
+  apiConfig,
+  collectionApiUrl,
+} from "../../lib/api";
 
 /*//////////////////////////////////////////////////////////////
-                              TYPES
+                            CONSTANTS
+//////////////////////////////////////////////////////////////*/
+
+const NATIVE_SYMBOL =
+  "ETH";
+
+const NATIVE_NAME =
+  "Native Balance";
+
+const OPERATION_CALL =
+  0;
+
+const ZERO_ADDRESS =
+  "0x0000000000000000000000000000000000000000";
+
+/*//////////////////////////////////////////////////////////////
+                              ABIS
+//////////////////////////////////////////////////////////////*/
+
+const HOOD_OS_ABI = [
+  "function hoodInfo(uint256 tokenId) view returns (" +
+    "tuple(" +
+      "uint256 tokenId," +
+      "address owner," +
+      "address wallet," +
+      "bool walletDeployed," +
+      "bool active," +
+      "address activationOwner," +
+      "uint64 activatedAt," +
+      "uint256 walletState," +
+      "uint256 nativeBalance," +
+      "uint256 paymentTokenBalance" +
+    ") info" +
+  ")",
+
+  "function activationCost() view returns (uint256)",
+
+  "function activationEnabled() view returns (bool)",
+
+  "function activate(uint256 tokenId)",
+] as const;
+
+const OCH_READ_ABI = [
+  "function balanceOf(address account) view returns (uint256)",
+
+  "function allowance(address owner,address spender) view returns (uint256)",
+] as const;
+
+const REWARDS_ABI = [
+  "function everActivated(uint256 tokenId) view returns (bool)",
+
+  "function hasClaimed(uint256 tokenId) view returns (bool)",
+
+  "function rewardAvailable(uint256 tokenId) view returns (bool)",
+
+  "function canClaim(uint256 tokenId) view returns (bool)",
+
+  "function claim(uint256 tokenId)",
+] as const;
+
+const PING_ABI = [
+  "function ownerOf(uint256 tokenId) view returns (address)",
+] as const;
+
+const ERC20_INTERFACE =
+  new Interface([
+    "function transfer(address to,uint256 amount) returns (bool)",
+  ]);
+
+const ERC721_INTERFACE =
+  new Interface([
+    "function safeTransferFrom(address from,address to,uint256 tokenId)",
+  ]);
+
+const ERC1155_INTERFACE =
+  new Interface([
+    "function safeTransferFrom(address from,address to,uint256 id,uint256 amount,bytes data)",
+  ]);
+
+/*//////////////////////////////////////////////////////////////
+                             TYPES
 //////////////////////////////////////////////////////////////*/
 
 type OwnedHoodie = {
@@ -32,1028 +129,454 @@ type OwnedHoodie = {
 
 type OwnershipResponse = {
   items?: OwnedHoodie[];
-  count?: number;
-  indexedTotal?: number | null;
-  pagesRead?: number;
   error?: string;
 };
 
-type HoodWalletStatus = "counterfactual" | "active" | "unknown";
-
 type HoodWalletAsset = {
   symbol: string;
+
   name: string;
+
   balanceRaw: bigint;
+
   balanceFormatted: string;
+
   contract?: string;
+
   decimals: number;
-  kind: "native" | "erc20";
+
+  kind:
+    | "native"
+    | "erc20";
+
   trusted: boolean;
 };
 
 type HoodWalletNft = {
   contract: string;
+
   tokenId: string;
+
   name: string;
+
   collectionName: string;
+
   symbol?: string;
+
   image?: string;
+
   balance: string;
-  kind: "erc721" | "erc1155";
+
+  kind:
+    | "erc721"
+    | "erc1155";
+
   trusted: boolean;
+
   spam: boolean;
-  spamClassifications: string[];
+
+  spamClassifications:
+    string[];
 };
 
-type HoodWalletRecord = {
+type HoodWalletState = {
   tokenId: string;
-  hoodieName: string;
-  artwork: string;
+
+  owner: string;
+
   walletAddress: string;
-  status: HoodWalletStatus;
-  nativeBalance: bigint;
-  assets: HoodWalletAsset[];
-  nfts: HoodWalletNft[];
-  inventoryLoaded: boolean;
-  inventoryLoading: boolean;
+
+  walletDeployed:
+    boolean;
+
+  active:
+    boolean;
+
+  activationOwner:
+    string;
+
+  activatedAt:
+    bigint;
+
+  walletState:
+    bigint;
+
+  nativeBalance:
+    bigint;
+
+  ochBalance:
+    bigint;
+
+  pingEverActivated:
+    boolean;
+
+  pingClaimed:
+    boolean;
+
+  pingAvailable:
+    boolean;
+
+  pingCanClaim:
+    boolean;
 };
 
-type HoodWalletAssetApiItem = {
-  symbol: string;
-  name: string;
-  balanceRaw: string;
-  balanceFormatted: string;
-  contract?: string;
-  decimals: number;
-  kind: "erc20";
-  trusted?: boolean;
-};
+type InventoryResponse = {
+  assets?: Array<{
+    symbol: string;
 
-type HoodWalletNftApiItem = {
-  contract: string;
-  tokenId: string;
-  name: string;
-  collectionName: string;
-  symbol?: string;
-  image?: string;
-  balance: string;
-  kind: "erc721" | "erc1155";
-  trusted?: boolean;
-  spam?: boolean;
-  spamClassifications?: string[];
-};
+    name: string;
 
-type HoodWalletAssetApiResponse = {
-  assets?: HoodWalletAssetApiItem[];
-  nfts?: HoodWalletNftApiItem[];
+    balanceRaw: string;
+
+    balanceFormatted: string;
+
+    contract?: string;
+
+    decimals: number;
+
+    kind: "erc20";
+
+    trusted?: boolean;
+  }>;
+
+  nfts?: Array<{
+    contract: string;
+
+    tokenId: string;
+
+    name: string;
+
+    collectionName: string;
+
+    symbol?: string;
+
+    image?: string;
+
+    balance: string;
+
+    kind:
+      | "erc721"
+      | "erc1155";
+
+    trusted?: boolean;
+
+    spam?: boolean;
+
+    spamClassifications?:
+      string[];
+  }>;
+
   warning?: string;
+
   error?: string;
 };
 
-type HoodOSReadContract = {
-  walletOf: (tokenId: bigint) => Promise<string>;
+type TxAction =
+  | "activate"
+  | "claim"
+  | "send"
+  | "send-nft"
+  | null;
+
+type TxState = {
+  action:
+    TxAction;
+
+  message:
+    string;
 };
 
 /*//////////////////////////////////////////////////////////////
-                             CONSTANTS
+                            HELPERS
 //////////////////////////////////////////////////////////////*/
 
-const HOOD_OS_ABI = [
-  "function walletOf(uint256 tokenId) view returns (address)",
-];
-
-const NATIVE_SYMBOL = "ETH";
-const NATIVE_NAME = "Native Balance";
-
-/*//////////////////////////////////////////////////////////////
-                              HELPERS
-//////////////////////////////////////////////////////////////*/
-
-function passthroughImageLoader({ src }: { src: string }) {
-  return src;
+function sameAddress(
+  a?: string | null,
+  b?: string | null,
+) {
+  return (
+    !!a &&
+    !!b &&
+    a.toLowerCase() ===
+      b.toLowerCase()
+  );
 }
 
-function normalizeOwnedHoodies(items: OwnedHoodie[]) {
-  return Array.from(
-    new Map(items.map((item) => [String(item.tokenId), item])).values(),
-  ).sort((left, right) => {
-    const leftId = BigInt(left.tokenId);
-    const rightId = BigInt(right.tokenId);
-
-    return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
-  });
-}
-
-function tokenArtworkFallback(tokenId: string | number) {
-  if (apiConfig.isMainnet) {
-    return collectionApiUrl(
-      `/images/${encodeURIComponent(String(tokenId))}.svg`,
-    );
+function shortAddress(
+  address: string,
+) {
+  if (!address) {
+    return "—";
   }
 
-  return `/api/hoodies/image?tokenId=${encodeURIComponent(String(tokenId))}`;
+  return `${address.slice(
+    0,
+    6,
+  )}...${address.slice(
+    -4,
+  )}`;
 }
 
-function ownedArtworkUrl(hoodie: OwnedHoodie) {
-  return tokenArtworkFallback(hoodie.tokenId);
-}
-
-function shortAddress(address: string) {
-  if (!address) return "—";
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
-
-function explorerAddressUrl(address: string) {
-  return `${siteConfig.explorerUrl.replace(/\/$/, "")}/address/${address}`;
-}
-
-function explorerTokenUrl(contract: string) {
-  return `${siteConfig.explorerUrl.replace(/\/$/, "")}/token/${contract}`;
-}
-
-function nftProxyImageUrl(image?: string) {
-  if (!image) return "";
-
-  return `/api/hoodwallet/nft-image?url=${encodeURIComponent(image)}`;
-}
-
-function formatTokenBalance(
+function formatBalance(
   value: bigint,
   decimals = 18,
-  maximumDecimals = 6,
+  maxDecimals = 6,
 ) {
-  const formatted = formatUnits(value, decimals);
-  const [whole, fraction = ""] = formatted.split(".");
+  const formatted =
+    formatUnits(
+      value,
+      decimals,
+    );
 
-  if (!fraction) return whole;
+  const [
+    whole,
+    fraction = "",
+  ] =
+    formatted.split(".");
 
-  const trimmed = fraction
-    .slice(0, maximumDecimals)
-    .replace(/0+$/, "");
-
-  return trimmed ? `${whole}.${trimmed}` : whole;
-}
-
-function statusLabel(status: HoodWalletStatus) {
-  if (status === "active") return "Active";
-  if (status === "counterfactual") return "Counterfactual";
-  return "Unknown";
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-async function loadCanvasImage(source: string) {
-  const response = await fetch(source, {
-    headers: {
-      accept: "image/*",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Unable to load image (${response.status}).`);
+  if (!fraction) {
+    return whole;
   }
 
-  const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
+  const trimmed =
+    fraction
+      .slice(
+        0,
+        maxDecimals,
+      )
+      .replace(
+        /0+$/,
+        "",
+      );
 
-  try {
-    const image = new window.Image();
-    image.decoding = "sync";
-
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error("Unable to render image."));
-      image.src = objectUrl;
-    });
-
-    return image;
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
+  return trimmed
+    ? `${whole}.${trimmed}`
+    : whole;
 }
 
-async function fetchWalletInventory(
-  walletAddress: string,
-): Promise<{
-  assets: HoodWalletAsset[];
-  nfts: HoodWalletNft[];
-}> {
-  const params = new URLSearchParams({
-    address: walletAddress,
-  });
+function errorMessage(
+  error: unknown,
+  fallback: string,
+) {
+  if (
+    typeof error ===
+      "object" &&
+    error !== null
+  ) {
+    const candidate =
+      error as {
+        shortMessage?:
+          string;
 
-  const url = `/api/hoodwallet/assets?${params.toString()}`;
-  const MAX_ATTEMPTS = 1;
+        message?:
+          string;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    try {
-      const response = await fetch(url, {
-        cache: "default",
-        headers: {
-          accept: "application/json",
-        },
-      });
+        cause?: {
+          shortMessage?:
+            string;
 
-      const payload = (await response.json()) as HoodWalletAssetApiResponse;
-
-      if (!response.ok) {
-        throw new Error(
-          payload.error ||
-            `Unable to load HoodWallet inventory (${response.status}).`,
-        );
-      }
-
-      const assets = (Array.isArray(payload.assets) ? payload.assets : [])
-        .map((asset): HoodWalletAsset | null => {
-          let balanceRaw: bigint;
-
-          try {
-            balanceRaw = BigInt(asset.balanceRaw);
-          } catch {
-            return null;
-          }
-
-          if (balanceRaw <= BigInt(0)) return null;
-
-          return {
-            symbol: asset.symbol,
-            name: asset.name,
-            balanceRaw,
-            balanceFormatted: asset.balanceFormatted,
-            contract: asset.contract,
-            decimals: asset.decimals,
-            kind: "erc20",
-            trusted: asset.trusted === true,
-          };
-        })
-        .filter((asset): asset is HoodWalletAsset => asset !== null)
-        .sort((left, right) => {
-          if (left.trusted !== right.trusted) {
-            return left.trusted ? -1 : 1;
-          }
-
-          return left.symbol.localeCompare(right.symbol);
-        });
-
-      const nfts = (Array.isArray(payload.nfts) ? payload.nfts : [])
-        .filter(
-          (nft) =>
-            !!nft.contract &&
-            !!nft.tokenId &&
-            (nft.kind === "erc721" || nft.kind === "erc1155"),
-        )
-        .map(
-          (nft): HoodWalletNft => ({
-            contract: nft.contract,
-            tokenId: nft.tokenId,
-            name: nft.name || `NFT #${nft.tokenId}`,
-            collectionName: nft.collectionName || "NFT Collection",
-            symbol: nft.symbol,
-            image: nft.image,
-            balance: nft.balance || "1",
-            kind: nft.kind,
-            trusted: nft.trusted === true,
-            spam: nft.spam === true,
-            spamClassifications: Array.isArray(nft.spamClassifications)
-              ? nft.spamClassifications
-              : [],
-          }),
-        );
-
-      if (payload.warning) {
-        console.warn(
-          `HoodWallet inventory warning for ${walletAddress}: ${payload.warning}`,
-        );
-      }
-
-      return { assets, nfts };
-    } catch (inventoryError) {
-      if (attempt === MAX_ATTEMPTS) {
-        console.warn(
-          `Inventory unavailable for ${walletAddress} after ${MAX_ATTEMPTS} attempts.`,
-          inventoryError,
-        );
-
-        return {
-          assets: [],
-          nfts: [],
+          message?:
+            string;
         };
-      }
+      };
 
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 250 * attempt);
-      });
-    }
+    return (
+      candidate.shortMessage ||
+      candidate.cause
+        ?.shortMessage ||
+      candidate.cause
+        ?.message ||
+      candidate.message ||
+      fallback
+    );
   }
 
-  return {
-    assets: [],
-    nfts: [],
-  };
+  return fallback;
 }
 
-/*//////////////////////////////////////////////////////////////
-                         PNG EXPORT
-//////////////////////////////////////////////////////////////*/
-
-async function downloadHoodWalletPng(
-  hoodie: OwnedHoodie,
-  wallet: HoodWalletRecord,
-  darkHood: boolean,
+function tokenArtwork(
+  tokenId: string,
 ) {
-  if (document.fonts?.ready) {
-    await document.fonts.ready;
-  }
-
-  const width = 2400;
-  const height = 1200;
-  const sidebarWidth = 660;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const context = canvas.getContext("2d");
-  if (!context) {
-    throw new Error("Canvas is unavailable.");
-  }
-
-  const background = darkHood ? "#000000" : "#ccff00";
-  const foreground = darkHood ? "#ccff00" : "#000000";
-  const opposite = darkHood ? "#000000" : "#ccff00";
-
-  context.imageSmoothingEnabled = false;
-  context.fillStyle = background;
-  context.fillRect(0, 0, width, height);
-
-  context.strokeStyle = foreground;
-  context.lineWidth = 4;
-  context.beginPath();
-  context.moveTo(sidebarWidth, 0);
-  context.lineTo(sidebarWidth, height);
-  context.stroke();
-
-  /* Smaller Hoodie avatar */
-  const avatarSize = 520;
-  const avatarX = Math.round((sidebarWidth - avatarSize) / 2);
-  const avatarY = 58;
-
-  context.fillStyle = "#ccff00";
-  context.fillRect(avatarX, avatarY, avatarSize, avatarSize);
-
-  try {
-    const artwork = await loadCanvasImage(ownedArtworkUrl(hoodie));
-    context.drawImage(artwork, avatarX, avatarY, avatarSize, avatarSize);
-  } catch (artworkError) {
-    console.warn("Unable to draw Hoodie artwork in export.", artworkError);
-    context.fillStyle = foreground;
-    context.font = "22px DepartureMono, monospace";
-    context.textAlign = "center";
-    context.fillText(
-      "ARTWORK UNAVAILABLE",
-      avatarX + avatarSize / 2,
-      avatarY + avatarSize / 2,
+  if (
+    apiConfig.isMainnet
+  ) {
+    return collectionApiUrl(
+      `/images/${encodeURIComponent(
+        tokenId,
+      )}.svg`,
     );
   }
 
-  context.fillStyle = foreground;
-  context.textAlign = "left";
-  context.textBaseline = "alphabetic";
-  context.font = "22px DepartureMono, monospace";
-  context.fillText("ONCHAINHOODIE", 56, 660);
-
-  context.font = "68px DepartureMono, monospace";
-  context.fillText(`#${wallet.tokenId}`, 56, 744);
-
-  context.globalAlpha = 0.62;
-  context.font = "20px DepartureMono, monospace";
-  context.fillText("HOODWALLET", 56, 810);
-  context.globalAlpha = 1;
-
-  context.font = "24px DepartureMono, monospace";
-  context.fillText(shortAddress(wallet.walletAddress), 56, 854);
-
-  context.font = "20px DepartureMono, monospace";
-  context.fillText(statusLabel(wallet.status).toUpperCase(), 56, 908);
-
-  context.globalAlpha = 0.6;
-  context.font = "18px DepartureMono, monospace";
-  context.fillText("TRUSTED INVENTORY ONLY", 56, 1010);
-  context.globalAlpha = 1;
-
-  context.font = "18px DepartureMono, monospace";
-  context.fillText(BRAND_URL.toLowerCase(), 56, height - 58);
-
-  /* Main inventory area */
-  const left = sidebarWidth + 70;
-  const right = width - 70;
-
-  context.fillStyle = foreground;
-  context.textAlign = "left";
-  context.font = "25px DepartureMono, monospace";
-  context.fillText("HOODWALLET INVENTORY", left, 82);
-
-  context.globalAlpha = 0.6;
-  context.font = "18px DepartureMono, monospace";
-  context.fillText("DETERMINISTIC ADDRESS", left, 132);
-  context.globalAlpha = 1;
-  context.font = "21px DepartureMono, monospace";
-  context.fillText(wallet.walletAddress, left, 170);
-
-  context.lineWidth = 2;
-  context.beginPath();
-  context.moveTo(left, 210);
-  context.lineTo(right, 210);
-  context.stroke();
-
-  const trustedAssets = wallet.assets.filter((asset) => asset.trusted);
-  const trustedNfts = wallet.nfts.filter((nft) => nft.trusted);
-
-  context.font = "22px DepartureMono, monospace";
-  context.fillText("ASSETS", left, 260);
-
-  const visibleAssets = trustedAssets.slice(0, 4);
-  let assetY = 310;
-
-  if (visibleAssets.length === 0) {
-    context.globalAlpha = 0.55;
-    context.font = "18px DepartureMono, monospace";
-    context.fillText("NO TRUSTED TOKEN BALANCES", left, assetY + 20);
-    context.globalAlpha = 1;
-    assetY += 70;
-  } else {
-    for (const asset of visibleAssets) {
-      context.globalAlpha = 0.58;
-      context.font = "17px DepartureMono, monospace";
-      context.fillText(asset.name.toUpperCase(), left, assetY);
-      context.globalAlpha = 1;
-
-      context.font = "27px DepartureMono, monospace";
-      context.fillText(asset.symbol.toUpperCase(), left, assetY + 38);
-
-      context.textAlign = "right";
-      context.font = "31px DepartureMono, monospace";
-      context.fillText(asset.balanceFormatted, right, assetY + 38);
-      context.textAlign = "left";
-
-      assetY += 78;
-    }
-  }
-
-  if (trustedAssets.length > visibleAssets.length) {
-    context.globalAlpha = 0.6;
-    context.font = "16px DepartureMono, monospace";
-    context.fillText(
-      `+${trustedAssets.length - visibleAssets.length} MORE TOKEN ASSET${
-        trustedAssets.length - visibleAssets.length === 1 ? "" : "S"
-      }`,
-      left,
-      assetY,
-    );
-    context.globalAlpha = 1;
-    assetY += 38;
-  }
-
-  const inventoryTop = Math.max(600, assetY + 35);
-
-  context.beginPath();
-  context.moveTo(left, inventoryTop - 35);
-  context.lineTo(right, inventoryTop - 35);
-  context.stroke();
-
-  context.font = "22px DepartureMono, monospace";
-  context.fillText("NFT INVENTORY", left, inventoryTop);
-
-  context.textAlign = "right";
-  context.globalAlpha = 0.6;
-  context.font = "17px DepartureMono, monospace";
-  context.fillText(
-    `${trustedNfts.length} ITEM${trustedNfts.length === 1 ? "" : "S"}`,
-    right,
-    inventoryTop,
-  );
-  context.globalAlpha = 1;
-  context.textAlign = "left";
-
-  if (trustedNfts.length === 0) {
-    context.globalAlpha = 0.55;
-    context.font = "18px DepartureMono, monospace";
-    context.fillText(
-      "NO TRUSTED NFTS IN THIS HOODWALLET",
-      left,
-      inventoryTop + 70,
-    );
-    context.globalAlpha = 1;
-  } else {
-    const visibleNfts = trustedNfts.slice(0, 6);
-    const gap = 20;
-    const tileWidth = Math.floor(
-      (right - left - gap * Math.max(0, visibleNfts.length - 1)) /
-        Math.max(1, visibleNfts.length),
-    );
-    const imageSize = Math.min(tileWidth, 230);
-    const tileY = inventoryTop + 42;
-
-    for (let index = 0; index < visibleNfts.length; index += 1) {
-      const nft = visibleNfts[index];
-      const x = left + index * (tileWidth + gap);
-
-      context.strokeStyle = foreground;
-      context.lineWidth = 2;
-      context.strokeRect(x, tileY, imageSize, imageSize);
-
-      if (nft.image) {
-  try {
-    const nftImage = await loadCanvasImage(
-      nftProxyImageUrl(nft.image),
-    );
-
-    context.drawImage(
-      nftImage,
-      x,
-      tileY,
-      imageSize,
-      imageSize,
-    );
-  } catch (nftImageError) {
-    console.warn(
-      `Unable to draw NFT ${nft.contract}:${nft.tokenId}.`,
-      nftImageError,
-    );
-
-    context.fillStyle = foreground;
-    context.font = "14px DepartureMono, monospace";
-    context.textAlign = "center";
-    context.fillText(
-      "NFT",
-      x + imageSize / 2,
-      tileY + imageSize / 2,
-    );
-    context.textAlign = "left";
-  }
-} else {
-  context.fillStyle = foreground;
-  context.font = "14px DepartureMono, monospace";
-  context.textAlign = "center";
-  context.fillText(
-    "NFT",
-    x + imageSize / 2,
-    tileY + imageSize / 2,
-  );
-  context.textAlign = "left";
+  return `/api/hoodies/image?tokenId=${encodeURIComponent(
+    tokenId,
+  )}`;
 }
 
-      context.fillStyle = foreground;
-      context.globalAlpha = 0.62;
-      context.font = "13px DepartureMono, monospace";
-      context.fillText(
-        nft.collectionName.toUpperCase().slice(0, 20),
-        x,
-        tileY + imageSize + 28,
-      );
-      context.globalAlpha = 1;
-      context.font = "17px DepartureMono, monospace";
-      context.fillText(
-        `#${nft.tokenId}`.slice(0, 22),
-        x,
-        tileY + imageSize + 55,
-      );
-    }
+function explorerAddress(
+  address: string,
+) {
+  return `${siteConfig.explorerUrl.replace(
+    /\/$/,
+    "",
+  )}/address/${address}`;
+}
 
-    if (trustedNfts.length > visibleNfts.length) {
-      context.globalAlpha = 0.62;
-      context.font = "16px DepartureMono, monospace";
-      context.textAlign = "right";
-      context.fillText(
-        `+${trustedNfts.length - visibleNfts.length} MORE NFT${
-          trustedNfts.length - visibleNfts.length === 1 ? "" : "S"
-        }`,
-        right,
-        height - 58,
-      );
-      context.globalAlpha = 1;
-      context.textAlign = "left";
-    }
+function explorerToken(
+  address: string,
+) {
+  return `${siteConfig.explorerUrl.replace(
+    /\/$/,
+    "",
+  )}/token/${address}`;
+}
+
+function requireWalletAccount<T>(
+  account: T | undefined,
+): T {
+  if (!account) {
+    throw new Error(
+      "Wallet account unavailable.",
+    );
   }
 
-  /* Small trust mark */
-  context.fillStyle = foreground;
-  context.fillRect(right - 208, 50, 208, 42);
-  context.fillStyle = opposite;
-  context.font = "15px DepartureMono, monospace";
-  context.textAlign = "center";
-  context.fillText("TRUSTED VIEW", right - 104, 78);
+  return account;
+}
 
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((result) => {
-      if (result) resolve(result);
-      else reject(new Error("Unable to create HoodWallet PNG."));
-    }, "image/png");
-  });
+function assetKey(
+  asset:
+    HoodWalletAsset,
+) {
+  if (
+    asset.kind ===
+    "native"
+  ) {
+    return "native";
+  }
 
-  const filename = `onchainhoodies-${wallet.tokenId}-hoodwallet${
-    darkHood ? "-dark" : ""
-  }.png`;
-
-  downloadBlob(blob, filename);
+  return (
+    asset.contract
+      ?.toLowerCase() ||
+    `${asset.symbol}:${asset.name}`
+  );
 }
 
 /*//////////////////////////////////////////////////////////////
-                             ARTWORK
+                            ARTWORK
 //////////////////////////////////////////////////////////////*/
 
-function HoodieArtwork({ hoodie }: { hoodie: OwnedHoodie }) {
-  const [failed, setFailed] = useState(false);
+function HoodieArtwork({
+  hoodie,
+}: {
+  hoodie:
+    OwnedHoodie;
+}) {
+  const [
+    failed,
+    setFailed,
+  ] =
+    useState(false);
 
   if (failed) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-black p-4 text-center text-[9px] uppercase tracking-[0.14em] text-[#ccff00]">
-        Artwork unavailable
+      <div className="flex h-full w-full items-center justify-center bg-black text-[#ccff00]">
+
+        <p className="text-[9px] uppercase tracking-[0.15em]">
+          Artwork unavailable
+        </p>
+
       </div>
     );
   }
 
   return (
     <Image
-      loader={passthroughImageLoader}
       unoptimized
-      src={ownedArtworkUrl(hoodie)}
-      alt={hoodie.name || `OnChainHoodies #${hoodie.tokenId}`}
+
+      src={
+        tokenArtwork(
+          hoodie.tokenId,
+        )
+      }
+
+      alt={
+        hoodie.name ||
+        `OnChainHoodies #${hoodie.tokenId}`
+      }
+
       width={768}
+
       height={768}
-      sizes="(max-width: 768px) 100vw, 320px"
-      onError={() => setFailed(true)}
-      className="image-render-pixel h-full w-full object-cover"
-    />
-  );
-}
 
-function NftArtwork({ nft }: { nft: HoodWalletNft }) {
-  const [failed, setFailed] = useState(false);
+      onError={() =>
+        setFailed(
+          true,
+        )
+      }
 
-  if (!nft.image || failed) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-[var(--hood-fg)] p-3 text-center text-[8px] uppercase tracking-[0.12em] text-[var(--hood-bg)]">
-        NFT
-      </div>
-    );
-  }
-
-  return (
-    // A normal img is intentional here: NFT image hosts are dynamic and should
-    // not require every remote host to be added to next.config remotePatterns.
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={nft.image}
-      alt={nft.name}
-      loading="lazy"
-      referrerPolicy="no-referrer"
-      onError={() => setFailed(true)}
       className="h-full w-full object-cover"
     />
   );
 }
 
-/*//////////////////////////////////////////////////////////////
-                         LOADING COMPONENT
-//////////////////////////////////////////////////////////////*/
-
-function LoadingBlock({ label }: { label: string }) {
-  return (
-    <div className="flex min-h-[260px] items-center justify-center border border-[var(--hood-fg)] p-6 text-center">
-      <p className="text-[10px] uppercase tracking-[0.18em] opacity-65">
-        {label}
-      </p>
-    </div>
-  );
-}
-
-/*//////////////////////////////////////////////////////////////
-                           ASSET ROW
-//////////////////////////////////////////////////////////////*/
-
-function AssetRow({ asset }: { asset: HoodWalletAsset }) {
-  return (
-    <div className="grid grid-cols-[1fr_auto] items-center gap-4 border-t border-[var(--hood-fg)] px-4 py-4 first:border-t-0">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="truncate text-[9px] uppercase tracking-[0.15em] opacity-60">
-            {asset.name}
-          </p>
-
-          {!asset.trusted && asset.kind === "erc20" && (
-            <span className="border border-[var(--hood-fg)] px-1.5 py-0.5 text-[7px] uppercase tracking-[0.12em]">
-              Unverified
-            </span>
-          )}
-        </div>
-
-        <p className="mt-1 text-sm uppercase tracking-[0.08em]">
-          {asset.symbol}
-        </p>
-
-        {asset.contract && !asset.trusted && (
-          <a
-            href={explorerTokenUrl(asset.contract)}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-1 block text-[7px] uppercase tracking-[0.1em] opacity-55 underline underline-offset-2"
-          >
-            {shortAddress(asset.contract)} ↗
-          </a>
-        )}
-      </div>
-
-      <p className="text-right text-xl leading-none tracking-[-0.04em] md:text-2xl">
-        {asset.balanceFormatted}
-      </p>
-    </div>
-  );
-}
-
-/*//////////////////////////////////////////////////////////////
-                           NFT CARD
-//////////////////////////////////////////////////////////////*/
-
-function NftCard({ nft }: { nft: HoodWalletNft }) {
-  return (
-    <article className="min-w-0 border border-[var(--hood-fg)]">
-      <div className="aspect-square overflow-hidden bg-[var(--hood-fg)]">
-        <NftArtwork nft={nft} />
-      </div>
-
-      <div className="border-t border-[var(--hood-fg)] p-2.5">
-        <div className="flex items-start justify-between gap-2">
-          <p className="min-w-0 truncate text-[8px] uppercase tracking-[0.12em] opacity-60">
-            {nft.collectionName}
-          </p>
-
-          {!nft.trusted && (
-            <span className="shrink-0 border border-[var(--hood-fg)] px-1 py-0.5 text-[6px] uppercase tracking-[0.1em]">
-              {nft.spam ? "Spam" : "Unverified"}
-            </span>
-          )}
-        </div>
-
-        <p className="mt-2 truncate text-[11px] uppercase tracking-[0.05em]">
-          {nft.name || `#${nft.tokenId}`}
-        </p>
-
-        <div className="mt-2 flex items-center justify-between gap-2 text-[7px] uppercase tracking-[0.1em] opacity-60">
-          <span>#{nft.tokenId}</span>
-          {nft.kind === "erc1155" && <span>× {nft.balance}</span>}
-        </div>
-
-        {!nft.trusted && (
-          <a
-            href={explorerTokenUrl(nft.contract)}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 block truncate text-[7px] uppercase tracking-[0.1em] opacity-55 underline underline-offset-2"
-          >
-            {shortAddress(nft.contract)} ↗
-          </a>
-        )}
-      </div>
-    </article>
-  );
-}
-
-/*//////////////////////////////////////////////////////////////
-                        HOODWALLET CARD
-//////////////////////////////////////////////////////////////*/
-
-function HoodWalletCard({
-  hoodie,
-  wallet,
-  darkHood,
-  trustedOnly,
-  onLoadInventory,
+function NftArtwork({
+  nft,
 }: {
-  hoodie: OwnedHoodie;
-  wallet: HoodWalletRecord;
-  darkHood: boolean;
-  trustedOnly: boolean;
-  onLoadInventory: (walletAddress: string) => void;
+  nft:
+    HoodWalletNft;
 }) {
-  const statusIsActive = wallet.status === "active";
-  const [downloading, setDownloading] = useState(false);
+  const [
+    failed,
+    setFailed,
+  ] =
+    useState(false);
 
-  const visibleAssets = useMemo(
-    () =>
-      wallet.assets.filter(
-        (asset) => asset.kind === "native" || !trustedOnly || asset.trusted,
-      ),
-    [trustedOnly, wallet.assets],
-  );
+  if (
+    !nft.image ||
+    failed
+  ) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-black p-3 text-center text-[#ccff00]">
 
-  const visibleNfts = useMemo(
-    () => wallet.nfts.filter((nft) => !trustedOnly || nft.trusted),
-    [trustedOnly, wallet.nfts],
-  );
+        <p className="text-[8px] uppercase tracking-[0.14em]">
+          {
+            nft.collectionName
+          }
 
-  const hiddenAssetCount =
-    wallet.assets.filter(
-      (asset) => asset.kind === "erc20" && !asset.trusted,
-    ).length + wallet.nfts.filter((nft) => !nft.trusted).length;
+          <br />
 
-  const downloadCard = useCallback(async () => {
-    if (downloading) return;
+          #
+          {
+            nft.tokenId
+          }
+        </p>
 
-    setDownloading(true);
-
-    try {
-      await downloadHoodWalletPng(hoodie, wallet, darkHood);
-    } catch (downloadError) {
-      console.error(downloadError);
-      window.alert(
-        downloadError instanceof Error
-          ? downloadError.message
-          : "Unable to download HoodWallet PNG.",
-      );
-    } finally {
-      setDownloading(false);
-    }
-  }, [darkHood, downloading, hoodie, wallet]);
+      </div>
+    );
+  }
 
   return (
-    <article className="border border-[var(--hood-fg)]">
-      <div className="grid lg:grid-cols-[230px_minmax(0,1fr)]">
-        {/* Smaller Hoodie avatar */}
-        <div className="border-b border-[var(--hood-fg)] bg-[#ccff00] lg:border-b-0 lg:border-r">
-          <div className="aspect-square overflow-hidden">
-            <HoodieArtwork hoodie={hoodie} />
-          </div>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={
+        nft.image
+      }
 
-          <div className="border-t border-black bg-[#ccff00] px-4 py-3 text-black">
-            <p className="text-[8px] uppercase tracking-[0.15em] opacity-60">
-              OnChainHoodie
-            </p>
+      alt={
+        nft.name
+      }
 
-            <p className="mt-1 text-xl leading-none tracking-[-0.04em]">
-              #{wallet.tokenId}
-            </p>
-          </div>
-        </div>
+      loading="lazy"
 
-        {/* Wallet + inventory */}
-        <div className="min-w-0">
-          <div className="border-b border-[var(--hood-fg)] p-4 md:p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-[8px] uppercase tracking-[0.18em] opacity-60">
-                  HoodWallet
-                </p>
+      referrerPolicy="no-referrer"
 
-                <h2 className="mt-3 break-all text-2xl leading-none tracking-[-0.04em] md:text-3xl">
-                  {shortAddress(wallet.walletAddress)}
-                </h2>
-              </div>
+      onError={() =>
+        setFailed(
+          true,
+        )
+      }
 
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => void downloadCard()}
-                  disabled={downloading}
-                  className="border border-[var(--hood-fg)] px-3 py-2 text-[8px] uppercase tracking-[0.15em] disabled:opacity-40"
-                >
-                  {downloading ? "Creating PNG" : "Download PNG"}
-                </button>
-
-                <span
-                  className={`border border-[var(--hood-fg)] px-3 py-2 text-[8px] uppercase tracking-[0.15em] ${
-                    statusIsActive
-                      ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
-                      : ""
-                  }`}
-                >
-                  {statusLabel(wallet.status)}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-5 border border-[var(--hood-fg)]">
-              <div className="border-b border-[var(--hood-fg)] px-3 py-2">
-                <p className="text-[8px] uppercase tracking-[0.15em] opacity-60">
-                  Deterministic address
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <code className="break-all text-[10px] leading-relaxed">
-                  {wallet.walletAddress}
-                </code>
-
-                <a
-                  href={explorerAddressUrl(wallet.walletAddress)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="shrink-0 text-[9px] uppercase tracking-[0.14em] underline underline-offset-4"
-                >
-                  Explorer ↗
-                </a>
-              </div>
-            </div>
-
-            {wallet.status === "counterfactual" && (
-              <p className="mt-4 text-[9px] uppercase leading-relaxed tracking-[0.12em] opacity-65">
-                This HoodWallet already has a permanent address. Its account
-                contract has not been deployed yet.
-              </p>
-            )}
-
-            {wallet.status === "active" && (
-              <p className="mt-4 text-[9px] uppercase leading-relaxed tracking-[0.12em] opacity-65">
-                The ERC-6551 account is deployed at this address.
-              </p>
-            )}
-
-            {trustedOnly && hiddenAssetCount > 0 && (
-              <p className="mt-4 text-[8px] uppercase leading-relaxed tracking-[0.11em] opacity-55">
-                {hiddenAssetCount} unverified asset
-                {hiddenAssetCount === 1 ? "" : "s"} hidden by Trusted View.
-              </p>
-            )}
-          </div>
-
-          {!wallet.inventoryLoaded && (
-            <div className="border-b border-[var(--hood-fg)] p-4 md:p-6">
-              <button
-                type="button"
-                onClick={() => onLoadInventory(wallet.walletAddress)}
-                disabled={wallet.inventoryLoading}
-                className="w-full border border-[var(--hood-fg)] px-3 py-3 text-[9px] uppercase tracking-[0.14em] disabled:opacity-40"
-              >
-                {wallet.inventoryLoading ? "Loading inventory" : "Load token + NFT inventory"}
-              </button>
-              <p className="mt-2 text-[8px] uppercase leading-relaxed tracking-[0.11em] opacity-55">
-                Inventory loads on demand to avoid unnecessary indexer requests.
-              </p>
-            </div>
-          )}
-
-          {/* Fungible assets */}
-          <div>
-            <div className="flex items-center justify-between border-b border-[var(--hood-fg)] px-4 py-3">
-              <p className="text-[9px] uppercase tracking-[0.16em]">Assets</p>
-
-              <p className="text-[8px] uppercase tracking-[0.13em] opacity-60">
-                On-chain balance
-              </p>
-            </div>
-
-            {visibleAssets.length > 0 ? (
-              visibleAssets.map((asset) => (
-                <AssetRow
-                  key={`${wallet.tokenId}-${asset.contract || asset.symbol}-${asset.kind}`}
-                  asset={asset}
-                />
-              ))
-            ) : (
-              <div className="px-4 py-5 text-[9px] uppercase tracking-[0.14em] opacity-55">
-                No visible token balances.
-              </div>
-            )}
-          </div>
-
-          {/* NFT inventory */}
-          <div className="border-t border-[var(--hood-fg)]">
-            <div className="flex items-center justify-between border-b border-[var(--hood-fg)] px-4 py-3">
-              <p className="text-[9px] uppercase tracking-[0.16em]">
-                NFT Inventory
-              </p>
-
-              <p className="text-[8px] uppercase tracking-[0.13em] opacity-60">
-                {visibleNfts.length} item{visibleNfts.length === 1 ? "" : "s"}
-              </p>
-            </div>
-
-            {visibleNfts.length > 0 ? (
-              <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-5">
-                {visibleNfts.map((nft) => (
-                  <NftCard
-                    key={`${wallet.tokenId}-${nft.contract}-${nft.tokenId}-${nft.kind}`}
-                    nft={nft}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="px-4 py-6 text-[9px] uppercase tracking-[0.14em] opacity-55">
-                No visible NFTs in this HoodWallet.
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </article>
+      className="h-full w-full object-cover"
+    />
   );
 }
 
@@ -1062,755 +585,3985 @@ function HoodWalletCard({
 //////////////////////////////////////////////////////////////*/
 
 export default function HoodWalletPage() {
-  const { address, connect } = useWallet();
+  const {
+    address,
+    connect,
+    ensureRequiredNetwork,
+    getWalletClient,
+  } =
+    useWallet();
 
-  const [ownedHoodies, setOwnedHoodies] = useState<OwnedHoodie[]>([]);
-  const [hoodWallets, setHoodWallets] = useState<HoodWalletRecord[]>([]);
-  const [ownershipLoading, setOwnershipLoading] = useState(false);
-  const [walletLoading, setWalletLoading] = useState(false);
-  const [ownershipChecked, setOwnershipChecked] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [darkHood, setDarkHood] = useState(false);
+  /*//////////////////////////////////////////////////////////////
+                        OWNERSHIP STATE
+  //////////////////////////////////////////////////////////////*/
 
-  /* Trusted View is deliberately the default. */
-  const [trustedOnly, setTrustedOnly] = useState(true);
+  const [
+    ownedHoodies,
+    setOwnedHoodies,
+  ] =
+    useState<
+      OwnedHoodie[]
+    >([]);
 
-  const isHolder = ownedHoodies.length > 0;
+  const [
+    selectedTokenId,
+    setSelectedTokenId,
+  ] =
+    useState("");
+
+  const [
+    selectedWallet,
+    setSelectedWallet,
+  ] =
+    useState<
+      HoodWalletState | null
+    >(null);
+
+  const [
+    ownershipLoading,
+    setOwnershipLoading,
+  ] =
+    useState(false);
+
+  const [
+    ownershipChecked,
+    setOwnershipChecked,
+  ] =
+    useState(false);
+
+  const [
+    stateLoading,
+    setStateLoading,
+  ] =
+    useState(false);
+
+  const [
+    error,
+    setError,
+  ] =
+    useState<
+      string | null
+    >(null);
+
+  const [
+    darkHood,
+    setDarkHood,
+  ] =
+    useState(false);
+
+  /*//////////////////////////////////////////////////////////////
+                        OWNER ECONOMY
+  //////////////////////////////////////////////////////////////*/
+
+  const [
+    activationCost,
+    setActivationCost,
+  ] =
+    useState<bigint>(
+      BigInt(0),
+    );
+
+  const [
+    activationEnabled,
+    setActivationEnabled,
+  ] =
+    useState(false);
+
+  const [
+    ownerOCHBalance,
+    setOwnerOCHBalance,
+  ] =
+    useState<bigint>(
+      BigInt(0),
+    );
+
+  const [
+    ownerAllowance,
+    setOwnerAllowance,
+  ] =
+    useState<bigint>(
+      BigInt(0),
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                        INVENTORY STATE
+  //////////////////////////////////////////////////////////////*/
+
+  const [
+    inventoryAssets,
+    setInventoryAssets,
+  ] =
+    useState<
+      HoodWalletAsset[]
+    >([]);
+
+  const [
+    inventoryNfts,
+    setInventoryNfts,
+  ] =
+    useState<
+      HoodWalletNft[]
+    >([]);
+
+  const [
+    inventoryLoading,
+    setInventoryLoading,
+  ] =
+    useState(false);
+
+  const [
+    inventoryLoaded,
+    setInventoryLoaded,
+  ] =
+    useState(false);
+
+  const [
+    trustedOnly,
+    setTrustedOnly,
+  ] =
+    useState(true);
+
+  /*//////////////////////////////////////////////////////////////
+                         TOKEN SEND STATE
+  //////////////////////////////////////////////////////////////*/
+
+  const [
+    sendAssetKey,
+    setSendAssetKey,
+  ] =
+    useState("och");
+
+  const [
+    sendRecipient,
+    setSendRecipient,
+  ] =
+    useState("");
+
+  const [
+    sendAmount,
+    setSendAmount,
+  ] =
+    useState("");
+
+  /*//////////////////////////////////////////////////////////////
+                          NFT SEND STATE
+  //////////////////////////////////////////////////////////////*/
+
+  const [
+    selectedNftToSend,
+    setSelectedNftToSend,
+  ] =
+    useState<
+      HoodWalletNft | null
+    >(null);
+
+  const [
+    nftRecipient,
+    setNftRecipient,
+  ] =
+    useState("");
+
+  const [
+    nftAmount,
+    setNftAmount,
+  ] =
+    useState("1");
+
+  /*//////////////////////////////////////////////////////////////
+                         TRANSACTION STATE
+  //////////////////////////////////////////////////////////////*/
+
+  const [
+    txState,
+    setTxState,
+  ] =
+    useState<TxState>({
+      action:
+        null,
+
+      message:
+        "",
+    });
 
   /*//////////////////////////////////////////////////////////////
                            PROVIDER
   //////////////////////////////////////////////////////////////*/
 
-  const provider = useMemo(() => {
-    if (!siteConfig.rpcUrl) return null;
-
-    return new JsonRpcProvider(
-      siteConfig.rpcUrl,
-      Number(siteConfig.chainId),
-      {
-        staticNetwork: true,
-      },
-    );
-  }, []);
-
-  /*//////////////////////////////////////////////////////////////
-                      LOAD OWNED HOODIES
-  //////////////////////////////////////////////////////////////*/
-
-  const loadOwnership = useCallback(async () => {
-    if (!address) {
-      setOwnedHoodies([]);
-      setHoodWallets([]);
-      setOwnershipChecked(false);
-      setError(null);
-      return;
-    }
-
-    setOwnershipLoading(true);
-    setOwnershipChecked(false);
-    setError(null);
-
-    try {
-      const params = new URLSearchParams({
-        owner: address,
-      });
-
-      const response = await fetch(`/api/hoodies?${params.toString()}`, {
-        cache: "no-store",
-      });
-
-      const data = (await response.json()) as OwnershipResponse;
-
-      if (!response.ok) {
-        throw new Error(data.error || "Unable to read Hoodie ownership.");
+  const provider =
+    useMemo(() => {
+      if (
+        !siteConfig.rpcUrl
+      ) {
+        return null;
       }
 
-      const unique = normalizeOwnedHoodies(data.items || []);
-      setOwnedHoodies(unique);
-    } catch (loadError) {
-      setOwnedHoodies([]);
-      setHoodWallets([]);
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Unable to read Hoodie ownership.",
+      return new JsonRpcProvider(
+        siteConfig.rpcUrl,
+
+        Number(
+          siteConfig.chainId,
+        ),
+
+        {
+          staticNetwork:
+            true,
+        },
       );
-    } finally {
-      setOwnershipLoading(false);
-      setOwnershipChecked(true);
-    }
-  }, [address]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadOwnership();
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [loadOwnership, refreshKey]);
+    }, []);
 
   /*//////////////////////////////////////////////////////////////
-                    LOAD HOODWALLET DATA
+                         OWNERSHIP LOAD
   //////////////////////////////////////////////////////////////*/
+
+  const loadOwnership =
+    useCallback(
+      async () => {
+        if (
+          !address
+        ) {
+          setOwnedHoodies(
+            [],
+          );
+
+          setSelectedTokenId(
+            "",
+          );
+
+          setSelectedWallet(
+            null,
+          );
+
+          setOwnershipChecked(
+            false,
+          );
+
+          return;
+        }
+
+        setOwnershipLoading(
+          true,
+        );
+
+        setOwnershipChecked(
+          false,
+        );
+
+        setError(null);
+
+        try {
+          const params =
+            new URLSearchParams({
+              owner:
+                address,
+            });
+
+          const response =
+            await fetch(
+              `/api/hoodies?${params.toString()}`,
+
+              {
+                cache:
+                  "no-store",
+              },
+            );
+
+          const payload =
+            (await response.json()) as
+              OwnershipResponse;
+
+          if (
+            !response.ok
+          ) {
+            throw new Error(
+              payload.error ||
+                "Unable to load Hoodie ownership.",
+            );
+          }
+
+          const unique =
+            Array.from(
+              new Map(
+                (
+                  payload.items ||
+                  []
+                ).map(
+                  (
+                    hoodie,
+                  ) => [
+                    String(
+                      hoodie.tokenId,
+                    ),
+
+                    {
+                      ...hoodie,
+
+                      tokenId:
+                        String(
+                          hoodie.tokenId,
+                        ),
+                    },
+                  ],
+                ),
+              ).values(),
+            ).sort(
+              (
+                left,
+                right,
+              ) => {
+                const a =
+                  BigInt(
+                    left.tokenId,
+                  );
+
+                const b =
+                  BigInt(
+                    right.tokenId,
+                  );
+
+                return a < b
+                  ? -1
+                  : a > b
+                    ? 1
+                    : 0;
+              },
+            );
+
+          setOwnedHoodies(
+            unique,
+          );
+
+          setSelectedTokenId(
+            (
+              current,
+            ) => {
+              if (
+                current &&
+                unique.some(
+                  (
+                    hoodie,
+                  ) =>
+                    hoodie.tokenId ===
+                    current,
+                )
+              ) {
+                return current;
+              }
+
+              return (
+                unique[0]
+                  ?.tokenId ||
+                ""
+              );
+            },
+          );
+        } catch (
+          ownershipError
+        ) {
+          console.error(
+            ownershipError,
+          );
+
+          setOwnedHoodies(
+            [],
+          );
+
+          setSelectedWallet(
+            null,
+          );
+
+          setError(
+            errorMessage(
+              ownershipError,
+
+              "Unable to load Hoodie ownership.",
+            ),
+          );
+        } finally {
+          setOwnershipLoading(
+            false,
+          );
+
+          setOwnershipChecked(
+            true,
+          );
+        }
+      },
+      [
+        address,
+      ],
+    );
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadHoodWallets() {
-      if (!address || !provider || ownedHoodies.length === 0) {
-        setHoodWallets([]);
-        return;
+    queueMicrotask(() => {
+      if (!cancelled) {
+        void loadOwnership();
       }
-
-      if (!siteConfig.hoodOSAddress) {
-        setError("HoodOS address is not configured.");
-        return;
-      }
-
-      setWalletLoading(true);
-      setError(null);
-
-      try {
-        const hoodOS = new Contract(
-          siteConfig.hoodOSAddress,
-          HOOD_OS_ABI,
-          provider,
-        ) as unknown as HoodOSReadContract;
-
-        const results: HoodWalletRecord[] = [];
-        const concurrency = 4;
-
-        for (
-          let index = 0;
-          index < ownedHoodies.length;
-          index += concurrency
-        ) {
-          const batch = ownedHoodies.slice(index, index + concurrency);
-
-          const batchResults = await Promise.all(
-            batch.map(async (hoodie) => {
-              const tokenId = BigInt(hoodie.tokenId);
-              const walletAddress = await hoodOS.walletOf(tokenId);
-
-              // IMPORTANT: Do not load indexed ERC-20/NFT inventory here.
-              // A holder may own many Hoodies, and eager inventory discovery
-              // creates one Alchemy getNFTsForOwner workflow per HoodWallet.
-              // Only cheap RPC state is loaded for the list. Inventory is
-              // fetched on demand when the user clicks Load inventory.
-              const [code, nativeBalance] = await Promise.all([
-                provider.getCode(walletAddress),
-                provider.getBalance(walletAddress),
-              ]);
-
-              const status: HoodWalletStatus =
-                code === "0x" ? "counterfactual" : "active";
-
-              const assets: HoodWalletAsset[] = [
-                {
-                  symbol: NATIVE_SYMBOL,
-                  name: NATIVE_NAME,
-                  balanceRaw: nativeBalance,
-                  balanceFormatted: formatTokenBalance(
-                    nativeBalance,
-                    18,
-                    6,
-                  ),
-                  decimals: 18,
-                  kind: "native",
-                  trusted: true,
-                },
-              ];
-
-              return {
-                tokenId: hoodie.tokenId,
-                hoodieName: hoodie.name,
-                artwork: ownedArtworkUrl(hoodie),
-                walletAddress,
-                status,
-                nativeBalance,
-                assets,
-                nfts: [],
-                inventoryLoaded: false,
-                inventoryLoading: false,
-              } satisfies HoodWalletRecord;
-            }),
-          );
-
-          results.push(...batchResults);
-        }
-
-        if (!cancelled) {
-          setHoodWallets(results);
-        }
-      } catch (loadError) {
-        console.error(loadError);
-
-        if (!cancelled) {
-          setHoodWallets([]);
-          setError(
-            loadError instanceof Error
-              ? loadError.message
-              : "Unable to load HoodWallet balances.",
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setWalletLoading(false);
-        }
-      }
-    }
-
-    void loadHoodWallets();
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [address, ownedHoodies, provider, refreshKey]);
-
-  const loadInventoryForWallet = useCallback(
-    async (walletAddress: string) => {
-      const normalizedAddress = walletAddress.toLowerCase();
-      const targetWallet = hoodWallets.find(
-        (wallet) => wallet.walletAddress.toLowerCase() === normalizedAddress,
-      );
-
-      if (
-        !targetWallet ||
-        targetWallet.inventoryLoading ||
-        targetWallet.inventoryLoaded
-      ) {
-        return;
-      }
-
-      setHoodWallets((current) =>
-        current.map((wallet) =>
-          wallet.walletAddress.toLowerCase() === normalizedAddress
-            ? { ...wallet, inventoryLoading: true }
-            : wallet,
-        ),
-      );
-
-      try {
-        const inventory = await fetchWalletInventory(walletAddress);
-
-        setHoodWallets((current) =>
-          current.map((wallet) => {
-            if (wallet.walletAddress.toLowerCase() !== normalizedAddress) {
-              return wallet;
-            }
-
-            // Keep the native ETH row that was loaded via RPC and add the
-            // on-demand indexed ERC-20 inventory beside it.
-            const nativeAssets = wallet.assets.filter(
-              (asset) => asset.kind === "native",
-            );
-
-            return {
-              ...wallet,
-              assets: [...nativeAssets, ...inventory.assets],
-              nfts: inventory.nfts,
-              inventoryLoaded: true,
-              inventoryLoading: false,
-            };
-          }),
-        );
-      } catch (inventoryError) {
-        console.error(
-          `Unable to load inventory for ${walletAddress}:`,
-          inventoryError,
-        );
-
-        setHoodWallets((current) =>
-          current.map((wallet) =>
-            wallet.walletAddress.toLowerCase() === normalizedAddress
-              ? { ...wallet, inventoryLoading: false }
-              : wallet,
-          ),
-        );
-      }
-    },
-    [hoodWallets],
-  );
+  }, [
+    loadOwnership,
+  ]);
 
   /*//////////////////////////////////////////////////////////////
-                         PORTFOLIO TOTALS
+                   OWNER BALANCE + ALLOWANCE
   //////////////////////////////////////////////////////////////*/
 
-  const portfolioTokenTotals = useMemo(() => {
-    const totals = new Map<
-      string,
-      {
-        symbol: string;
-        name: string;
-        contract?: string;
-        decimals: number;
-        balanceRaw: bigint;
-        trusted: boolean;
-      }
-    >();
+  const refreshOwnerEconomy =
+    useCallback(
+      async () => {
+        if (
+          !address ||
+          !provider
+        ) {
+          return;
+        }
 
-    for (const wallet of hoodWallets) {
-      for (const asset of wallet.assets) {
-        if (asset.kind !== "erc20") continue;
-        if (trustedOnly && !asset.trusted) continue;
+        const hoodOS =
+          new Contract(
+            siteConfig.hoodOSAddress,
 
-        const key =
-          asset.contract?.toLowerCase() || `${asset.symbol}:${asset.name}`;
+            HOOD_OS_ABI,
 
-        const current = totals.get(key);
+            provider,
+          );
 
-        totals.set(key, {
-          symbol: asset.symbol,
-          name: asset.name,
-          contract: asset.contract,
-          decimals: asset.decimals,
-          balanceRaw: (current?.balanceRaw ?? BigInt(0)) + asset.balanceRaw,
-          trusted: asset.trusted,
-        });
-      }
-    }
+        const och =
+          new Contract(
+            siteConfig.ochAddress,
 
-    return Array.from(totals.values()).sort((left, right) => {
-      if (left.trusted !== right.trusted) {
-        return left.trusted ? -1 : 1;
-      }
+            OCH_READ_ABI,
 
-      return left.symbol.localeCompare(right.symbol);
-    });
-  }, [hoodWallets, trustedOnly]);
+            provider,
+          );
 
-  const totalNative = useMemo(() => {
-    return hoodWallets.reduce(
-      (total, wallet) => total + wallet.nativeBalance,
-      BigInt(0),
+        /*
+         * Sequential intentionally.
+         */
+
+        const cost =
+          (await hoodOS.activationCost()) as
+            bigint;
+
+        const enabled =
+          (await hoodOS.activationEnabled()) as
+            boolean;
+
+        const balance =
+          (await och.balanceOf(
+            address,
+          )) as bigint;
+
+        const allowance =
+          (await och.allowance(
+            address,
+
+            siteConfig.hoodOSAddress,
+          )) as bigint;
+
+        setActivationCost(
+          cost,
+        );
+
+        setActivationEnabled(
+          enabled,
+        );
+
+        setOwnerOCHBalance(
+          balance,
+        );
+
+        setOwnerAllowance(
+          allowance,
+        );
+      },
+      [
+        address,
+        provider,
+      ],
     );
-  }, [hoodWallets]);
-
-  const activeWalletCount = useMemo(() => {
-    return hoodWallets.filter((wallet) => wallet.status === "active").length;
-  }, [hoodWallets]);
-
-  const visibleNftCount = useMemo(() => {
-    return hoodWallets.reduce(
-      (total, wallet) =>
-        total +
-        wallet.nfts.filter((nft) => !trustedOnly || nft.trusted).length,
-      0,
-    );
-  }, [hoodWallets, trustedOnly]);
-
-  const hiddenUnverifiedCount = useMemo(() => {
-    return hoodWallets.reduce((total, wallet) => {
-      const untrustedTokens = wallet.assets.filter(
-        (asset) => asset.kind === "erc20" && !asset.trusted,
-      ).length;
-
-      const untrustedNfts = wallet.nfts.filter((nft) => !nft.trusted).length;
-
-      return total + untrustedTokens + untrustedNfts;
-    }, 0);
-  }, [hoodWallets]);
 
   /*//////////////////////////////////////////////////////////////
-                              UI
+                    LOAD SELECTED WALLET
+  //////////////////////////////////////////////////////////////*/
+
+  const loadSelectedWallet =
+    useCallback(
+      async (
+        tokenIdInput?:
+          string,
+      ) => {
+        const tokenIdText =
+          tokenIdInput ||
+          selectedTokenId;
+
+        if (
+          !address ||
+          !provider ||
+          !tokenIdText
+        ) {
+          return;
+        }
+
+        setStateLoading(
+          true,
+        );
+
+        setError(null);
+
+        /*
+         * Selecting / refreshing a Hoodie
+         * NEVER scans arbitrary assets.
+         */
+
+        setInventoryAssets(
+          [],
+        );
+
+        setInventoryNfts(
+          [],
+        );
+
+        setInventoryLoaded(
+          false,
+        );
+
+        setSelectedNftToSend(
+          null,
+        );
+
+        try {
+          const tokenId =
+            BigInt(
+              tokenIdText,
+            );
+
+          const hoodOS =
+            new Contract(
+              siteConfig.hoodOSAddress,
+
+              HOOD_OS_ABI,
+
+              provider,
+            );
+
+          const rewards =
+            new Contract(
+              siteConfig.pingRewardVaultAddress,
+
+              REWARDS_ABI,
+
+              provider,
+            );
+
+          await refreshOwnerEconomy();
+
+          const info =
+            await hoodOS.hoodInfo(
+              tokenId,
+            );
+
+          const pingEverActivated =
+            (await rewards.everActivated(
+              tokenId,
+            )) as boolean;
+
+          const pingClaimed =
+            (await rewards.hasClaimed(
+              tokenId,
+            )) as boolean;
+
+          const pingAvailable =
+            (await rewards.rewardAvailable(
+              tokenId,
+            )) as boolean;
+
+          const pingCanClaim =
+            (await rewards.canClaim(
+              tokenId,
+            )) as boolean;
+
+          setSelectedWallet({
+            tokenId:
+              tokenIdText,
+
+            owner:
+              String(
+                info.owner,
+              ),
+
+            walletAddress:
+              String(
+                info.wallet,
+              ),
+
+            walletDeployed:
+              Boolean(
+                info.walletDeployed,
+              ),
+
+            active:
+              Boolean(
+                info.active,
+              ),
+
+            activationOwner:
+              String(
+                info.activationOwner,
+              ),
+
+            activatedAt:
+              BigInt(
+                info.activatedAt,
+              ),
+
+            walletState:
+              BigInt(
+                info.walletState,
+              ),
+
+            nativeBalance:
+              BigInt(
+                info.nativeBalance,
+              ),
+
+            ochBalance:
+              BigInt(
+                info.paymentTokenBalance,
+              ),
+
+            pingEverActivated,
+
+            pingClaimed,
+
+            pingAvailable,
+
+            pingCanClaim,
+          });
+        } catch (
+          walletError
+        ) {
+          console.error(
+            walletError,
+          );
+
+          setSelectedWallet(
+            null,
+          );
+
+          setError(
+            errorMessage(
+              walletError,
+
+              `Unable to load HoodWallet #${tokenIdText}.`,
+            ),
+          );
+        } finally {
+          setStateLoading(
+            false,
+          );
+        }
+      },
+      [
+        address,
+        provider,
+        refreshOwnerEconomy,
+        selectedTokenId,
+      ],
+    );
+
+  /*
+   * Hoodie selection loads
+   * lightweight state only.
+   */
+
+  useEffect(() => {
+    if (
+      !selectedTokenId ||
+      !address
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    queueMicrotask(() => {
+      if (!cancelled) {
+        void loadSelectedWallet(
+          selectedTokenId,
+        );
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    address,
+    selectedTokenId,
+    loadSelectedWallet,
+  ]);
+
+  /*//////////////////////////////////////////////////////////////
+                       MANUAL INVENTORY
+  //////////////////////////////////////////////////////////////*/
+
+  const loadInventory =
+    useCallback(
+      async () => {
+        if (
+          !selectedWallet ||
+          !provider
+        ) {
+          return;
+        }
+
+        if (
+          inventoryLoading
+        ) {
+          return;
+        }
+
+        setInventoryLoading(
+          true,
+        );
+
+        setError(null);
+
+        try {
+          const params =
+            new URLSearchParams({
+              address:
+                selectedWallet.walletAddress,
+            });
+
+          /*
+           * This is the ONLY arbitrary
+           * inventory request.
+           */
+
+          const response =
+            await fetch(
+              `/api/hoodwallet/assets?${params.toString()}`,
+
+              {
+                cache:
+                  "no-store",
+
+                headers: {
+                  accept:
+                    "application/json",
+                },
+              },
+            );
+
+          const payload =
+            (await response.json()) as
+              InventoryResponse;
+
+          if (
+            !response.ok
+          ) {
+            throw new Error(
+              payload.error ||
+                "Unable to load HoodWallet inventory.",
+            );
+          }
+
+          const assets:
+            HoodWalletAsset[] =
+            [];
+
+          for (
+            const rawAsset of
+            payload.assets ||
+            []
+          ) {
+            try {
+              const balanceRaw =
+                BigInt(
+                  rawAsset.balanceRaw,
+                );
+
+              if (
+                balanceRaw <=
+                BigInt(0)
+              ) {
+                continue;
+              }
+
+              /*
+               * OCH already exists
+               * in lightweight state.
+               */
+
+              if (
+                rawAsset.contract &&
+                sameAddress(
+                  rawAsset.contract,
+
+                  siteConfig.ochAddress,
+                )
+              ) {
+                continue;
+              }
+
+              assets.push({
+                symbol:
+                  rawAsset.symbol,
+
+                name:
+                  rawAsset.name,
+
+                balanceRaw,
+
+                balanceFormatted:
+                  rawAsset.balanceFormatted,
+
+                contract:
+                  rawAsset.contract,
+
+                decimals:
+                  rawAsset.decimals,
+
+                kind:
+                  "erc20",
+
+                trusted:
+                  rawAsset.trusted ===
+                  true,
+              });
+            } catch {
+              continue;
+            }
+          }
+
+          const nfts:
+            HoodWalletNft[] =
+            (
+              payload.nfts ||
+              []
+            ).map(
+              (
+                rawNft,
+              ) => ({
+                contract:
+                  rawNft.contract,
+
+                tokenId:
+                  String(
+                    rawNft.tokenId,
+                  ),
+
+                name:
+                  rawNft.name ||
+                  `NFT #${rawNft.tokenId}`,
+
+                collectionName:
+                  rawNft.collectionName ||
+                  "NFT",
+
+                symbol:
+                  rawNft.symbol,
+
+                image:
+                  rawNft.image,
+
+                balance:
+                  rawNft.balance ||
+                  "1",
+
+                kind:
+                  rawNft.kind,
+
+                trusted:
+                  rawNft.trusted ===
+                  true,
+
+                spam:
+                  rawNft.spam ===
+                  true,
+
+                spamClassifications:
+                  rawNft.spamClassifications ||
+                  [],
+              }),
+            );
+
+          /*////////////////////////////////////////////////////////
+                       DIRECT PING CHECK
+
+            Ping #N should belong to
+            HoodWallet #N.
+
+            Do not depend only on
+            indexer freshness.
+          ////////////////////////////////////////////////////////*/
+
+          try {
+            const ping =
+              new Contract(
+                siteConfig.pingAddress,
+
+                PING_ABI,
+
+                provider,
+              );
+
+            const pingOwner =
+              String(
+                await ping.ownerOf(
+                  BigInt(
+                    selectedWallet.tokenId,
+                  ),
+                ),
+              );
+
+            if (
+              sameAddress(
+                pingOwner,
+
+                selectedWallet.walletAddress,
+              )
+            ) {
+              const alreadyPresent =
+                nfts.some(
+                  (
+                    nft,
+                  ) =>
+                    sameAddress(
+                      nft.contract,
+
+                      siteConfig.pingAddress,
+                    ) &&
+                    nft.tokenId ===
+                      selectedWallet.tokenId,
+                );
+
+              if (
+                !alreadyPresent
+              ) {
+                nfts.unshift({
+                  contract:
+                    siteConfig.pingAddress,
+
+                  tokenId:
+                    selectedWallet.tokenId,
+
+                  name:
+                    `Ping #${selectedWallet.tokenId}`,
+
+                  collectionName:
+                    "Ping",
+
+                  symbol:
+                    "PING",
+
+                  balance:
+                    "1",
+
+                  kind:
+                    "erc721",
+
+                  trusted:
+                    true,
+
+                  spam:
+                    false,
+
+                  spamClassifications:
+                    [],
+                });
+              }
+            }
+          } catch (
+            pingError
+          ) {
+            console.debug(
+              "Direct Ping ownership check unavailable.",
+
+              pingError,
+            );
+          }
+
+          setInventoryAssets(
+            assets,
+          );
+
+          setInventoryNfts(
+            nfts,
+          );
+
+          setInventoryLoaded(
+            true,
+          );
+
+          if (
+            payload.warning
+          ) {
+            console.warn(
+              payload.warning,
+            );
+          }
+        } catch (
+          inventoryError
+        ) {
+          console.error(
+            inventoryError,
+          );
+
+          setError(
+            errorMessage(
+              inventoryError,
+
+              "Unable to load token + NFT inventory.",
+            ),
+          );
+        } finally {
+          setInventoryLoading(
+            false,
+          );
+        }
+      },
+      [
+        inventoryLoading,
+        provider,
+        selectedWallet,
+      ],
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                      WAIT FOR TRANSACTION
+  //////////////////////////////////////////////////////////////*/
+
+  const waitForHash =
+    useCallback(
+      async (
+        hash: string,
+      ) => {
+        if (
+          !provider
+        ) {
+          throw new Error(
+            "RPC provider unavailable.",
+          );
+        }
+
+        const receipt =
+          await provider.waitForTransaction(
+            hash,
+            1,
+          );
+
+        if (
+          !receipt
+        ) {
+          throw new Error(
+            "Transaction confirmation not found.",
+          );
+        }
+
+        if (
+          receipt.status !==
+          1
+        ) {
+          throw new Error(
+            "Transaction reverted.",
+          );
+        }
+
+        return receipt;
+      },
+      [
+        provider,
+      ],
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                    SINGLE ACTIVATION FLOW
+  //////////////////////////////////////////////////////////////*/
+
+  const activateHoodWallet =
+    useCallback(
+      async () => {
+        if (
+          !address
+        ) {
+          await connect();
+
+          return;
+        }
+
+        if (
+          !selectedWallet
+        ) {
+          return;
+        }
+
+        if (
+          selectedWallet.active
+        ) {
+          return;
+        }
+
+        if (
+          !sameAddress(
+            selectedWallet.owner,
+
+            address,
+          )
+        ) {
+          setError(
+            "Connected wallet is not the current Hoodie owner.",
+          );
+
+          return;
+        }
+
+        if (
+          !activationEnabled
+        ) {
+          setError(
+            "HoodWallet activation is currently disabled.",
+          );
+
+          return;
+        }
+
+        if (
+          ownerOCHBalance <
+          activationCost
+        ) {
+          setError(
+            `You need ${formatBalance(
+              activationCost,
+            )} OCH to activate this HoodWallet.`,
+          );
+
+          return;
+        }
+
+        try {
+          setError(null);
+
+          setTxState({
+            action:
+              "activate",
+
+            message:
+              "Preparing HoodWallet activation…",
+          });
+
+          await ensureRequiredNetwork();
+
+          const walletClient =
+            await getWalletClient();
+
+          /*
+           * Authorization step is hidden
+           * behind the one activation flow.
+           */
+
+          if (
+            ownerAllowance <
+            activationCost
+          ) {
+            setTxState({
+              action:
+                "activate",
+
+              message:
+                `Authorize ${formatBalance(
+                  activationCost,
+                )} OCH in your wallet. Activation will continue automatically afterward.`,
+            });
+
+            const approvalHash =
+              await walletClient.writeContract({
+                chain: null,
+                address:
+                  siteConfig.ochAddress as Address,
+
+                abi: [
+                  {
+                    type:
+                      "function",
+
+                    name:
+                      "approve",
+
+                    stateMutability:
+                      "nonpayable",
+
+                    inputs: [
+                      {
+                        name:
+                          "spender",
+
+                        type:
+                          "address",
+                      },
+
+                      {
+                        name:
+                          "amount",
+
+                        type:
+                          "uint256",
+                      },
+                    ],
+
+                    outputs: [
+                      {
+                        name:
+                          "",
+
+                        type:
+                          "bool",
+                      },
+                    ],
+                  },
+                ] as const,
+
+                functionName:
+                  "approve",
+
+                args: [
+                  siteConfig.hoodOSAddress as Address,
+
+                  activationCost,
+                ],
+
+                account:
+                  requireWalletAccount(
+                    walletClient.account,
+                  ),
+              });
+
+            setTxState({
+              action:
+                "activate",
+
+              message:
+                `OCH authorization submitted ${shortAddress(
+                  approvalHash,
+                )}. Waiting for confirmation…`,
+            });
+
+            await waitForHash(
+              approvalHash,
+            );
+
+            const och =
+              new Contract(
+                siteConfig.ochAddress,
+
+                OCH_READ_ABI,
+
+                provider,
+              );
+
+            const freshAllowance =
+              (await och.allowance(
+                address,
+
+                siteConfig.hoodOSAddress,
+              )) as bigint;
+
+            if (
+              freshAllowance <
+              activationCost
+            ) {
+              throw new Error(
+                "OCH authorization confirmed but allowance is still below the activation cost.",
+              );
+            }
+
+            setOwnerAllowance(
+              freshAllowance,
+            );
+
+            setTxState({
+              action:
+                "activate",
+
+              message:
+                "OCH authorized. Confirm HoodWallet activation.",
+            });
+          }
+
+          const activationHash =
+            await walletClient.writeContract({
+                chain: null,
+              address:
+                siteConfig.hoodOSAddress as Address,
+
+              abi: [
+                {
+                  type:
+                    "function",
+
+                  name:
+                    "activate",
+
+                  stateMutability:
+                    "nonpayable",
+
+                  inputs: [
+                    {
+                      name:
+                        "tokenId",
+
+                      type:
+                        "uint256",
+                    },
+                  ],
+
+                  outputs:
+                    [],
+                },
+              ] as const,
+
+              functionName:
+                "activate",
+
+              args: [
+                BigInt(
+                  selectedWallet.tokenId,
+                ),
+              ],
+
+              account:
+                requireWalletAccount(
+                  walletClient.account,
+                ),
+            });
+
+          setTxState({
+            action:
+              "activate",
+
+            message:
+              `Activation submitted ${shortAddress(
+                activationHash,
+              )}. Waiting for confirmation…`,
+          });
+
+          await waitForHash(
+            activationHash,
+          );
+
+          await loadSelectedWallet(
+            selectedWallet.tokenId,
+          );
+
+          await refreshOwnerEconomy();
+
+          setTxState({
+            action:
+              null,
+
+            message:
+              `HoodWallet #${selectedWallet.tokenId} activated successfully.`,
+          });
+        } catch (
+          transactionError
+        ) {
+          console.error(
+            transactionError,
+          );
+
+          const message =
+            errorMessage(
+              transactionError,
+
+              "HoodWallet activation failed.",
+            );
+
+          setTxState({
+            action:
+              null,
+
+            message,
+          });
+
+          setError(
+            message,
+          );
+        }
+      },
+      [
+        activationCost,
+        activationEnabled,
+        address,
+        connect,
+        ensureRequiredNetwork,
+        getWalletClient,
+        loadSelectedWallet,
+        ownerAllowance,
+        ownerOCHBalance,
+        provider,
+        refreshOwnerEconomy,
+        selectedWallet,
+        waitForHash,
+      ],
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                          CLAIM PING
+  //////////////////////////////////////////////////////////////*/
+
+  const claimPing =
+    useCallback(
+      async () => {
+        if (
+          !selectedWallet
+        ) {
+          return;
+        }
+
+        if (
+          selectedWallet.pingClaimed
+        ) {
+          return;
+        }
+
+        if (
+          !selectedWallet.pingCanClaim
+        ) {
+          setError(
+            "Ping is not currently claimable.",
+          );
+
+          return;
+        }
+
+        try {
+          setError(null);
+
+          setTxState({
+            action:
+              "claim",
+
+            message:
+              `Preparing Ping #${selectedWallet.tokenId} claim…`,
+          });
+
+          await ensureRequiredNetwork();
+
+          const walletClient =
+            await getWalletClient();
+
+          const hash =
+            await walletClient.writeContract({
+                chain: null,
+              address:
+                siteConfig.pingRewardVaultAddress as Address,
+
+              abi: [
+                {
+                  type:
+                    "function",
+
+                  name:
+                    "claim",
+
+                  stateMutability:
+                    "nonpayable",
+
+                  inputs: [
+                    {
+                      name:
+                        "tokenId",
+
+                      type:
+                        "uint256",
+                    },
+                  ],
+
+                  outputs:
+                    [],
+                },
+              ] as const,
+
+              functionName:
+                "claim",
+
+              args: [
+                BigInt(
+                  selectedWallet.tokenId,
+                ),
+              ],
+
+              account:
+                requireWalletAccount(
+                  walletClient.account,
+                ),
+            });
+
+          setTxState({
+            action:
+              "claim",
+
+            message:
+              `Ping claim submitted ${shortAddress(
+                hash,
+              )}.`,
+          });
+
+          await waitForHash(
+            hash,
+          );
+
+          await loadSelectedWallet(
+            selectedWallet.tokenId,
+          );
+
+          /*
+           * Inventory is intentionally
+           * NOT rescanned automatically.
+           */
+
+          setInventoryLoaded(
+            false,
+          );
+
+          setInventoryAssets(
+            [],
+          );
+
+          setInventoryNfts(
+            [],
+          );
+
+          setSelectedNftToSend(
+            null,
+          );
+
+          setTxState({
+            action:
+              null,
+
+            message:
+              `Ping #${selectedWallet.tokenId} claimed. Load the inventory below to display it.`,
+          });
+        } catch (
+          transactionError
+        ) {
+          console.error(
+            transactionError,
+          );
+
+          const message =
+            errorMessage(
+              transactionError,
+
+              "Ping claim failed.",
+            );
+
+          setTxState({
+            action:
+              null,
+
+            message,
+          });
+
+          setError(
+            message,
+          );
+        }
+      },
+      [
+        ensureRequiredNetwork,
+        getWalletClient,
+        loadSelectedWallet,
+        selectedWallet,
+        waitForHash,
+      ],
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                     CORE SENDABLE ASSETS
+  //////////////////////////////////////////////////////////////*/
+
+  const coreAssets =
+    useMemo(() => {
+      if (
+        !selectedWallet
+      ) {
+        return [];
+      }
+
+      const assets:
+        HoodWalletAsset[] =
+        [];
+
+      assets.push({
+        symbol:
+          "OCH",
+
+        name:
+          "OnChainHoodies",
+
+        balanceRaw:
+          selectedWallet.ochBalance,
+
+        balanceFormatted:
+          formatBalance(
+            selectedWallet.ochBalance,
+          ),
+
+        contract:
+          siteConfig.ochAddress,
+
+        decimals:
+          18,
+
+        kind:
+          "erc20",
+
+        trusted:
+          true,
+      });
+
+      assets.push({
+        symbol:
+          NATIVE_SYMBOL,
+
+        name:
+          NATIVE_NAME,
+
+        balanceRaw:
+          selectedWallet.nativeBalance,
+
+        balanceFormatted:
+          formatBalance(
+            selectedWallet.nativeBalance,
+          ),
+
+        decimals:
+          18,
+
+        kind:
+          "native",
+
+        trusted:
+          true,
+      });
+
+      return assets;
+    }, [
+      selectedWallet,
+    ]);
+
+  /*
+   * SECURITY:
+   *
+   * Untrusted ERC20s can be DISPLAYED
+   * in the All inventory view.
+   *
+   * They can NEVER enter this
+   * transaction selector.
+   */
+
+  const sendableAssets =
+    useMemo(
+      () => [
+        ...coreAssets,
+
+        ...inventoryAssets.filter(
+          (
+            asset,
+          ) =>
+            asset.trusted ===
+            true,
+        ),
+      ],
+      [
+        coreAssets,
+        inventoryAssets,
+      ],
+    );
+
+  const selectedSendAsset =
+    useMemo(
+      () =>
+        sendableAssets.find(
+          (
+            asset,
+          ) =>
+            assetKey(
+              asset,
+            ) ===
+            sendAssetKey,
+        ) ||
+        sendableAssets[0],
+      [
+        sendAssetKey,
+        sendableAssets,
+      ],
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                  SEND TOKEN / ETH FROM WALLET
+  //////////////////////////////////////////////////////////////*/
+
+  const sendFromWallet =
+    useCallback(
+      async () => {
+        if (
+          !selectedWallet ||
+          !selectedSendAsset ||
+          !address
+        ) {
+          return;
+        }
+
+        /*
+         * SECURITY BACKSTOP.
+         *
+         * Never transact with an
+         * untrusted arbitrary ERC20.
+         */
+
+        if (
+          selectedSendAsset.kind ===
+            "erc20" &&
+          !selectedSendAsset.trusted
+        ) {
+          setError(
+            "Untrusted tokens cannot be sent through the HoodWallet interface.",
+          );
+
+          return;
+        }
+
+        if (
+          !selectedWallet.active
+        ) {
+          setError(
+            "Activate HoodWallet before sending.",
+          );
+
+          return;
+        }
+
+        if (
+          !sameAddress(
+            selectedWallet.owner,
+
+            address,
+          )
+        ) {
+          setError(
+            "Connected wallet is not the current Hoodie owner.",
+          );
+
+          return;
+        }
+
+        const recipient =
+          sendRecipient.trim();
+
+        if (
+          !isAddress(
+            recipient,
+          )
+        ) {
+          setError(
+            "Invalid recipient address.",
+          );
+
+          return;
+        }
+
+        if (
+          sameAddress(
+            recipient,
+
+            ZERO_ADDRESS,
+          )
+        ) {
+          setError(
+            "Cannot send to the zero address.",
+          );
+
+          return;
+        }
+
+        let amountWei:
+          bigint;
+
+        try {
+          amountWei =
+            parseUnits(
+              sendAmount.trim(),
+
+              selectedSendAsset.decimals,
+            );
+        } catch {
+          setError(
+            "Invalid amount.",
+          );
+
+          return;
+        }
+
+        if (
+          amountWei <=
+          BigInt(0)
+        ) {
+          setError(
+            "Amount must be greater than zero.",
+          );
+
+          return;
+        }
+
+        if (
+          amountWei >
+          selectedSendAsset.balanceRaw
+        ) {
+          setError(
+            `Insufficient ${selectedSendAsset.symbol} balance.`,
+          );
+
+          return;
+        }
+
+        let target:
+          Address;
+
+        let value:
+          bigint;
+
+        let data:
+          Hex;
+
+        if (
+          selectedSendAsset.kind ===
+          "native"
+        ) {
+          target =
+            getAddress(
+              recipient,
+            ) as Address;
+
+          value =
+            amountWei;
+
+          data =
+            "0x";
+        } else {
+          if (
+            !selectedSendAsset.contract
+          ) {
+            setError(
+              "Token contract unavailable.",
+            );
+
+            return;
+          }
+
+          target =
+            getAddress(
+              selectedSendAsset.contract,
+            ) as Address;
+
+          value =
+            BigInt(0);
+
+          data =
+            ERC20_INTERFACE.encodeFunctionData(
+              "transfer",
+
+              [
+                getAddress(
+                  recipient,
+                ),
+
+                amountWei,
+              ],
+            ) as Hex;
+        }
+
+        try {
+          setError(null);
+
+          setTxState({
+            action:
+              "send",
+
+            message:
+              `Preparing ${selectedSendAsset.symbol} transfer…`,
+          });
+
+          await ensureRequiredNetwork();
+
+          const walletClient =
+            await getWalletClient();
+
+          const hash =
+            await walletClient.writeContract({
+                chain: null,
+              address:
+                selectedWallet.walletAddress as Address,
+
+              abi: [
+                {
+                  type:
+                    "function",
+
+                  name:
+                    "execute",
+
+                  stateMutability:
+                    "payable",
+
+                  inputs: [
+                    {
+                      name:
+                        "target",
+
+                      type:
+                        "address",
+                    },
+
+                    {
+                      name:
+                        "value",
+
+                      type:
+                        "uint256",
+                    },
+
+                    {
+                      name:
+                        "data",
+
+                      type:
+                        "bytes",
+                    },
+
+                    {
+                      name:
+                        "operation",
+
+                      type:
+                        "uint8",
+                    },
+                  ],
+
+                  outputs: [
+                    {
+                      name:
+                        "result",
+
+                      type:
+                        "bytes",
+                    },
+                  ],
+                },
+              ] as const,
+
+              functionName:
+                "execute",
+
+              args: [
+                target,
+
+                value,
+
+                data,
+
+                OPERATION_CALL,
+              ],
+
+              value:
+                BigInt(0),
+
+              account:
+                requireWalletAccount(
+                  walletClient.account,
+                ),
+            });
+
+          setTxState({
+            action:
+              "send",
+
+            message:
+              `Transfer submitted ${shortAddress(
+                hash,
+              )}.`,
+          });
+
+          await waitForHash(
+            hash,
+          );
+
+          await loadSelectedWallet(
+            selectedWallet.tokenId,
+          );
+
+          setInventoryLoaded(
+            false,
+          );
+
+          setInventoryAssets(
+            [],
+          );
+
+          setInventoryNfts(
+            [],
+          );
+
+          setSelectedNftToSend(
+            null,
+          );
+
+          setSendAmount(
+            "",
+          );
+
+          setSendRecipient(
+            "",
+          );
+
+          setTxState({
+            action:
+              null,
+
+            message:
+              `${selectedSendAsset.symbol} transfer confirmed.`,
+          });
+        } catch (
+          transactionError
+        ) {
+          console.error(
+            transactionError,
+          );
+
+          const message =
+            errorMessage(
+              transactionError,
+
+              "Transfer failed.",
+            );
+
+          setTxState({
+            action:
+              null,
+
+            message,
+          });
+
+          setError(
+            message,
+          );
+        }
+      },
+      [
+        address,
+        ensureRequiredNetwork,
+        getWalletClient,
+        loadSelectedWallet,
+        selectedSendAsset,
+        selectedWallet,
+        sendAmount,
+        sendRecipient,
+        waitForHash,
+      ],
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                     SEND NFT FROM WALLET
+  //////////////////////////////////////////////////////////////*/
+
+  const sendNftFromWallet =
+    useCallback(
+      async () => {
+        if (
+          !selectedWallet ||
+          !selectedNftToSend ||
+          !address
+        ) {
+          return;
+        }
+
+        /*
+         * SECURITY:
+         *
+         * Never allow arbitrary/untrusted
+         * NFT contracts to be executed
+         * through this interface.
+         */
+
+        if (
+          !selectedNftToSend.trusted
+        ) {
+          setError(
+            "Untrusted NFTs cannot be sent through the HoodWallet interface.",
+          );
+
+          return;
+        }
+
+        if (
+          !selectedWallet.active
+        ) {
+          setError(
+            "Activate HoodWallet before sending NFTs.",
+          );
+
+          return;
+        }
+
+        if (
+          !sameAddress(
+            selectedWallet.owner,
+
+            address,
+          )
+        ) {
+          setError(
+            "Connected wallet is not the current Hoodie owner.",
+          );
+
+          return;
+        }
+
+        const recipient =
+          nftRecipient.trim();
+
+        if (
+          !isAddress(
+            recipient,
+          )
+        ) {
+          setError(
+            "Invalid NFT recipient address.",
+          );
+
+          return;
+        }
+
+        if (
+          sameAddress(
+            recipient,
+
+            ZERO_ADDRESS,
+          )
+        ) {
+          setError(
+            "Cannot send an NFT to the zero address.",
+          );
+
+          return;
+        }
+
+        if (
+          !isAddress(
+            selectedNftToSend.contract,
+          )
+        ) {
+          setError(
+            "Invalid NFT contract.",
+          );
+
+          return;
+        }
+
+        const target =
+          getAddress(
+            selectedNftToSend.contract,
+          ) as Address;
+
+        let data:
+          Hex;
+
+        if (
+          selectedNftToSend.kind ===
+          "erc721"
+        ) {
+          data =
+            ERC721_INTERFACE.encodeFunctionData(
+              "safeTransferFrom",
+
+              [
+                getAddress(
+                  selectedWallet.walletAddress,
+                ),
+
+                getAddress(
+                  recipient,
+                ),
+
+                BigInt(
+                  selectedNftToSend.tokenId,
+                ),
+              ],
+            ) as Hex;
+        } else {
+          let amount:
+            bigint;
+
+          try {
+            amount =
+              BigInt(
+                nftAmount.trim(),
+              );
+          } catch {
+            setError(
+              "Invalid ERC-1155 amount.",
+            );
+
+            return;
+          }
+
+          if (
+            amount <=
+            BigInt(0)
+          ) {
+            setError(
+              "NFT amount must be greater than zero.",
+            );
+
+            return;
+          }
+
+          let available =
+            BigInt(1);
+
+          try {
+            available =
+              BigInt(
+                selectedNftToSend.balance ||
+                "1",
+              );
+          } catch {
+            available =
+              BigInt(1);
+          }
+
+          if (
+            amount >
+            available
+          ) {
+            setError(
+              `Only ${available.toString()} available.`,
+            );
+
+            return;
+          }
+
+          data =
+            ERC1155_INTERFACE.encodeFunctionData(
+              "safeTransferFrom",
+
+              [
+                getAddress(
+                  selectedWallet.walletAddress,
+                ),
+
+                getAddress(
+                  recipient,
+                ),
+
+                BigInt(
+                  selectedNftToSend.tokenId,
+                ),
+
+                amount,
+
+                "0x",
+              ],
+            ) as Hex;
+        }
+
+        try {
+          setError(null);
+
+          setTxState({
+            action:
+              "send-nft",
+
+            message:
+              `Preparing ${selectedNftToSend.name} transfer…`,
+          });
+
+          await ensureRequiredNetwork();
+
+          const walletClient =
+            await getWalletClient();
+
+          const hash =
+            await walletClient.writeContract({
+                chain: null,
+              address:
+                selectedWallet.walletAddress as Address,
+
+              abi: [
+                {
+                  type:
+                    "function",
+
+                  name:
+                    "execute",
+
+                  stateMutability:
+                    "payable",
+
+                  inputs: [
+                    {
+                      name:
+                        "target",
+
+                      type:
+                        "address",
+                    },
+
+                    {
+                      name:
+                        "value",
+
+                      type:
+                        "uint256",
+                    },
+
+                    {
+                      name:
+                        "data",
+
+                      type:
+                        "bytes",
+                    },
+
+                    {
+                      name:
+                        "operation",
+
+                      type:
+                        "uint8",
+                    },
+                  ],
+
+                  outputs: [
+                    {
+                      name:
+                        "result",
+
+                      type:
+                        "bytes",
+                    },
+                  ],
+                },
+              ] as const,
+
+              functionName:
+                "execute",
+
+              args: [
+                target,
+
+                BigInt(0),
+
+                data,
+
+                OPERATION_CALL,
+              ],
+
+              value:
+                BigInt(0),
+
+              account:
+                requireWalletAccount(
+                  walletClient.account,
+                ),
+            });
+
+          setTxState({
+            action:
+              "send-nft",
+
+            message:
+              `NFT transfer submitted ${shortAddress(
+                hash,
+              )}.`,
+          });
+
+          await waitForHash(
+            hash,
+          );
+
+          await loadSelectedWallet(
+            selectedWallet.tokenId,
+          );
+
+          /*
+           * Do not automatically rescan
+           * inventory after NFT transfer.
+           */
+
+          setInventoryLoaded(
+            false,
+          );
+
+          setInventoryAssets(
+            [],
+          );
+
+          setInventoryNfts(
+            [],
+          );
+
+          setSelectedNftToSend(
+            null,
+          );
+
+          setNftRecipient(
+            "",
+          );
+
+          setNftAmount(
+            "1",
+          );
+
+          setTxState({
+            action:
+              null,
+
+            message:
+              `${selectedNftToSend.name} sent successfully. Reload inventory to refresh the NFT list.`,
+          });
+        } catch (
+          transactionError
+        ) {
+          console.error(
+            transactionError,
+          );
+
+          const message =
+            errorMessage(
+              transactionError,
+
+              "NFT transfer failed.",
+            );
+
+          setTxState({
+            action:
+              null,
+
+            message,
+          });
+
+          setError(
+            message,
+          );
+        }
+      },
+      [
+        address,
+        ensureRequiredNetwork,
+        getWalletClient,
+        loadSelectedWallet,
+        nftAmount,
+        nftRecipient,
+        selectedNftToSend,
+        selectedWallet,
+        waitForHash,
+      ],
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                         DERIVED STATE
+  //////////////////////////////////////////////////////////////*/
+
+  const selectedHoodie =
+    ownedHoodies.find(
+      (
+        hoodie,
+      ) =>
+        hoodie.tokenId ===
+        selectedTokenId,
+    ) ||
+    null;
+
+  const ownerHasEnough =
+    ownerOCHBalance >=
+    activationCost;
+
+  const processing =
+    txState.action !==
+    null;
+
+  const visibleInventoryAssets =
+    inventoryAssets.filter(
+      (
+        asset,
+      ) =>
+        !trustedOnly ||
+        asset.trusted,
+    );
+
+  const visibleInventoryNfts =
+    inventoryNfts.filter(
+      (
+        nft,
+      ) =>
+        !trustedOnly ||
+        nft.trusted,
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                               UI
   //////////////////////////////////////////////////////////////*/
 
   return (
     <main
       className="min-h-screen bg-[var(--hood-bg)] text-[var(--hood-fg)]"
+
       style={
         {
-          "--hood-bg": darkHood ? "#000000" : "#ccff00",
-          "--hood-fg": darkHood ? "#ccff00" : "#000000",
+          "--hood-bg":
+            darkHood
+              ? "#000000"
+              : "#ccff00",
+
+          "--hood-fg":
+            darkHood
+              ? "#ccff00"
+              : "#000000",
         } as CSSProperties
       }
     >
       <SiteHeader />
 
-      <section className="mx-auto max-w-[1500px] px-4 pb-24 pt-20 md:px-6 md:pt-24">
-        {/* Header */}
-        <div className="section-heading-row border-[var(--hood-fg)]">
-          <p>Build 04 / ERC-6551</p>
+      <section className="mx-auto max-w-[1400px] px-4 pb-24 pt-20 md:px-6 md:pt-24">
 
-          <div className="flex items-center gap-4">
+        {/* HEADER */}
+
+        <div className="flex items-center justify-between border-b border-[var(--hood-fg)] pb-3">
+
+          <p className="text-[9px] uppercase tracking-[0.16em]">
+            HoodWallet /
+            ERC-6551
+          </p>
+
+          <div className="flex gap-4">
+
             <button
               type="button"
-              onClick={() => setDarkHood((current) => !current)}
-              className="uppercase"
+
+              onClick={() =>
+                setDarkHood(
+                  (
+                    current,
+                  ) =>
+                    !current,
+                )
+              }
+
+              className="text-[9px] uppercase"
             >
-              {darkHood ? "Lights on" : "Lights off"}
+              {darkHood
+                ? "Lights on"
+                : "Lights off"}
             </button>
 
-            <Link href="/">Back to the Hood</Link>
+            <Link
+              href="/"
+
+              className="text-[9px] uppercase"
+            >
+              Back
+            </Link>
+
           </div>
+
         </div>
 
-        <div className="mt-6 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
-          {/* Sidebar */}
-          <aside className="min-w-0 xl:sticky xl:top-20 xl:self-start">
-            <p className="text-[9px] uppercase tracking-[0.18em]">
+        <div className="mt-6 grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+
+          {/* SIDEBAR */}
+
+          <aside className="lg:sticky lg:top-20 lg:self-start">
+
+            <p className="text-[8px] uppercase tracking-[0.18em] opacity-60">
               Hoodie infrastructure
             </p>
 
-            <h1 className="mt-3 text-5xl leading-[0.84] tracking-[-0.065em] md:text-6xl">
+            <h1 className="mt-3 text-5xl leading-[0.85] tracking-[-0.06em]">
               HOOD
               <br />
               WALLET
             </h1>
 
-            <p className="mt-5 max-w-md text-sm leading-relaxed opacity-75">
-              Every Hoodie has its own deterministic on-chain wallet. Connect
-              the wallet holding your Hoodies to inspect what each Hoodie owns.
+            <p className="mt-5 text-sm leading-relaxed opacity-70">
+              One Hoodie.
+              One deterministic
+              on-chain wallet.
             </p>
 
-            {/* Connected wallet */}
-            {address ? (
-              <div className="mt-6 border border-[var(--hood-fg)]">
-                <div className="border-b border-[var(--hood-fg)] px-3 py-2">
-                  <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
-                    Connected owner
-                  </p>
-                </div>
+            {!address ? (
 
-                <div className="px-3 py-3">
-                  <p className="break-all text-[10px] leading-relaxed">
-                    {address}
-                  </p>
-                </div>
-              </div>
-            ) : (
               <button
                 type="button"
-                onClick={connect}
-                className="pixel-cta mt-6 w-full"
+
+                onClick={() =>
+                  void connect()
+                }
+
+                className="mt-6 w-full border border-[var(--hood-fg)] px-4 py-4 text-[9px] uppercase tracking-[0.15em]"
               >
                 Connect wallet
               </button>
-            )}
 
-            {/* Asset safety switch */}
-            {address && isHolder && !ownershipLoading && (
-              <div className="mt-3 border border-[var(--hood-fg)]">
-                <div className="border-b border-[var(--hood-fg)] px-3 py-2">
-                  <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
-                    Asset view
-                  </p>
-                </div>
+            ) : (
 
-                <div className="grid grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setTrustedOnly(true)}
-                    className={`border-r border-[var(--hood-fg)] px-3 py-3 text-[8px] uppercase tracking-[0.14em] ${
-                      trustedOnly
-                        ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
-                        : ""
-                    }`}
-                    aria-pressed={trustedOnly}
-                  >
-                    {trustedOnly ? "■" : "□"} Trusted
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTrustedOnly(false)}
-                    className={`px-3 py-3 text-[8px] uppercase tracking-[0.14em] ${
-                      !trustedOnly
-                        ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
-                        : ""
-                    }`}
-                    aria-pressed={!trustedOnly}
-                  >
-                    {!trustedOnly ? "■" : "□"} All
-                  </button>
-                </div>
-
-                <div className="border-t border-[var(--hood-fg)] px-3 py-3">
-                  <p className="text-[8px] uppercase leading-relaxed tracking-[0.11em] opacity-65">
-                    Trusted View only shows contracts approved by OnChainHoodies.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {!trustedOnly && address && isHolder && (
-              <div className="mt-2 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-3 text-[var(--hood-bg)]">
-                <p className="text-[8px] uppercase tracking-[0.15em]">
-                  Unverified mode
-                </p>
-                <p className="mt-2 text-[8px] uppercase leading-relaxed tracking-[0.1em] opacity-75">
-                  Unknown tokens and NFTs can be spam. Do not interact with
-                  contracts you do not recognize.
-                </p>
-              </div>
-            )}
-
-            {/* Holder summary */}
-            {address && !ownershipLoading && isHolder && (
               <>
-                <div className="mt-3 grid grid-cols-2 border border-[var(--hood-fg)]">
-                  <div className="border-r border-[var(--hood-fg)] p-3">
-                    <p className="text-[8px] uppercase tracking-[0.15em] opacity-60">
-                      Hoodies
+
+                {/* EVM OWNER */}
+
+                <div className="mt-6 border border-[var(--hood-fg)]">
+
+                  <div className="border-b border-[var(--hood-fg)] px-3 py-2">
+
+                    <p className="text-[7px] uppercase tracking-[0.14em] opacity-60">
+                      Connected EVM wallet
                     </p>
 
-                    <p className="mt-2 text-3xl leading-none tracking-[-0.05em]">
-                      {ownedHoodies.length}
-                    </p>
                   </div>
 
                   <div className="p-3">
-                    <p className="text-[8px] uppercase tracking-[0.15em] opacity-60">
-                      Active wallets
+
+                    <p className="break-all text-[9px]">
+                      {
+                        address
+                      }
                     </p>
 
-                    <p className="mt-2 text-3xl leading-none tracking-[-0.05em]">
-                      {activeWalletCount}
-                    </p>
                   </div>
-                </div>
 
-                <button
-                  type="button"
-                  onClick={() => setRefreshKey((current) => current + 1)}
-                  disabled={ownershipLoading || walletLoading}
-                  className="mt-2 w-full border border-[var(--hood-fg)] px-3 py-3 text-[9px] uppercase tracking-[0.14em] disabled:opacity-40"
-                >
-                  {ownershipLoading || walletLoading
-                    ? "Refreshing"
-                    : "Refresh balances"}
-                </button>
-              </>
-            )}
+                  <div className="border-t border-[var(--hood-fg)] p-3">
 
-            {address && !ownershipLoading && isHolder && (
-              <>
-                <div className="mt-3 border border-[var(--hood-fg)] p-3">
-                  <p className="text-[8px] uppercase tracking-[0.16em]">
-                    {trustedOnly ? "Trusted inventory" : "All on-chain assets"}
-                  </p>
-
-                  <p className="mt-3 text-[9px] leading-relaxed opacity-70">
-                    {trustedOnly
-                      ? "Trusted View only displays ERC-20 and NFT contracts approved by OnChainHoodies. Native ETH is always visible."
-                      : "All View exposes every token and NFT returned by the indexers. Unknown assets can be spam and are not endorsed by OnChainHoodies."}
-                  </p>
-
-                  {trustedOnly && hiddenUnverifiedCount > 0 && (
-                    <p className="mt-3 text-[8px] uppercase leading-relaxed tracking-[0.11em] opacity-55">
-                      {hiddenUnverifiedCount} unverified asset
-                      {hiddenUnverifiedCount === 1 ? "" : "s"} currently hidden.
+                    <p className="text-[7px] uppercase tracking-[0.14em] opacity-60">
+                      EVM wallet OCH
                     </p>
-                  )}
+
+                    <p className="mt-2 text-3xl tracking-[-0.05em]">
+                      {formatBalance(
+                        ownerOCHBalance,
+                      )}
+                    </p>
+
+                    <p className="mt-1 text-[8px] uppercase">
+                      OCH
+                    </p>
+
+                  </div>
+
                 </div>
 
-                <div className="mt-2 border border-[var(--hood-fg)] p-3">
-                  <p className="text-[8px] uppercase tracking-[0.16em]">
-                    Deterministic by design
-                  </p>
+                {/* HOODIE SELECT */}
 
-                  <p className="mt-3 text-[9px] leading-relaxed opacity-70">
-                    Assets can be sent to a HoodWallet before its ERC-6551
-                    account is deployed. Activation deploys the account at the
-                    address the Hoodie already owns.
-                  </p>
+                <div className="mt-3 border border-[var(--hood-fg)]">
+
+                  <div className="border-b border-[var(--hood-fg)] px-3 py-2">
+
+                    <p className="text-[7px] uppercase tracking-[0.14em] opacity-60">
+                      Select Hoodie
+                    </p>
+
+                  </div>
+
+                  <div className="p-3">
+
+                    <select
+                      value={
+                        selectedTokenId
+                      }
+
+                      onChange={(
+                        event,
+                      ) => {
+                        setSelectedWallet(
+                          null,
+                        );
+
+                        setSelectedNftToSend(
+                          null,
+                        );
+
+                        setSelectedTokenId(
+                          event
+                            .target
+                            .value,
+                        );
+                      }}
+
+                      className="w-full border border-[var(--hood-fg)] bg-[var(--hood-bg)] px-3 py-3 text-[10px] uppercase text-[var(--hood-fg)] outline-none"
+                    >
+                      {ownedHoodies.map(
+                        (
+                          hoodie,
+                        ) => (
+
+                          <option
+                            key={
+                              hoodie.tokenId
+                            }
+
+                            value={
+                              hoodie.tokenId
+                            }
+                          >
+                            Hoodie #
+                            {
+                              hoodie.tokenId
+                            }
+                          </option>
+
+                        ),
+                      )}
+                    </select>
+
+                  </div>
+
                 </div>
-              </>
-            )}
 
-            {error && (
-              <div className="mt-3 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-3 text-xs leading-relaxed text-[var(--hood-bg)]">
-                {error}
-              </div>
-            )}
-          </aside>
-
-          {/* Main content */}
-          <div className="min-w-0">
-            {!address ? (
-              <div className="grid min-h-[680px] place-items-center border border-[var(--hood-fg)] p-6 text-center">
-                <div className="max-w-xl">
-                  <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
-                    ERC-6551 wallet layer
-                  </p>
-
-                  <h2 className="mt-6 text-5xl leading-[0.88] tracking-[-0.065em] md:text-7xl">
-                    YOUR HOODIES.
-                    <br />
-                    THEIR WALLETS.
-                  </h2>
-
-                  <p className="mx-auto mt-6 max-w-lg text-sm leading-relaxed opacity-75 md:text-base">
-                    Connect your owner wallet to discover the deterministic
-                    HoodWallet behind every Hoodie you own and inspect the
-                    assets already waiting there.
-                  </p>
+                {selectedWallet && (
 
                   <button
                     type="button"
-                    onClick={connect}
-                    className="pixel-cta mt-8"
-                  >
-                    Connect wallet
-                  </button>
-                </div>
-              </div>
-            ) : ownershipLoading ? (
-              <LoadingBlock label="Reading Hoodie ownership" />
-            ) : ownershipChecked && !isHolder ? (
-              <div className="grid min-h-[680px] place-items-center border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-6 text-center text-[var(--hood-bg)]">
-                <div className="max-w-xl">
-                  <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
-                    HoodWallet
-                  </p>
 
-                  <h2 className="mt-6 text-5xl leading-[0.88] tracking-[-0.065em] md:text-7xl">
-                    NO HOODIE.
+                    disabled={
+                      stateLoading
+                    }
+
+                    onClick={() =>
+                      void loadSelectedWallet()
+                    }
+
+                    className="mt-3 w-full border border-[var(--hood-fg)] px-4 py-3 text-[8px] uppercase tracking-[0.14em] disabled:opacity-40"
+                  >
+                    {stateLoading
+                      ? "Refreshing state…"
+                      : "Refresh selected HoodWallet"}
+                  </button>
+
+                )}
+
+              </>
+
+            )}
+
+            {error && (
+
+              <div className="mt-3 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-3 text-[var(--hood-bg)]">
+
+                <p className="text-[8px] leading-relaxed">
+                  {
+                    error
+                  }
+                </p>
+
+              </div>
+
+            )}
+
+          </aside>
+
+          {/* MAIN */}
+
+          <section className="min-w-0">
+
+            {!address ? (
+
+              <div className="grid min-h-[600px] place-items-center border border-[var(--hood-fg)] p-8 text-center">
+
+                <div>
+
+                  <h2 className="text-5xl tracking-[-0.06em]">
+                    CONNECT
                     <br />
-                    NO HOODWALLET.
+                    YOUR WALLET
                   </h2>
 
-                  <p className="mx-auto mt-6 max-w-md text-sm leading-relaxed opacity-75">
-                    This connected wallet does not currently hold an
-                    OnChainHoodie.
+                  <p className="mt-5 text-sm opacity-65">
+                    Connect the EVM
+                    wallet holding
+                    your Hoodie.
                   </p>
 
-                  <a
-                    href={siteConfig.openSeaUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="pixel-cta mt-8 inline-block border-[#ccff00]"
-                  >
-                    View on OpenSea
-                  </a>
                 </div>
+
               </div>
-            ) : walletLoading ? (
-              <LoadingBlock label="Loading HoodWallet inventory" />
-            ) : (
+
+            ) : ownershipLoading ? (
+
+              <div className="border border-[var(--hood-fg)] p-8 text-center">
+
+                <p className="text-[9px] uppercase tracking-[0.15em]">
+                  Reading Hoodie ownership…
+                </p>
+
+              </div>
+
+            ) : ownershipChecked &&
+              ownedHoodies.length ===
+                0 ? (
+
+              <div className="border border-[var(--hood-fg)] p-8 text-center">
+
+                <h2 className="text-4xl">
+                  NO HOODIES
+                </h2>
+
+                <p className="mt-4 text-sm opacity-65">
+                  This wallet does
+                  not currently own
+                  an OnChainHoodie.
+                </p>
+
+              </div>
+
+            ) : stateLoading &&
+              !selectedWallet ? (
+
+              <div className="border border-[var(--hood-fg)] p-8 text-center">
+
+                <p className="text-[9px] uppercase tracking-[0.15em]">
+                  Loading Hoodie #
+                  {
+                    selectedTokenId
+                  }
+                </p>
+
+                <p className="mt-2 text-[7px] uppercase opacity-50">
+                  Lightweight protocol state only
+                </p>
+
+              </div>
+
+            ) : selectedWallet &&
+              selectedHoodie ? (
+
               <>
-                {/* Portfolio summary */}
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="border border-[var(--hood-fg)] p-4">
-                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
-                      HoodWallets
-                    </p>
-                    <p className="mt-4 text-4xl leading-none tracking-[-0.06em]">
-                      {hoodWallets.length}
-                    </p>
+
+                {/* HOODIE / WALLET */}
+
+                <div className="grid border border-[var(--hood-fg)] md:grid-cols-[260px_minmax(0,1fr)]">
+
+                  <div className="border-b border-[var(--hood-fg)] bg-[#ccff00] md:border-b-0 md:border-r">
+
+                    <div className="aspect-square">
+
+                      <HoodieArtwork
+                        hoodie={
+                          selectedHoodie
+                        }
+                      />
+
+                    </div>
+
+                    <div className="border-t border-black bg-[#ccff00] p-4 text-black">
+
+                      <p className="text-[8px] uppercase tracking-[0.14em]">
+                        OnChainHoodie
+                      </p>
+
+                      <p className="mt-1 text-3xl">
+                        #
+                        {
+                          selectedWallet.tokenId
+                        }
+                      </p>
+
+                    </div>
+
                   </div>
 
-                  <div className="border border-[var(--hood-fg)] p-4">
-                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
-                      NFT inventory
-                    </p>
-                    <p className="mt-4 text-4xl leading-none tracking-[-0.06em]">
-                      {visibleNftCount}
-                    </p>
-                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
-                      {trustedOnly ? "Trusted" : "All visible"}
-                    </p>
-                  </div>
+                  <div className="min-w-0 p-5">
 
-                  <div className="border border-[var(--hood-fg)] p-4">
-                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
-                      Native across HoodWallets
-                    </p>
-                    <p className="mt-4 text-3xl leading-none tracking-[-0.05em]">
-                      {formatTokenBalance(totalNative, 18, 6)}
-                    </p>
-                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
-                      {NATIVE_SYMBOL}
-                    </p>
-                  </div>
+                    <div className="flex items-start justify-between gap-4">
 
-                  <div className="border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-4 text-[var(--hood-bg)]">
-                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
-                      Wallet state
-                    </p>
-                    <p className="mt-4 text-3xl leading-none tracking-[-0.05em]">
-                      {activeWalletCount} / {hoodWallets.length}
-                    </p>
-                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
-                      Active
-                    </p>
-                  </div>
+                      <div>
 
-                  {portfolioTokenTotals.map((token) => (
-                    <div
-                      key={token.contract || `${token.symbol}-${token.name}`}
-                      className="border border-[var(--hood-fg)] p-4"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="truncate text-[8px] uppercase tracking-[0.16em] opacity-60">
-                          {token.name} across HoodWallets
+                        <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
+                          HoodWallet
                         </p>
 
-                        {!token.trusted && (
-                          <span className="shrink-0 border border-[var(--hood-fg)] px-1 py-0.5 text-[6px] uppercase tracking-[0.1em]">
-                            Unverified
-                          </span>
-                        )}
+                        <p className="mt-2 text-2xl">
+                          {shortAddress(
+                            selectedWallet.walletAddress,
+                          )}
+                        </p>
+
                       </div>
 
-                      <p className="mt-4 break-all text-3xl leading-none tracking-[-0.05em]">
-                        {formatTokenBalance(
-                          token.balanceRaw,
-                          token.decimals,
-                          6,
-                        )}
-                      </p>
+                      <div
+                        className={`border border-[var(--hood-fg)] px-3 py-2 text-[8px] uppercase ${
+                          selectedWallet.active
+                            ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                            : ""
+                        }`}
+                      >
+                        {selectedWallet.active
+                          ? "● Active"
+                          : "○ Inactive"}
+                      </div>
 
-                      <p className="mt-2 text-[8px] uppercase tracking-[0.13em] opacity-60">
-                        {token.symbol}
-                      </p>
                     </div>
-                  ))}
-                </div>
 
-                {/* Wallet list */}
-                <div className="mt-4">
-                  <div className="section-heading-row border-[var(--hood-fg)]">
-                    <p>Your HoodWallets</p>
-                    <p>
-                      {hoodWallets.length} Hoodie
-                      {hoodWallets.length === 1 ? "" : "s"}
-                    </p>
-                  </div>
+                    <div className="mt-5 border border-[var(--hood-fg)]">
 
-                  <div className="mt-4 grid gap-4">
-                    {hoodWallets.map((wallet) => {
-                      const hoodie = ownedHoodies.find(
-                        (item) => item.tokenId === wallet.tokenId,
-                      );
+                      <div className="border-b border-[var(--hood-fg)] px-3 py-2">
 
-                      if (!hoodie) return null;
+                        <p className="text-[7px] uppercase tracking-[0.14em] opacity-60">
+                          Deterministic address
+                        </p>
 
-                      return (
-                        <HoodWalletCard
-                          key={wallet.tokenId}
-                          hoodie={hoodie}
-                          wallet={wallet}
-                          darkHood={darkHood}
-                          trustedOnly={trustedOnly}
-                          onLoadInventory={(walletAddress) =>
-                            void loadInventoryForWallet(walletAddress)
+                      </div>
+
+                      <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
+
+                        <code className="break-all text-[9px]">
+                          {
+                            selectedWallet.walletAddress
                           }
-                        />
-                      );
-                    })}
+                        </code>
+
+                        <a
+                          href={
+                            explorerAddress(
+                              selectedWallet.walletAddress,
+                            )
+                          }
+
+                          target="_blank"
+
+                          rel="noreferrer"
+
+                          className="text-[8px] uppercase underline"
+                        >
+                          Explorer ↗
+                        </a>
+
+                      </div>
+
+                    </div>
+
+                    {/* BALANCES */}
+
+                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
+
+                      <div className="border border-[var(--hood-fg)] p-4">
+
+                        <p className="text-[7px] uppercase opacity-55">
+                          HoodWallet OCH
+                        </p>
+
+                        <p className="mt-2 text-3xl">
+                          {formatBalance(
+                            selectedWallet.ochBalance,
+                          )}
+                        </p>
+
+                        <p className="mt-1 text-[8px] uppercase">
+                          OCH
+                        </p>
+
+                      </div>
+
+                      <div className="border border-[var(--hood-fg)] p-4">
+
+                        <p className="text-[7px] uppercase opacity-55">
+                          HoodWallet ETH
+                        </p>
+
+                        <p className="mt-2 text-3xl">
+                          {formatBalance(
+                            selectedWallet.nativeBalance,
+                          )}
+                        </p>
+
+                        <p className="mt-1 text-[8px] uppercase">
+                          ETH
+                        </p>
+
+                      </div>
+
+                      <div className="border border-[var(--hood-fg)] p-4">
+
+                        <p className="text-[7px] uppercase opacity-55">
+                          Contract
+                        </p>
+
+                        <p className="mt-3 text-[9px] uppercase">
+                          {selectedWallet.walletDeployed
+                            ? "Deployed"
+                            : "Counterfactual"}
+                        </p>
+
+                      </div>
+
+                    </div>
+
                   </div>
+
                 </div>
+
+                {/* ACTIVATION */}
+
+                <div className="mt-4 border border-[var(--hood-fg)]">
+
+                  <div className="flex items-center justify-between border-b border-[var(--hood-fg)] px-4 py-3">
+
+                    <p className="text-[9px] uppercase tracking-[0.15em]">
+                      HoodWallet Activation
+                    </p>
+
+                    <p className="text-[8px] uppercase opacity-60">
+                      {formatBalance(
+                        activationCost,
+                      )}{" "}
+                      OCH
+                    </p>
+
+                  </div>
+
+                  <div className="p-4">
+
+                    {selectedWallet.active ? (
+
+                      <div className="bg-[var(--hood-fg)] p-5 text-[var(--hood-bg)]">
+
+                        <p className="text-[11px] uppercase">
+                          ✓ HoodWallet active
+                        </p>
+
+                      </div>
+
+                    ) : !activationEnabled ? (
+
+                      <p className="text-[9px] uppercase">
+                        Activation currently disabled.
+                      </p>
+
+                    ) : (
+
+                      <>
+
+                        <div className="grid gap-2 sm:grid-cols-2">
+
+                          <div className="border border-[var(--hood-fg)] p-4">
+
+                            <p className="text-[7px] uppercase opacity-55">
+                              Your EVM wallet
+                            </p>
+
+                            <p className="mt-2 text-2xl">
+                              {formatBalance(
+                                ownerOCHBalance,
+                              )}
+                            </p>
+
+                            <p className="mt-1 text-[8px] uppercase">
+                              OCH available
+                            </p>
+
+                          </div>
+
+                          <div className="border border-[var(--hood-fg)] p-4">
+
+                            <p className="text-[7px] uppercase opacity-55">
+                              Activation cost
+                            </p>
+
+                            <p className="mt-2 text-2xl">
+                              {formatBalance(
+                                activationCost,
+                              )}
+                            </p>
+
+                            <p className="mt-1 text-[8px] uppercase">
+                              OCH
+                            </p>
+
+                          </div>
+
+                        </div>
+
+                        {!ownerHasEnough && (
+
+                          <p className="mt-3 border border-[var(--hood-fg)] p-3 text-[8px] uppercase">
+                            Insufficient OCH for activation.
+                          </p>
+
+                        )}
+
+                        <button
+                          type="button"
+
+                          disabled={
+                            processing ||
+                            !ownerHasEnough
+                          }
+
+                          onClick={() =>
+                            void activateHoodWallet()
+                          }
+
+                          className="mt-3 w-full bg-[var(--hood-fg)] px-4 py-5 text-[var(--hood-bg)] disabled:opacity-35"
+                        >
+
+                          <span className="block text-[11px] uppercase tracking-[0.16em]">
+                            {txState.action ===
+                            "activate"
+                              ? "Activating HoodWallet…"
+                              : "Activate HoodWallet"}
+                          </span>
+
+                          <span className="mt-2 block text-[18px]">
+                            {formatBalance(
+                              activationCost,
+                            )}{" "}
+                            OCH
+                          </span>
+
+                          <span className="mx-auto mt-3 block max-w-xl text-[7px] uppercase leading-relaxed opacity-65">
+                            Uses{" "}
+                            {formatBalance(
+                              activationCost,
+                            )}{" "}
+                            OCH from your connected EVM wallet.
+                            {ownerAllowance <
+                            activationCost
+                              ? " Your wallet may first request OCH authorization, then the activation confirmation."
+                              : " OCH authorization already exists."}
+                          </span>
+
+                        </button>
+
+                      </>
+
+                    )}
+
+                  </div>
+
+                </div>
+
+                {/* PING */}
+
+                <div className="mt-4 border border-[var(--hood-fg)]">
+
+                  <div className="flex items-center justify-between border-b border-[var(--hood-fg)] px-4 py-3">
+
+                    <p className="text-[9px] uppercase tracking-[0.15em]">
+                      Activation Ping
+                    </p>
+
+                    <p className="text-[8px] uppercase opacity-60">
+                      Ping #
+                      {
+                        selectedWallet.tokenId
+                      }
+                    </p>
+
+                  </div>
+
+                  <div className="p-4">
+
+                    {selectedWallet.pingClaimed ? (
+
+                      <div className="bg-[var(--hood-fg)] p-4 text-[var(--hood-bg)]">
+
+                        <p className="text-[10px] uppercase">
+                          ✓ Ping claimed
+                        </p>
+
+                        <p className="mt-2 text-[8px] uppercase opacity-70">
+                          Load inventory below to display it.
+                        </p>
+
+                      </div>
+
+                    ) : selectedWallet.pingCanClaim ? (
+
+                      <button
+                        type="button"
+
+                        disabled={
+                          processing
+                        }
+
+                        onClick={() =>
+                          void claimPing()
+                        }
+
+                        className="w-full bg-[var(--hood-fg)] px-4 py-5 text-[var(--hood-bg)] disabled:opacity-35"
+                      >
+                        <span className="block text-[10px] uppercase">
+                          {txState.action ===
+                          "claim"
+                            ? "Claiming Ping…"
+                            : `Claim Ping #${selectedWallet.tokenId}`}
+                        </span>
+
+                        <span className="mt-2 block text-[7px] uppercase opacity-65">
+                          Sends the matching Ping directly into this HoodWallet
+                        </span>
+
+                      </button>
+
+                    ) : (
+
+                      <p className="text-[9px] uppercase">
+                        {selectedWallet.pingEverActivated
+                          ? "Ping currently unavailable."
+                          : "Activate this HoodWallet to unlock its Ping."}
+                      </p>
+
+                    )}
+
+                  </div>
+
+                </div>
+
+                {/* STATUS */}
+
+                {txState.message && (
+
+                  <div className="mt-4 bg-[var(--hood-fg)] p-4 text-[var(--hood-bg)]">
+
+                    <p className="text-[8px] uppercase leading-relaxed">
+                      {
+                        txState.message
+                      }
+                    </p>
+
+                  </div>
+
+                )}
+
+                {/* TOKEN / ETH SEND */}
+
+                <div className="mt-4 border border-[var(--hood-fg)]">
+
+                  <div className="border-b border-[var(--hood-fg)] px-4 py-3">
+
+                    <p className="text-[9px] uppercase tracking-[0.15em]">
+                      Send funds from HoodWallet
+                    </p>
+
+                  </div>
+
+                  <div className="p-4">
+
+                    {!selectedWallet.active ? (
+
+                      <p className="text-[9px] uppercase">
+                        Activate this HoodWallet before sending.
+                      </p>
+
+                    ) : (
+
+                      <>
+
+                        <label className="text-[7px] uppercase opacity-60">
+                          Trusted asset
+                        </label>
+
+                        <select
+                          value={
+                            sendAssetKey
+                          }
+
+                          onChange={(
+                            event,
+                          ) =>
+                            setSendAssetKey(
+                              event.target.value,
+                            )
+                          }
+
+                          className="mt-2 w-full border border-[var(--hood-fg)] bg-[var(--hood-bg)] p-3 text-[9px] text-[var(--hood-fg)]"
+                        >
+                          {sendableAssets.map(
+                            (
+                              asset,
+                            ) => (
+
+                              <option
+                                key={
+                                  assetKey(
+                                    asset,
+                                  )
+                                }
+
+                                value={
+                                  assetKey(
+                                    asset,
+                                  )
+                                }
+                              >
+                                {
+                                  asset.symbol
+                                }{" "}
+                                —{" "}
+                                {
+                                  asset.balanceFormatted
+                                }
+                              </option>
+
+                            ),
+                          )}
+                        </select>
+
+                        <p className="mt-2 text-[7px] uppercase opacity-55">
+                          Untrusted tokens are never available for sending.
+                        </p>
+
+                        <label className="mt-4 block text-[7px] uppercase opacity-60">
+                          Recipient
+                        </label>
+
+                        <input
+                          value={
+                            sendRecipient
+                          }
+
+                          onChange={(
+                            event,
+                          ) =>
+                            setSendRecipient(
+                              event.target.value,
+                            )
+                          }
+
+                          placeholder="0x..."
+
+                          className="mt-2 w-full border border-[var(--hood-fg)] bg-transparent p-3 text-[9px]"
+                        />
+
+                        <div className="mt-4 flex items-center justify-between">
+
+                          <label className="text-[7px] uppercase opacity-60">
+                            Amount
+                          </label>
+
+                          {selectedSendAsset && (
+
+                            <button
+                              type="button"
+
+                              onClick={() =>
+                                setSendAmount(
+                                  formatUnits(
+                                    selectedSendAsset.balanceRaw,
+
+                                    selectedSendAsset.decimals,
+                                  ),
+                                )
+                              }
+
+                              className="text-[7px] uppercase underline"
+                            >
+                              Max
+                            </button>
+
+                          )}
+
+                        </div>
+
+                        <input
+                          value={
+                            sendAmount
+                          }
+
+                          onChange={(
+                            event,
+                          ) =>
+                            setSendAmount(
+                              event.target.value,
+                            )
+                          }
+
+                          inputMode="decimal"
+
+                          placeholder="0.0"
+
+                          className="mt-2 w-full border border-[var(--hood-fg)] bg-transparent p-3 text-[9px]"
+                        />
+
+                        <button
+                          type="button"
+
+                          disabled={
+                            processing ||
+                            !sendRecipient ||
+                            !sendAmount
+                          }
+
+                          onClick={() =>
+                            void sendFromWallet()
+                          }
+
+                          className="mt-4 w-full bg-[var(--hood-fg)] px-4 py-4 text-[9px] uppercase text-[var(--hood-bg)] disabled:opacity-30"
+                        >
+                          {txState.action ===
+                          "send"
+                            ? "Sending…"
+                            : "Send from HoodWallet"}
+                        </button>
+
+                      </>
+
+                    )}
+
+                  </div>
+
+                </div>
+
+                {/* MANUAL INVENTORY */}
+
+                <div className="mt-4 border border-[var(--hood-fg)]">
+
+                  <div className="border-b border-[var(--hood-fg)] px-4 py-3">
+
+                    <div className="flex items-center justify-between">
+
+                      <p className="text-[9px] uppercase tracking-[0.15em]">
+                        Token + NFT Inventory
+                      </p>
+
+                      <p className="text-[7px] uppercase opacity-55">
+                        Manual only
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                  <div className="p-4">
+
+                    <button
+                      type="button"
+
+                      disabled={
+                        inventoryLoading
+                      }
+
+                      onClick={() =>
+                        void loadInventory()
+                      }
+
+                      className="w-full border border-[var(--hood-fg)] px-4 py-5 text-[9px] uppercase tracking-[0.14em] disabled:opacity-35"
+                    >
+                      {inventoryLoading
+                        ? "Loading selected HoodWallet inventory…"
+                        : inventoryLoaded
+                          ? "Refresh token + NFT inventory"
+                          : "Load token + NFT inventory"}
+                    </button>
+
+                    <p className="mt-3 text-[7px] uppercase leading-relaxed opacity-55">
+                      Only this selected HoodWallet is scanned.
+                    </p>
+
+                    {inventoryLoaded && (
+
+                      <>
+
+                        {/* FILTER */}
+
+                        <div className="mt-4 grid grid-cols-2 border border-[var(--hood-fg)]">
+
+                          <button
+                            type="button"
+
+                            onClick={() =>
+                              setTrustedOnly(
+                                true,
+                              )
+                            }
+
+                            className={`p-3 text-[8px] uppercase ${
+                              trustedOnly
+                                ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                                : ""
+                            }`}
+                          >
+                            Trusted
+                          </button>
+
+                          <button
+                            type="button"
+
+                            onClick={() =>
+                              setTrustedOnly(
+                                false,
+                              )
+                            }
+
+                            className={`border-l border-[var(--hood-fg)] p-3 text-[8px] uppercase ${
+                              !trustedOnly
+                                ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                                : ""
+                            }`}
+                          >
+                            All
+                          </button>
+
+                        </div>
+
+                        {/* ADDITIONAL TOKENS */}
+
+                        <div className="mt-5">
+
+                          <p className="text-[8px] uppercase tracking-[0.14em]">
+                            Additional tokens
+                          </p>
+
+                          {visibleInventoryAssets.length ===
+                          0 ? (
+
+                            <p className="mt-3 text-[8px] uppercase opacity-50">
+                              No additional token balances.
+                            </p>
+
+                          ) : (
+
+                            <div className="mt-2 border border-[var(--hood-fg)]">
+
+                              {visibleInventoryAssets.map(
+                                (
+                                  asset,
+                                ) => (
+
+                                  <div
+                                    key={
+                                      assetKey(
+                                        asset,
+                                      )
+                                    }
+
+                                    className="flex items-center justify-between border-b border-[var(--hood-fg)] p-3 last:border-b-0"
+                                  >
+
+                                    <div>
+
+                                      <p className="text-[9px] uppercase">
+                                        {
+                                          asset.symbol
+                                        }
+                                      </p>
+
+                                      {asset.trusted ? (
+
+                                        <p className="mt-1 text-[6px] uppercase opacity-50">
+                                          Trusted
+                                        </p>
+
+                                      ) : (
+
+                                        <>
+
+                                          <p className="mt-1 text-[6px] uppercase opacity-50">
+                                            Untrusted · sending disabled
+                                          </p>
+
+                                          {asset.contract && (
+
+                                            <a
+                                              href={
+                                                explorerToken(
+                                                  asset.contract,
+                                                )
+                                              }
+
+                                              target="_blank"
+
+                                              rel="noreferrer"
+
+                                              className="text-[6px] underline opacity-45"
+                                            >
+                                              Contract ↗
+                                            </a>
+
+                                          )}
+
+                                        </>
+
+                                      )}
+
+                                    </div>
+
+                                    <p className="text-xl">
+                                      {
+                                        asset.balanceFormatted
+                                      }
+                                    </p>
+
+                                  </div>
+
+                                ),
+                              )}
+
+                            </div>
+
+                          )}
+
+                        </div>
+
+                        {/* NFT INVENTORY */}
+
+                        <div className="mt-6">
+
+                          <div className="flex items-center justify-between">
+
+                            <p className="text-[8px] uppercase tracking-[0.14em]">
+                              NFT Inventory
+                            </p>
+
+                            <p className="text-[7px] uppercase opacity-50">
+                              {
+                                visibleInventoryNfts.length
+                              }{" "}
+                              item
+                              {visibleInventoryNfts.length ===
+                              1
+                                ? ""
+                                : "s"}
+                            </p>
+
+                          </div>
+
+                          {visibleInventoryNfts.length ===
+                          0 ? (
+
+                            <p className="mt-3 text-[8px] uppercase opacity-50">
+                              No visible NFTs found.
+                            </p>
+
+                          ) : (
+
+                            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+
+                              {visibleInventoryNfts.map(
+                                (
+                                  nft,
+                                ) => (
+
+                                  <article
+                                    key={`${nft.contract}-${nft.tokenId}`}
+
+                                    className="border border-[var(--hood-fg)]"
+                                  >
+
+                                    <div className="aspect-square">
+
+                                      <NftArtwork
+                                        nft={
+                                          nft
+                                        }
+                                      />
+
+                                    </div>
+
+                                    <div className="border-t border-[var(--hood-fg)] p-3">
+
+                                      <p className="text-[7px] uppercase opacity-55">
+                                        {
+                                          nft.collectionName
+                                        }
+                                      </p>
+
+                                      <p className="mt-1 text-[10px] uppercase">
+                                        {
+                                          nft.name
+                                        }
+                                      </p>
+
+                                      <p className="mt-2 text-[7px] uppercase opacity-50">
+                                        #
+                                        {
+                                          nft.tokenId
+                                        }
+                                      </p>
+
+                                      {nft.trusted ? (
+
+                                        <button
+                                          type="button"
+
+                                          disabled={
+                                            !selectedWallet.active ||
+                                            processing
+                                          }
+
+                                          onClick={() => {
+                                            setSelectedNftToSend(
+                                              nft,
+                                            );
+
+                                            setNftRecipient(
+                                              "",
+                                            );
+
+                                            setNftAmount(
+                                              "1",
+                                            );
+                                          }}
+
+                                          className="mt-3 w-full border border-[var(--hood-fg)] px-2 py-2 text-[7px] uppercase tracking-[0.12em] disabled:opacity-30"
+                                        >
+                                          Send NFT
+                                        </button>
+
+                                      ) : (
+
+                                        <div className="mt-3 border border-[var(--hood-fg)] px-2 py-2">
+
+                                          <p className="text-[6px] uppercase leading-relaxed opacity-60">
+                                            Untrusted NFT
+                                            <br />
+                                            Sending disabled
+                                          </p>
+
+                                        </div>
+
+                                      )}
+
+                                    </div>
+
+                                  </article>
+
+                                ),
+                              )}
+
+                            </div>
+
+                          )}
+
+                        </div>
+
+                        {/* NFT SEND PANEL */}
+
+                        {selectedNftToSend && (
+
+                          <div className="mt-6 border border-[var(--hood-fg)]">
+
+                            <div className="flex items-center justify-between border-b border-[var(--hood-fg)] px-4 py-3">
+
+                              <div>
+
+                                <p className="text-[7px] uppercase opacity-55">
+                                  Send NFT
+                                </p>
+
+                                <p className="mt-1 text-[11px] uppercase">
+                                  {
+                                    selectedNftToSend.name
+                                  }
+                                </p>
+
+                              </div>
+
+                              <button
+                                type="button"
+
+                                onClick={() =>
+                                  setSelectedNftToSend(
+                                    null,
+                                  )
+                                }
+
+                                className="text-[8px] uppercase underline"
+                              >
+                                Cancel
+                              </button>
+
+                            </div>
+
+                            <div className="p-4">
+
+                              <div className="grid gap-2 sm:grid-cols-2">
+
+                                <div className="border border-[var(--hood-fg)] p-3">
+
+                                  <p className="text-[7px] uppercase opacity-55">
+                                    Collection
+                                  </p>
+
+                                  <p className="mt-2 text-[9px] uppercase">
+                                    {
+                                      selectedNftToSend.collectionName
+                                    }
+                                  </p>
+
+                                </div>
+
+                                <div className="border border-[var(--hood-fg)] p-3">
+
+                                  <p className="text-[7px] uppercase opacity-55">
+                                    Token ID
+                                  </p>
+
+                                  <p className="mt-2 text-[9px] uppercase">
+                                    #
+                                    {
+                                      selectedNftToSend.tokenId
+                                    }
+                                  </p>
+
+                                </div>
+
+                              </div>
+
+                              <label className="mt-4 block text-[7px] uppercase opacity-60">
+                                Recipient
+                              </label>
+
+                              <input
+                                type="text"
+
+                                spellCheck={
+                                  false
+                                }
+
+                                value={
+                                  nftRecipient
+                                }
+
+                                onChange={(
+                                  event,
+                                ) =>
+                                  setNftRecipient(
+                                    event.target.value,
+                                  )
+                                }
+
+                                placeholder="0x..."
+
+                                className="mt-2 w-full border border-[var(--hood-fg)] bg-transparent p-3 text-[9px]"
+                              />
+
+                              {selectedNftToSend.kind ===
+                                "erc1155" && (
+
+                                <>
+
+                                  <div className="mt-4 flex items-center justify-between">
+
+                                    <label className="text-[7px] uppercase opacity-60">
+                                      Amount
+                                    </label>
+
+                                    <p className="text-[7px] uppercase opacity-55">
+                                      Available:{" "}
+                                      {
+                                        selectedNftToSend.balance
+                                      }
+                                    </p>
+
+                                  </div>
+
+                                  <input
+                                    type="number"
+
+                                    min="1"
+
+                                    step="1"
+
+                                    value={
+                                      nftAmount
+                                    }
+
+                                    onChange={(
+                                      event,
+                                    ) =>
+                                      setNftAmount(
+                                        event.target.value,
+                                      )
+                                    }
+
+                                    className="mt-2 w-full border border-[var(--hood-fg)] bg-transparent p-3 text-[9px]"
+                                  />
+
+                                </>
+
+                              )}
+
+                              <button
+                                type="button"
+
+                                disabled={
+                                  processing ||
+                                  !nftRecipient
+                                }
+
+                                onClick={() =>
+                                  void sendNftFromWallet()
+                                }
+
+                                className="mt-4 w-full bg-[var(--hood-fg)] px-4 py-5 text-[var(--hood-bg)] disabled:opacity-30"
+                              >
+
+                                <span className="block text-[9px] uppercase tracking-[0.14em]">
+                                  {txState.action ===
+                                  "send-nft"
+                                    ? "Sending NFT…"
+                                    : "Send NFT from HoodWallet"}
+                                </span>
+
+                                <span className="mt-2 block text-[7px] uppercase opacity-65">
+                                  {
+                                    selectedNftToSend.collectionName
+                                  }{" "}
+                                  #
+                                  {
+                                    selectedNftToSend.tokenId
+                                  }
+                                </span>
+
+                              </button>
+
+                              <p className="mt-3 text-[7px] uppercase leading-relaxed opacity-55">
+                                Only trusted NFT contracts can be transferred through this interface.
+                              </p>
+
+                            </div>
+
+                          </div>
+
+                        )}
+
+                      </>
+
+                    )}
+
+                  </div>
+
+                </div>
+
               </>
-            )}
-          </div>
+
+            ) : null}
+
+          </section>
+
         </div>
+
       </section>
 
       <SiteFooter />
+
     </main>
   );
 }
