@@ -1,6 +1,11 @@
 {
   "erc20": [
     {
+      "contract": "0x8BDD5adFF8A9D08372323d5BAF5e8e52605AF983",
+      "name": "OnChainHoodies",
+      "symbol": "OCH"
+    },
+    {
       "contract": "0x6e9aCBFbdD8b57649ffeAcEa4D26A81aE1395367",
       "name": "Absolute Goat",
       "symbol": "GOAT"
@@ -12,6 +17,10 @@
     }
   ],
   "nfts": [
+    {
+      "contract": "0xc7fe67AC39a6EDD78d5B842c6f42e11Da37eb17D",
+      "name": "Ping"
+    },
     {
       "contract": "0x9ec6c5b9f572a9b02138e553bc5f5882da735f45",
       "name": "OnChainHoodies"
