@@ -162,7 +162,7 @@ const faqs = [
   {
     question: "What is $OCH?",
     answer:
-      "$OCH is the fixed-supply currency of the Hood. It powers participation across the OnChainHoodies ecosystem and is used to activate HoodWallets. Season 01 participation is complete and the first $OCH distribution is being prepared. No $OCH contract has been deployed yet, so beware of fake tokens and links.",
+      "$OCH is the fixed-supply currency of the Hood. It powers participation across the OnChainHoodies ecosystem and is used to activate HoodWallets. The official $OCH contract is deployed on Robinhood Chain and Season 01 distribution is being prepared.",
     href: "/och",
     linkLabel: "Explore the Hood Economy",
   },
@@ -190,12 +190,62 @@ const faqs = [
 ];
 
 const contracts = [
-  { label: "Collection", address: siteConfig.collectionAddress },
-  { label: "Renderer", address: siteConfig.rendererAddress },
-  { label: "Pixel Data", address: siteConfig.pixelDataAddress },
-  { label: "Hood Talk", address: siteConfig.hoodTalkRegistryAddress },
-  { label: "HoodOS", address: siteConfig.hoodOSAddress },
-  { label: "HoodWallet", address: siteConfig.hoodWalletAddress },
+  {
+    label: "Collection",
+    address: siteConfig.collectionAddress,
+  },
+  {
+    label: "Renderer",
+    address: siteConfig.rendererAddress,
+  },
+  {
+    label: "Pixel Data",
+    address: siteConfig.pixelDataAddress,
+  },
+  {
+    label: "Hood Talk",
+    address: siteConfig.hoodTalkRegistryAddress,
+  },
+  {
+    label: "HoodOS",
+    address: siteConfig.hoodOSAddress,
+  },
+  {
+    label: "HoodWallet",
+    address: siteConfig.hoodWalletAddress,
+  },
+  {
+    label: "Ping",
+    address: siteConfig.pingAddress,
+  },
+  {
+    label: "Ping Rewards",
+    address: siteConfig.pingRewardVaultAddress,
+  },
+  {
+    label: "Hood Delegation",
+    address: siteConfig.hoodDelegationAddress,
+  },
+  {
+    label: "Treasury Vault",
+    address: siteConfig.treasuryVaultAddress,
+  },
+  {
+    label: "$OCH",
+    address: siteConfig.ochAddress,
+  },
+  {
+    label: "Allocation Vault",
+    address: siteConfig.ochAllocationVaultAddress,
+  },
+  {
+    label: "Team Vesting",
+    address: siteConfig.ochTeamVestingAddress,
+  },
+  {
+    label: "Liquidity Locker",
+    address: siteConfig.ochLiquidityLockerAddress,
+  },
 ];
 
 const metricLabels: Record<MarketMetric, string> = {
@@ -325,73 +375,6 @@ function normalizeMarketSummary(value: unknown): MarketSummary {
       ]),
     ),
   };
-}
-
-function collectArrays(value: unknown, output: unknown[][] = []): unknown[][] {
-  if (Array.isArray(value)) {
-    output.push(value);
-
-    for (const item of value) {
-      collectArrays(item, output);
-    }
-
-    return output;
-  }
-
-  if (isRecord(value)) {
-    for (const nested of Object.values(value)) {
-      collectArrays(nested, output);
-    }
-  }
-
-  return output;
-}
-
-function timestampFrom(record: UnknownRecord): number | null {
-  const raw = findValue(record, [
-    ["timestamp"],
-    ["time"],
-    ["date"],
-    ["createdAt"],
-    ["created_at"],
-    ["eventTimestamp"],
-    ["event_timestamp"],
-    ["blockTimestamp"],
-  ]);
-
-  if (typeof raw === "number") {
-    return raw > 10_000_000_000 ? raw : raw * 1000;
-  }
-
-  if (typeof raw === "string") {
-    const numeric = Number(raw);
-
-    if (Number.isFinite(numeric)) {
-      return numeric > 10_000_000_000 ? numeric : numeric * 1000;
-    }
-
-    const parsed = Date.parse(raw);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-}
-
-function priceFromRecord(record: UnknownRecord): number | null {
-  return numberFrom(
-    findValue(record, [
-      ["floor"],
-      ["floorPrice"],
-      ["floor_price"],
-      ["price"],
-      ["payment", "quantity"],
-      ["payment", "amount"],
-      ["payment", "value"],
-      ["salePrice"],
-      ["sale_price"],
-      ["value"],
-    ]),
-  );
 }
 
 function normalizeHistory(value: unknown): ChartPoint[] {
@@ -541,6 +524,7 @@ function MarketChart({
   const values = visiblePoints.map(getValue);
   const rawMaximum = Math.max(...values, 0);
   const positiveValues = values.filter((value) => value > 0);
+
   const rawMinimum =
     metric === "floor" || metric === "holders"
       ? Math.min(...positiveValues, rawMaximum || 0)
@@ -595,6 +579,7 @@ function MarketChart({
 
   const barSlot =
     visiblePoints.length > 0 ? chartWidth / visiblePoints.length : chartWidth;
+
   const barWidth = Math.max(12, Math.min(86, barSlot * 0.58));
 
   const formatAxisValue = (value: number) => {
@@ -614,6 +599,7 @@ function MarketChart({
               ? "Holder history starts now"
               : "Market history is loading"}
           </p>
+
           <p className="mt-3 max-w-md text-xs leading-relaxed opacity-60">
             {metric === "holders"
               ? "Historical owner counts cannot be reconstructed reliably. The hourly recorder is now building this chart forward."
@@ -648,6 +634,7 @@ function MarketChart({
                 strokeOpacity="0.16"
                 strokeWidth="1"
               />
+
               <text
                 x={paddingLeft - 12}
                 y={y + 4}
@@ -682,6 +669,7 @@ function MarketChart({
                     {metric === "sales" ? " sales" : " ETH"}
                   </title>
                 </rect>
+
                 <rect
                   x={x - barWidth / 2}
                   y={baseline - renderedHeight}
@@ -758,9 +746,11 @@ export default function Home() {
   const [neighbors, setNeighbors] = useState<
     Partial<Record<NeighborName, NeighborToken>>
   >({});
+
   const [loadingNeighbors, setLoadingNeighbors] = useState<
     Partial<Record<NeighborName, boolean>>
   >({});
+
   const [marketSummary, setMarketSummary] = useState<MarketSummary>({
     floor: null,
     floorCurrency: "ETH",
@@ -770,29 +760,47 @@ export default function Home() {
     totalVolume: null,
     totalSales: null,
   });
+
   const [marketPoints, setMarketPoints] = useState<ChartPoint[]>([]);
+
   const [marketMetric, setMarketMetric] =
     useState<MarketMetric>("floor");
-  const [marketRange, setMarketRange] = useState<MarketRange>("30D");
-  const [marketLoading, setMarketLoading] = useState(true);
-  const [marketError, setMarketError] = useState(false);
+
+  const [marketRange, setMarketRange] =
+    useState<MarketRange>("30D");
+
+  const [marketLoading, setMarketLoading] =
+    useState(true);
+
+  const [marketError, setMarketError] =
+    useState(false);
 
   const refreshNeighbor = useCallback(
-    async (hoodie: NeighborName, signal?: AbortSignal) => {
+    async (
+      hoodie: NeighborName,
+      signal?: AbortSignal,
+    ) => {
       setLoadingNeighbors((current) => ({
         ...current,
         [hoodie]: true,
       }));
 
       try {
-        const nextNeighbor = await fetchRandomNeighbor(hoodie, signal);
+        const nextNeighbor =
+          await fetchRandomNeighbor(
+            hoodie,
+            signal,
+          );
 
         setNeighbors((current) => ({
           ...current,
           [hoodie]: nextNeighbor,
         }));
       } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
+        if (
+          error instanceof DOMException &&
+          error.name === "AbortError"
+        ) {
           return;
         }
 
@@ -814,7 +822,10 @@ export default function Home() {
 
     void Promise.all(
       neighborTypes.map((hoodie) =>
-        refreshNeighbor(hoodie, controller.signal),
+        refreshNeighbor(
+          hoodie,
+          controller.signal,
+        ),
       ),
     );
 
@@ -829,14 +840,24 @@ export default function Home() {
       setMarketError(false);
 
       const historyRange =
-        marketRange === "7D" ? "7d" : marketRange === "30D" ? "30d" : "all";
+        marketRange === "7D"
+          ? "7d"
+          : marketRange === "30D"
+            ? "30d"
+            : "all";
 
       try {
-        const [summaryResponse, historyResponse] = await Promise.all([
-          fetch(`${API_BASE}/v1/market/collection`, {
-            signal: controller.signal,
-            cache: "no-store",
-          }),
+        const [
+          summaryResponse,
+          historyResponse,
+        ] = await Promise.all([
+          fetch(
+            `${API_BASE}/v1/market/collection`,
+            {
+              signal: controller.signal,
+              cache: "no-store",
+            },
+          ),
           fetch(
             `${API_BASE}/v1/market/history?range=${historyRange}`,
             {
@@ -847,15 +868,25 @@ export default function Home() {
         ]);
 
         if (!summaryResponse.ok) {
-          throw new Error("Market summary unavailable.");
+          throw new Error(
+            "Market summary unavailable.",
+          );
         }
 
-        const summaryJson: unknown = await summaryResponse.json();
-        setMarketSummary(normalizeMarketSummary(summaryJson));
+        const summaryJson: unknown =
+          await summaryResponse.json();
+
+        setMarketSummary(
+          normalizeMarketSummary(summaryJson),
+        );
 
         if (historyResponse.ok) {
-          const historyJson: unknown = await historyResponse.json();
-          setMarketPoints(normalizeHistory(historyJson));
+          const historyJson: unknown =
+            await historyResponse.json();
+
+          setMarketPoints(
+            normalizeHistory(historyJson),
+          );
         } else {
           setMarketPoints([]);
         }
@@ -881,48 +912,83 @@ export default function Home() {
     return () => controller.abort();
   }, [marketRange]);
 
-
-
   const activePoints = useMemo(() => {
-    if (marketPoints.length <= 60) return marketPoints;
+    if (marketPoints.length <= 60) {
+      return marketPoints;
+    }
 
-    const step = Math.ceil(marketPoints.length / 60);
+    const step = Math.ceil(
+      marketPoints.length / 60,
+    );
+
     return marketPoints.filter(
-      (_, index) => index % step === 0 || index === marketPoints.length - 1,
+      (_, index) =>
+        index % step === 0 ||
+        index === marketPoints.length - 1,
     );
   }, [marketPoints]);
 
   const selectedMarketStats = useMemo(() => {
     const latestFloor =
-      [...activePoints].reverse().find((point) => point.floor > 0)?.floor ??
+      [...activePoints]
+        .reverse()
+        .find(
+          (point) =>
+            point.floor > 0,
+        )?.floor ??
       marketSummary.floor;
 
     const latestOwners =
-      [...activePoints].reverse().find((point) => point.owners !== null)
-        ?.owners ?? marketSummary.owners;
+      [...activePoints]
+        .reverse()
+        .find(
+          (point) =>
+            point.owners !== null,
+        )?.owners ??
+      marketSummary.owners;
 
-    const totalSales = activePoints.reduce(
-      (sum, point) => sum + point.sales,
-      0,
-    );
-    const totalVolume = activePoints.reduce(
-      (sum, point) => sum + point.volume,
-      0,
-    );
-    const totalBuyers = activePoints.reduce(
-      (sum, point) => sum + (point.buyers ?? 0),
-      0,
-    );
-    const totalSellers = activePoints.reduce(
-      (sum, point) => sum + (point.sellers ?? 0),
-      0,
-    );
+    const totalSales =
+      activePoints.reduce(
+        (sum, point) =>
+          sum + point.sales,
+        0,
+      );
+
+    const totalVolume =
+      activePoints.reduce(
+        (sum, point) =>
+          sum + point.volume,
+        0,
+      );
+
+    const totalBuyers =
+      activePoints.reduce(
+        (sum, point) =>
+          sum +
+          (point.buyers ?? 0),
+        0,
+      );
+
+    const totalSellers =
+      activePoints.reduce(
+        (sum, point) =>
+          sum +
+          (point.sellers ?? 0),
+        0,
+      );
+
     const highestSale = Math.max(
-      ...activePoints.map((point) => point.highestSale ?? 0),
+      ...activePoints.map(
+        (point) =>
+          point.highestSale ?? 0,
+      ),
       0,
     );
+
     const weightedAverageSale =
-      totalSales > 0 ? totalVolume / totalSales : null;
+      totalSales > 0
+        ? totalVolume / totalSales
+        : null;
 
     return {
       latestFloor,
@@ -934,7 +1000,11 @@ export default function Home() {
       highestSale,
       weightedAverageSale,
     };
-  }, [activePoints, marketSummary.floor, marketSummary.owners]);
+  }, [
+    activePoints,
+    marketSummary.floor,
+    marketSummary.owners,
+  ]);
 
   const selectedMetricValue =
     marketMetric === "floor"
@@ -967,9 +1037,13 @@ export default function Home() {
         </p>
 
         <div className="mt-10 flex flex-wrap justify-center gap-3">
-          <a href="#builds" className="pixel-cta">
+          <a
+            href="#builds"
+            className="pixel-cta"
+          >
             Explore the builds
           </a>
+
           <a
             href={siteConfig.openSeaUrl}
             target="_blank"
@@ -997,7 +1071,10 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="collection" className="bg-black px-6 py-24 text-[#ccff00]">
+      <section
+        id="collection"
+        className="bg-black px-6 py-24 text-[#ccff00]"
+      >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
             <p>01 / Collection</p>
@@ -1013,9 +1090,10 @@ export default function Home() {
               </h2>
 
               <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-80 md:text-xl">
-                Builders, Collectors, Flippers and HODLers. Familiar faces from
-                the on-chain world, hand-drawn in 1-bit and stored fully
-                on-chain.
+                Builders, Collectors, Flippers and
+                HODLers. Familiar faces from the
+                on-chain world, hand-drawn in 1-bit
+                and stored fully on-chain.
               </p>
 
               <p className="mt-5 text-[10px] uppercase tracking-[0.16em] opacity-60">
@@ -1025,18 +1103,31 @@ export default function Home() {
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               {neighborTypes.map((hoodie) => {
-                const neighbor = neighbors[hoodie];
-                const isLoading = loadingNeighbors[hoodie] ?? false;
-                const image = neighbor?.image ?? neighborFallbacks[hoodie];
-                const tokenLabel = neighbor
-                  ? `#${neighbor.tokenId}`
-                  : "Loading";
+                const neighbor =
+                  neighbors[hoodie];
+
+                const isLoading =
+                  loadingNeighbors[hoodie] ??
+                  false;
+
+                const image =
+                  neighbor?.image ??
+                  neighborFallbacks[hoodie];
+
+                const tokenLabel =
+                  neighbor
+                    ? `#${neighbor.tokenId}`
+                    : "Loading";
 
                 return (
                   <button
                     key={hoodie}
                     type="button"
-                    onClick={() => void refreshNeighbor(hoodie)}
+                    onClick={() =>
+                      void refreshNeighbor(
+                        hoodie,
+                      )
+                    }
                     disabled={isLoading}
                     aria-label={`Load another ${hoodie} Hoodie`}
                     className="border-2 border-[#ccff00] text-left disabled:cursor-wait disabled:opacity-70"
@@ -1054,7 +1145,9 @@ export default function Home() {
 
                     <div className="flex items-center justify-between gap-2 border-t-2 border-[#ccff00] p-3 text-[10px] uppercase tracking-[0.14em]">
                       <span>{hoodie}</span>
-                      <span className="opacity-60">{tokenLabel}</span>
+                      <span className="opacity-60">
+                        {tokenLabel}
+                      </span>
                     </div>
                   </button>
                 );
@@ -1064,7 +1157,10 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="market" className="bg-[#ccff00] px-6 py-24 text-black">
+      <section
+        id="market"
+        className="bg-[#ccff00] px-6 py-24 text-black"
+      >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
             <p>02 / Market</p>
@@ -1080,8 +1176,9 @@ export default function Home() {
               </h2>
 
               <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-75 md:text-xl">
-                Follow floor, sales and volume directly from the
-                OnChainHoodies market layer.
+                Follow floor, sales and volume
+                directly from the OnChainHoodies
+                market layer.
               </p>
 
               <div className="mt-9 grid grid-cols-2 border-l-2 border-t-2 border-black">
@@ -1090,7 +1187,10 @@ export default function Home() {
                     label: "Floor",
                     value: marketLoading
                       ? "..."
-                      : `${compactNumber(marketSummary.floor, 4)} ${
+                      : `${compactNumber(
+                          marketSummary.floor,
+                          4,
+                        )} ${
                           marketSummary.floorCurrency
                         }`,
                   },
@@ -1098,7 +1198,10 @@ export default function Home() {
                     label: "Best offer",
                     value: marketLoading
                       ? "..."
-                      : `${compactNumber(marketSummary.bestOffer, 4)} ${
+                      : `${compactNumber(
+                          marketSummary.bestOffer,
+                          4,
+                        )} ${
                           marketSummary.bestOfferCurrency
                         }`,
                   },
@@ -1106,7 +1209,10 @@ export default function Home() {
                     label: "Owners",
                     value: marketLoading
                       ? "..."
-                      : compactNumber(marketSummary.owners, 0),
+                      : compactNumber(
+                          marketSummary.owners,
+                          0,
+                        ),
                   },
                   {
                     label: "Total volume",
@@ -1125,6 +1231,7 @@ export default function Home() {
                     <p className="text-[8px] uppercase tracking-[0.15em] opacity-55">
                       {stat.label}
                     </p>
+
                     <p className="mt-3 text-xl leading-none">
                       {stat.value}
                     </p>
@@ -1146,12 +1253,19 @@ export default function Home() {
               <div className="flex flex-col gap-3 border-2 border-black bg-black p-3 text-[#ccff00] md:flex-row md:items-center md:justify-between">
                 <div className="flex flex-wrap">
                   {(
-                    ["floor", "sales", "volume", "holders"] as MarketMetric[]
+                    [
+                      "floor",
+                      "sales",
+                      "volume",
+                      "holders",
+                    ] as MarketMetric[]
                   ).map((metric) => (
                     <button
                       key={metric}
                       type="button"
-                      onClick={() => setMarketMetric(metric)}
+                      onClick={() =>
+                        setMarketMetric(metric)
+                      }
                       className={`border border-[#ccff00] px-4 py-3 text-[9px] uppercase tracking-[0.14em] ${
                         marketMetric === metric
                           ? "bg-[#ccff00] text-black"
@@ -1164,22 +1278,28 @@ export default function Home() {
                 </div>
 
                 <div className="flex">
-                  {(["7D", "30D", "ALL"] as MarketRange[]).map(
-                    (range) => (
-                      <button
-                        key={range}
-                        type="button"
-                        onClick={() => setMarketRange(range)}
-                        className={`border border-[#ccff00] px-4 py-3 text-[9px] uppercase tracking-[0.14em] ${
-                          marketRange === range
-                            ? "bg-[#ccff00] text-black"
-                            : ""
-                        }`}
-                      >
-                        {range}
-                      </button>
-                    ),
-                  )}
+                  {(
+                    [
+                      "7D",
+                      "30D",
+                      "ALL",
+                    ] as MarketRange[]
+                  ).map((range) => (
+                    <button
+                      key={range}
+                      type="button"
+                      onClick={() =>
+                        setMarketRange(range)
+                      }
+                      className={`border border-[#ccff00] px-4 py-3 text-[9px] uppercase tracking-[0.14em] ${
+                        marketRange === range
+                          ? "bg-[#ccff00] text-black"
+                          : ""
+                      }`}
+                    >
+                      {range}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -1187,20 +1307,29 @@ export default function Home() {
                 <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
                   <div>
                     <p className="text-[8px] uppercase tracking-[0.16em] opacity-55">
-                      {metricLabels[marketMetric]} · {marketRange} ·{" "}
-                      {marketMetric === "sales" || marketMetric === "volume"
+                      {metricLabels[marketMetric]} ·{" "}
+                      {marketRange} ·{" "}
+                      {marketMetric === "sales" ||
+                      marketMetric === "volume"
                         ? "Period total"
                         : "Latest"}
                     </p>
+
                     <p className="mt-2 text-4xl leading-none tracking-[-0.05em]">
                       {marketLoading
                         ? "..."
                         : compactNumber(
                             selectedMetricValue,
-                            marketMetric === "floor" ? 4 : 2,
+                            marketMetric ===
+                              "floor"
+                              ? 4
+                              : 2,
                           )}
+
                       {!marketLoading &&
-                      (marketMetric === "floor" || marketMetric === "volume")
+                      (marketMetric === "floor" ||
+                        marketMetric ===
+                          "volume")
                         ? " ETH"
                         : ""}
                     </p>
@@ -1212,44 +1341,67 @@ export default function Home() {
                 </div>
 
                 {(marketMetric === "floor" ||
-                  marketMetric === "holders") &&
+                  marketMetric ===
+                    "holders") &&
                 activePoints.length > 0 ? (
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border border-[#ccff00] px-3 py-3 text-[8px] uppercase tracking-[0.13em]">
                     <span className="opacity-55">
                       Auto-zoomed to visible range
                     </span>
+
                     <span>
                       {marketMetric === "floor"
                         ? `${compactNumber(
                             Math.min(
                               ...activePoints
-                                .map((point) => point.floor)
-                                .filter((value) => value > 0),
+                                .map(
+                                  (point) =>
+                                    point.floor,
+                                )
+                                .filter(
+                                  (value) =>
+                                    value > 0,
+                                ),
                             ),
                             4,
                           )} — ${compactNumber(
                             Math.max(
-                              ...activePoints.map((point) => point.floor),
+                              ...activePoints.map(
+                                (point) =>
+                                  point.floor,
+                              ),
                             ),
                             4,
                           )} ETH`
                         : `${compactNumber(
                             Math.min(
                               ...activePoints
-                                .map((point) => point.owners)
+                                .map(
+                                  (point) =>
+                                    point.owners,
+                                )
                                 .filter(
-                                  (value): value is number =>
-                                    value !== null,
+                                  (
+                                    value,
+                                  ): value is number =>
+                                    value !==
+                                    null,
                                 ),
                             ),
                             0,
                           )} — ${compactNumber(
                             Math.max(
                               ...activePoints
-                                .map((point) => point.owners)
+                                .map(
+                                  (point) =>
+                                    point.owners,
+                                )
                                 .filter(
-                                  (value): value is number =>
-                                    value !== null,
+                                  (
+                                    value,
+                                  ): value is number =>
+                                    value !==
+                                    null,
                                 ),
                             ),
                             0,
@@ -1263,7 +1415,8 @@ export default function Home() {
                     {
                       label: "Average sale",
                       value:
-                        selectedMarketStats.weightedAverageSale === null
+                        selectedMarketStats.weightedAverageSale ===
+                        null
                           ? "—"
                           : `${compactNumber(
                               selectedMarketStats.weightedAverageSale,
@@ -1299,23 +1452,33 @@ export default function Home() {
                       <p className="text-[7px] uppercase tracking-[0.14em] opacity-50">
                         {item.label}
                       </p>
-                      <p className="mt-2 text-sm">{item.value}</p>
+
+                      <p className="mt-2 text-sm">
+                        {item.value}
+                      </p>
                     </div>
                   ))}
                 </div>
 
-                {marketMetric === "holders" &&
-                activePoints.every((point) => point.owners === null) ? (
+                {marketMetric ===
+                  "holders" &&
+                activePoints.every(
+                  (point) =>
+                    point.owners === null,
+                ) ? (
                   <p className="mb-4 border border-[#ccff00] p-3 text-[8px] uppercase leading-relaxed tracking-[0.12em] opacity-60">
-                    Holder history is recorded from API v1.5 onward. Earlier
-                    daily owner counts are intentionally left blank rather
+                    Holder history is recorded
+                    from API v1.5 onward. Earlier
+                    daily owner counts are
+                    intentionally left blank rather
                     than estimated.
                   </p>
                 ) : null}
 
                 {marketError ? (
                   <div className="grid min-h-[390px] place-items-center border-2 border-[#ccff00] p-8 text-center">
-                    Market data is temporarily unavailable.
+                    Market data is temporarily
+                    unavailable.
                   </div>
                 ) : (
                   <MarketChart
@@ -1329,7 +1492,10 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="och" className="bg-black px-6 py-24 text-[#ccff00]">
+      <section
+        id="och"
+        className="bg-black px-6 py-24 text-[#ccff00]"
+      >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
             <p>03 / The Hood Economy</p>
@@ -1355,8 +1521,10 @@ export default function Home() {
               </h2>
 
               <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-75 md:text-xl">
-                A fixed-supply ERC-20 powering participation, HoodWallet
-                activation and the wider OnChainHoodies ecosystem.
+                A fixed-supply ERC-20 powering
+                participation, HoodWallet activation
+                and the wider OnChainHoodies
+                ecosystem.
               </p>
 
               <div className="mt-8 grid max-w-xl grid-cols-2 border-l border-t border-[#ccff00] text-[9px] uppercase tracking-[0.14em] sm:grid-cols-4">
@@ -1370,8 +1538,13 @@ export default function Home() {
                     key={label}
                     className="border-b border-r border-[#ccff00] p-3"
                   >
-                    <p className="opacity-50">{label}</p>
-                    <p className="mt-2 text-base tracking-normal">{value}</p>
+                    <p className="opacity-50">
+                      {label}
+                    </p>
+
+                    <p className="mt-2 text-base tracking-normal">
+                      {value}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -1404,28 +1577,63 @@ export default function Home() {
 
                   <g transform="rotate(-90 120 120)">
                     {[
-                      { dash: "30 70", offset: 0, opacity: 1 },
-                      { dash: "35 65", offset: -30, opacity: 0.82 },
-                      { dash: "20 80", offset: -65, opacity: 0.66 },
-                      { dash: "5 95", offset: -85, opacity: 0.5 },
-                      { dash: "5 95", offset: -90, opacity: 0.34 },
-                      { dash: "5 95", offset: -95, opacity: 0.22 },
-                    ].map((segment, index) => (
-                      <circle
-                        key={index}
-                        cx="120"
-                        cy="120"
-                        r="86"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="30"
-                        pathLength="100"
-                        strokeDasharray={segment.dash}
-                        strokeDashoffset={segment.offset}
-                        strokeLinecap="butt"
-                        opacity={segment.opacity}
-                      />
-                    ))}
+                      {
+                        dash: "30 70",
+                        offset: 0,
+                        opacity: 1,
+                      },
+                      {
+                        dash: "35 65",
+                        offset: -30,
+                        opacity: 0.82,
+                      },
+                      {
+                        dash: "20 80",
+                        offset: -65,
+                        opacity: 0.66,
+                      },
+                      {
+                        dash: "5 95",
+                        offset: -85,
+                        opacity: 0.5,
+                      },
+                      {
+                        dash: "5 95",
+                        offset: -90,
+                        opacity: 0.34,
+                      },
+                      {
+                        dash: "5 95",
+                        offset: -95,
+                        opacity: 0.22,
+                      },
+                    ].map(
+                      (
+                        segment,
+                        index,
+                      ) => (
+                        <circle
+                          key={index}
+                          cx="120"
+                          cy="120"
+                          r="86"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="30"
+                          pathLength="100"
+                          strokeDasharray={
+                            segment.dash
+                          }
+                          strokeDashoffset={
+                            segment.offset
+                          }
+                          strokeLinecap="butt"
+                          opacity={
+                            segment.opacity
+                          }
+                        />
+                      ),
+                    )}
                   </g>
 
                   <circle
@@ -1466,14 +1674,20 @@ export default function Home() {
                   ["Community Fund", "35%"],
                   ["Liquidity", "20%"],
                   ["Treasury", "5%"],
-                  ["Robinhood Ecosystem", "5%"],
+                  [
+                    "Robinhood Ecosystem",
+                    "5%",
+                  ],
                   ["Team", "5%"],
                 ].map(([label, value]) => (
                   <div
                     key={label}
                     className="flex items-center justify-between gap-4 border-b-2 border-r-2 border-[#ccff00] p-4"
                   >
-                    <span className="text-sm md:text-base">{label}</span>
+                    <span className="text-sm md:text-base">
+                      {label}
+                    </span>
+
                     <span className="text-xl leading-none md:text-2xl">
                       {value}
                     </span>
@@ -1488,10 +1702,15 @@ export default function Home() {
               <p className="text-[8px] uppercase tracking-[0.14em] opacity-50">
                 Season 01
               </p>
-              <p className="mt-2 text-xl">Complete</p>
+
+              <p className="mt-2 text-xl">
+                Complete
+              </p>
+
               <p className="mt-2 text-xs leading-relaxed opacity-60">
-                Early participation has closed and the first distribution is
-                being prepared.
+                Early participation has closed and
+                the first distribution is being
+                prepared.
               </p>
             </div>
 
@@ -1499,9 +1718,14 @@ export default function Home() {
               <p className="text-[8px] uppercase tracking-[0.14em] opacity-50">
                 HoodWallet
               </p>
-              <p className="mt-2 text-xl">2,500 OCH</p>
+
+              <p className="mt-2 text-xl">
+                2,500 OCH
+              </p>
+
               <p className="mt-2 text-xs leading-relaxed opacity-60">
-                Initial activation cost for the current Hoodie owner.
+                Initial activation cost for the
+                current Hoodie owner.
               </p>
             </div>
 
@@ -1509,21 +1733,48 @@ export default function Home() {
               <p className="text-[8px] uppercase tracking-[0.14em] opacity-50">
                 First Activation
               </p>
-              <p className="mt-2 text-xl">Hoodie + Buddy</p>
+
+              <p className="mt-2 text-xl">
+                Hoodie + Buddy
+              </p>
+
               <p className="mt-2 text-xs leading-relaxed opacity-60">
-                The first activation introduces the Hoodie to its first
-                HoodWallet companion.
+                The first activation introduces the
+                Hoodie to its first HoodWallet
+                companion.
               </p>
             </div>
           </div>
 
-          <div className="mt-6 border border-[#ccff00] px-4 py-3 text-center text-[8px] uppercase leading-relaxed tracking-[0.14em] opacity-70">
-            No $OCH contract has been deployed. Beware of fake tokens and links.
+          <div className="mt-6 border border-[#ccff00] px-4 py-4 text-center text-[8px] uppercase leading-relaxed tracking-[0.14em] opacity-80">
+            <span className="opacity-60">
+              Official $OCH Contract ·{" "}
+            </span>
+
+            <a
+              href={contractExplorerUrl(
+                siteConfig.ochAddress,
+              )}
+              target="_blank"
+              rel="noreferrer"
+              className="break-all underline underline-offset-4"
+            >
+              {siteConfig.ochAddress}
+            </a>
+
+            <span className="opacity-60">
+              {" "}
+              · Always verify the contract before
+              interacting.
+            </span>
           </div>
         </div>
       </section>
 
-      <section id="builds" className="px-6 py-20 md:py-24">
+      <section
+        id="builds"
+        className="px-6 py-20 md:py-24"
+      >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
             <p>04 / Things to do</p>
@@ -1531,38 +1782,46 @@ export default function Home() {
           </div>
 
           <div className="mt-10 grid border-l-2 border-t-2 border-black sm:grid-cols-2 lg:grid-cols-3">
-            {tools.map((tool, index) => (
-              <article
-                key={tool.title}
-                className="flex min-h-[190px] flex-col justify-between border-b-2 border-r-2 border-black p-5 md:p-6"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-[8px] uppercase tracking-[0.16em] opacity-50">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span className="border border-black px-2 py-1 text-[8px] uppercase tracking-[0.13em]">
-                      {tool.label}
-                    </span>
+            {tools.map(
+              (tool, index) => (
+                <article
+                  key={tool.title}
+                  className="flex min-h-[190px] flex-col justify-between border-b-2 border-r-2 border-black p-5 md:p-6"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[8px] uppercase tracking-[0.16em] opacity-50">
+                        {String(
+                          index + 1,
+                        ).padStart(
+                          2,
+                          "0",
+                        )}
+                      </span>
+
+                      <span className="border border-black px-2 py-1 text-[8px] uppercase tracking-[0.13em]">
+                        {tool.label}
+                      </span>
+                    </div>
+
+                    <h3 className="mt-7 text-2xl leading-none tracking-[-0.04em] md:text-3xl">
+                      {tool.title}
+                    </h3>
+
+                    <p className="mt-4 max-w-sm text-sm leading-relaxed opacity-70">
+                      {tool.copy}
+                    </p>
                   </div>
 
-                  <h3 className="mt-7 text-2xl leading-none tracking-[-0.04em] md:text-3xl">
-                    {tool.title}
-                  </h3>
-
-                  <p className="mt-4 max-w-sm text-sm leading-relaxed opacity-70">
-                    {tool.copy}
-                  </p>
-                </div>
-
-                <Link
-                  href={tool.href}
-                  className="mt-6 text-[9px] uppercase tracking-[0.15em] underline underline-offset-4"
-                >
-                  {tool.action} →
-                </Link>
-              </article>
-            ))}
+                  <Link
+                    href={tool.href}
+                    className="mt-6 text-[9px] uppercase tracking-[0.15em] underline underline-offset-4"
+                  >
+                    {tool.action} →
+                  </Link>
+                </article>
+              ),
+            )}
           </div>
 
           <div className="mt-5 flex flex-col gap-4 border-2 border-black bg-black p-5 text-[#ccff00] md:flex-row md:items-center md:justify-between">
@@ -1570,8 +1829,10 @@ export default function Home() {
               <p className="text-[8px] uppercase tracking-[0.16em] opacity-50">
                 Community ecosystem
               </p>
+
               <p className="mt-2 text-lg md:text-xl">
-                These are only the front doors. See what the Hood is building.
+                These are only the front doors. See
+                what the Hood is building.
               </p>
             </div>
 
@@ -1585,10 +1846,15 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="hoodos" className="bg-black px-6 py-24 text-[#ccff00]">
+      <section
+        id="hoodos"
+        className="bg-black px-6 py-24 text-[#ccff00]"
+      >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
-            <p>05 / HoodOS + HoodWallet</p>
+            <p>
+              05 / HoodOS + HoodWallet
+            </p>
             <p>A wallet for your Hoodie</p>
           </div>
 
@@ -1605,9 +1871,12 @@ export default function Home() {
               </h2>
 
               <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-78 md:text-xl">
-                HoodWallet gives every Hoodie its own on-chain account. It can hold
-                assets and interact with the on-chain world, while HoodOS keeps the
-                Hoodie owner in control and makes optional delegation possible.
+                HoodWallet gives every Hoodie its
+                own on-chain account. It can hold
+                assets and interact with the
+                on-chain world, while HoodOS keeps
+                the Hoodie owner in control and
+                makes optional delegation possible.
               </p>
 
               <Link
@@ -1620,10 +1889,22 @@ export default function Home() {
 
             <div className="grid grid-cols-2 border-l-2 border-t-2 border-[#ccff00]">
               {[
-                ["Own assets", "A wallet address that belongs to the Hoodie."],
-                ["Use on-chain apps", "Let the Hoodie interact beyond the collection itself."],
-                ["Delegate actions", "Give approved access without handing over the Hoodie."],
-                ["Stay in control", "Ownership of the Hoodie remains with its holder."],
+                [
+                  "Own assets",
+                  "A wallet address that belongs to the Hoodie.",
+                ],
+                [
+                  "Use on-chain apps",
+                  "Let the Hoodie interact beyond the collection itself.",
+                ],
+                [
+                  "Delegate actions",
+                  "Give approved access without handing over the Hoodie.",
+                ],
+                [
+                  "Stay in control",
+                  "Ownership of the Hoodie remains with its holder.",
+                ],
               ].map(([title, copy]) => (
                 <div
                   key={title}
@@ -1632,6 +1913,7 @@ export default function Home() {
                   <h3 className="text-xl leading-none tracking-[-0.03em] md:text-2xl">
                     {title}
                   </h3>
+
                   <p className="mt-4 text-sm leading-relaxed opacity-65">
                     {copy}
                   </p>
@@ -1642,7 +1924,10 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="builders" className="px-6 py-20 md:py-24">
+      <section
+        id="builders"
+        className="px-6 py-20 md:py-24"
+      >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
             <p>06 / Builders</p>
@@ -1658,8 +1943,10 @@ export default function Home() {
               </h2>
 
               <p className="mt-6 max-w-lg text-base leading-relaxed opacity-70 md:text-lg">
-                Build with an open CC0 collection, use the public infrastructure or
-                discover what the community is already creating around the Hood.
+                Build with an open CC0 collection,
+                use the public infrastructure or
+                discover what the community is
+                already creating around the Hood.
               </p>
             </div>
 
@@ -1668,21 +1955,27 @@ export default function Home() {
                 href="/api"
                 className="flex min-h-[180px] flex-col justify-between border-2 border-black p-5 transition-opacity hover:opacity-85 md:p-6"
                 style={{
-                  backgroundColor: "var(--black)",
-                  color: "var(--green)",
+                  backgroundColor:
+                    "var(--black)",
+                  color:
+                    "var(--green)",
                 }}
               >
                 <div>
                   <p className="text-[8px] uppercase tracking-[0.16em] opacity-50">
                     Infrastructure
                   </p>
+
                   <h3 className="mt-5 text-3xl leading-none tracking-[-0.04em]">
                     Builder API
                   </h3>
+
                   <p className="mt-4 max-w-sm text-sm leading-relaxed opacity-65">
-                    Open data and APIs for building with the Hood.
+                    Open data and APIs for building
+                    with the Hood.
                   </p>
                 </div>
+
                 <span className="mt-6 text-[9px] uppercase tracking-[0.15em] underline underline-offset-4">
                   Open API →
                 </span>
@@ -1692,21 +1985,27 @@ export default function Home() {
                 href="/builders"
                 className="flex min-h-[180px] flex-col justify-between border-2 border-black p-5 transition-opacity hover:opacity-85 md:p-6"
                 style={{
-                  backgroundColor: "var(--black)",
-                  color: "var(--green)",
+                  backgroundColor:
+                    "var(--black)",
+                  color:
+                    "var(--green)",
                 }}
               >
                 <div>
                   <p className="text-[8px] uppercase tracking-[0.16em] opacity-50">
                     Ecosystem
                   </p>
+
                   <h3 className="mt-5 text-3xl leading-none tracking-[-0.04em]">
                     Community Builds
                   </h3>
+
                   <p className="mt-4 max-w-sm text-sm leading-relaxed opacity-65">
-                    Discover what other Hoodie holders are shipping.
+                    Discover what other Hoodie
+                    holders are shipping.
                   </p>
                 </div>
+
                 <span className="mt-6 text-[9px] uppercase tracking-[0.15em] underline underline-offset-4">
                   Explore builds →
                 </span>
@@ -1716,7 +2015,10 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="contracts" className="bg-black px-6 py-24 text-[#ccff00]">
+      <section
+        id="contracts"
+        className="bg-black px-6 py-24 text-[#ccff00]"
+      >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
             <p>07 / On-chain</p>
@@ -1725,55 +2027,76 @@ export default function Home() {
 
           <div className="mt-12 grid gap-12 lg:grid-cols-[0.7fr_1.3fr]">
             <div>
-              <h2 className="section-title">Contracts, not promises.</h2>
+              <h2 className="section-title">
+                Contracts,
+                <br />
+                not promises.
+              </h2>
 
               <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75">
-                Collection data, rendering, pixels and the programmable wallet
-                layer live on-chain. Inspect the contracts and verify the Hood
-                yourself.
+                Collection data, rendering, HoodOS,
+                $OCH and the protocol infrastructure
+                live on-chain. Inspect the contracts
+                and verify the Hood yourself.
+              </p>
+
+              <p className="mt-5 max-w-lg text-[9px] uppercase leading-relaxed tracking-[0.14em] opacity-50">
+                Official OnChainHoodies contracts on{" "}
+                {siteConfig.chainName}.
               </p>
             </div>
 
             <div className="border-l-2 border-t-2 border-[#ccff00]">
-              {contracts.map((contract) => {
-                const href = contractExplorerUrl(contract.address);
+              {contracts.map(
+                (contract) => {
+                  const href =
+                    contractExplorerUrl(
+                      contract.address,
+                    );
 
-                return (
-                  <div
-                    key={contract.label}
-                    className="grid gap-3 border-b-2 border-r-2 border-[#ccff00] p-5 md:grid-cols-[160px_1fr_auto] md:items-center"
-                  >
-                    <span className="text-[10px] uppercase tracking-[0.16em] opacity-60">
-                      {contract.label}
-                    </span>
-
-                    <code className="break-all text-sm">
-                      {contract.address || "Add address in .env.local"}
-                    </code>
-
-                    {href === "#" ? (
-                      <span className="text-[10px] uppercase tracking-[0.14em] opacity-40">
-                        {shortAddress(contract.address)}
+                  return (
+                    <div
+                      key={contract.label}
+                      className="grid gap-3 border-b-2 border-r-2 border-[#ccff00] p-5 md:grid-cols-[180px_1fr_auto] md:items-center"
+                    >
+                      <span className="text-[10px] uppercase tracking-[0.16em] opacity-60">
+                        {contract.label}
                       </span>
-                    ) : (
-                      <a
-                        href={href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[10px] uppercase tracking-[0.14em] underline underline-offset-4"
-                      >
-                        Explorer ↗
-                      </a>
-                    )}
-                  </div>
-                );
-              })}
+
+                      <code className="break-all text-sm">
+                        {contract.address ||
+                          "Coming soon"}
+                      </code>
+
+                      {href === "#" ? (
+                        <span className="text-[10px] uppercase tracking-[0.14em] opacity-40">
+                          {shortAddress(
+                            contract.address,
+                          )}
+                        </span>
+                      ) : (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] uppercase tracking-[0.14em] underline underline-offset-4"
+                        >
+                          Explorer ↗
+                        </a>
+                      )}
+                    </div>
+                  );
+                },
+              )}
             </div>
           </div>
         </div>
       </section>
 
-      <section id="faq" className="px-6 py-24">
+      <section
+        id="faq"
+        className="px-6 py-24"
+      >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
             <p>08 / FAQ</p>
@@ -1787,43 +2110,61 @@ export default function Home() {
                 <br />
                 Go deeper.
               </h2>
+
               <p className="mt-7 max-w-md text-base leading-relaxed opacity-70">
-                The essentials about the collection, what your Hoodie can do and where to explore next.
+                The essentials about the collection,
+                what your Hoodie can do and where to
+                explore next.
               </p>
             </div>
 
             <div className="border-t-2 border-black">
-              {faqs.map((faq, index) => (
-                <details
-                  key={faq.question}
-                  className="group border-b-2 border-black"
-                >
-                  <summary className="flex cursor-pointer list-none items-center gap-4 py-5 md:py-6 [&::-webkit-details-marker]:hidden">
-                    <span className="w-9 shrink-0 text-[8px] uppercase tracking-[0.15em] opacity-45">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span className="flex-1 text-sm uppercase tracking-[0.1em] md:text-base">
-                      {faq.question}
-                    </span>
-                    <span className="text-2xl leading-none group-open:hidden">+</span>
-                    <span className="hidden text-2xl leading-none group-open:inline">−</span>
-                  </summary>
+              {faqs.map(
+                (faq, index) => (
+                  <details
+                    key={faq.question}
+                    className="group border-b-2 border-black"
+                  >
+                    <summary className="flex cursor-pointer list-none items-center gap-4 py-5 md:py-6 [&::-webkit-details-marker]:hidden">
+                      <span className="w-9 shrink-0 text-[8px] uppercase tracking-[0.15em] opacity-45">
+                        {String(
+                          index + 1,
+                        ).padStart(
+                          2,
+                          "0",
+                        )}
+                      </span>
 
-                  <div className="pb-6 pl-[52px] pr-10">
-                    <p className="max-w-3xl text-sm leading-relaxed opacity-70 md:text-base">
-                      {faq.answer}
-                    </p>
-                    {faq.href ? (
-                      <Link
-                        href={faq.href}
-                        className="mt-4 inline-block text-[9px] uppercase tracking-[0.15em] underline underline-offset-4"
-                      >
-                        {faq.linkLabel} →
-                      </Link>
-                    ) : null}
-                  </div>
-                </details>
-              ))}
+                      <span className="flex-1 text-sm uppercase tracking-[0.1em] md:text-base">
+                        {faq.question}
+                      </span>
+
+                      <span className="text-2xl leading-none group-open:hidden">
+                        +
+                      </span>
+
+                      <span className="hidden text-2xl leading-none group-open:inline">
+                        −
+                      </span>
+                    </summary>
+
+                    <div className="pb-6 pl-[52px] pr-10">
+                      <p className="max-w-3xl text-sm leading-relaxed opacity-70 md:text-base">
+                        {faq.answer}
+                      </p>
+
+                      {faq.href ? (
+                        <Link
+                          href={faq.href}
+                          className="mt-4 inline-block text-[9px] uppercase tracking-[0.15em] underline underline-offset-4"
+                        >
+                          {faq.linkLabel} →
+                        </Link>
+                      ) : null}
+                    </div>
+                  </details>
+                ),
+              )}
             </div>
           </div>
         </div>
@@ -1841,8 +2182,10 @@ export default function Home() {
             </h2>
 
             <p className="mt-3 max-w-2xl text-sm leading-relaxed opacity-70 md:text-base">
-              Meet other Hoodie holders inside the Hood. Share what you are working on,
-              find collaborators and stay close to what ships next.
+              Meet other Hoodie holders inside the
+              Hood. Share what you are working on,
+              find collaborators and stay close to
+              what ships next.
             </p>
           </div>
 
