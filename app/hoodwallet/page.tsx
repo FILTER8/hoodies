@@ -557,9 +557,9 @@ function NftArtwork({
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={
-        nft.image
-      }
+      src={`/api/hoodwallet/image?url=${encodeURIComponent(
+        nft.image,
+      )}`}
 
       alt={
         nft.name
@@ -2695,24 +2695,6 @@ export default function HoodWalletPage() {
           return;
         }
 
-        /*
-         * SECURITY:
-         *
-         * Never allow arbitrary/untrusted
-         * NFT contracts to be executed
-         * through this interface.
-         */
-
-        if (
-          !selectedNftToSend.trusted
-        ) {
-          setError(
-            "Untrusted NFTs cannot be sent through the HoodWallet interface.",
-          );
-
-          return;
-        }
-
         if (
           !selectedWallet.active
         ) {
@@ -4297,48 +4279,32 @@ export default function HoodWalletPage() {
                                         }
                                       </p>
 
-                                      {nft.trusted ? (
+                                      <button
+                                        type="button"
 
-                                        <button
-                                          type="button"
+                                        disabled={
+                                          !selectedWallet.active ||
+                                          processing
+                                        }
 
-                                          disabled={
-                                            !selectedWallet.active ||
-                                            processing
-                                          }
+                                        onClick={() => {
+                                          setSelectedNftToSend(
+                                            nft,
+                                          );
 
-                                          onClick={() => {
-                                            setSelectedNftToSend(
-                                              nft,
-                                            );
+                                          setNftRecipient(
+                                            "",
+                                          );
 
-                                            setNftRecipient(
-                                              "",
-                                            );
+                                          setNftAmount(
+                                            "1",
+                                          );
+                                        }}
 
-                                            setNftAmount(
-                                              "1",
-                                            );
-                                          }}
-
-                                          className="mt-3 w-full border border-[var(--hood-fg)] px-2 py-2 text-[7px] uppercase tracking-[0.12em] disabled:opacity-30"
-                                        >
-                                          Send NFT
-                                        </button>
-
-                                      ) : (
-
-                                        <div className="mt-3 border border-[var(--hood-fg)] px-2 py-2">
-
-                                          <p className="text-[6px] uppercase leading-relaxed opacity-60">
-                                            Untrusted NFT
-                                            <br />
-                                            Sending disabled
-                                          </p>
-
-                                        </div>
-
-                                      )}
+                                        className="mt-3 w-full border border-[var(--hood-fg)] px-2 py-2 text-[7px] uppercase tracking-[0.12em] disabled:opacity-30"
+                                      >
+                                        Send NFT
+                                      </button>
 
                                     </div>
 
@@ -4535,7 +4501,7 @@ export default function HoodWalletPage() {
                               </button>
 
                               <p className="mt-3 text-[7px] uppercase leading-relaxed opacity-55">
-                                Only trusted NFT contracts can be transferred through this interface.
+                                NFT transfers use the NFT contract returned by the loaded HoodWallet inventory.
                               </p>
 
                             </div>
