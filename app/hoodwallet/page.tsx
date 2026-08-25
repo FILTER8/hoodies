@@ -557,9 +557,11 @@ function NftArtwork({
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={`/api/hoodwallet/image?url=${encodeURIComponent(
-        nft.image,
-      )}`}
+      src={
+        nft.image.startsWith("ipfs://")
+          ? `https://ipfs.io/ipfs/${nft.image.slice("ipfs://".length)}`
+          : nft.image
+      }
 
       alt={
         nft.name
