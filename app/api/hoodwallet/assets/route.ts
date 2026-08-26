@@ -111,7 +111,7 @@ type NftResponse = {
 
   image?: string;
 
-  quantity: string;
+  balance: string;
 
   kind:
     | "erc721"
@@ -120,6 +120,8 @@ type NftResponse = {
   trusted: boolean;
 
   spam: boolean;
+
+  spamClassifications: string[];
 };
 
 /*//////////////////////////////////////////////////////////////
@@ -555,18 +557,78 @@ function buildAlchemyNftUrl(
   );
 }
 
+function looksLikeVideo(
+  value?: string,
+) {
+  if (!value) {
+    return false;
+  }
+
+  const lower =
+    value.toLowerCase();
+
+  return (
+    lower.includes(".mp4") ||
+    lower.includes(".webm") ||
+    lower.includes(".mov")
+  );
+}
+
 function pickNftImage(
   nft: AlchemyOwnedNft,
 ) {
-  return (
-    nft.image?.cachedUrl ||
-    nft.image?.pngUrl ||
-    nft.image?.thumbnailUrl ||
-    nft.image?.originalUrl ||
-    nft.raw?.metadata?.image ||
-    nft.raw?.metadata?.image_url ||
-    nft.raw?.metadata?.imageUrl
-  );
+  /*
+   * Preserve the image sources that are already
+   * rendering correctly in HoodWallet.
+   */
+  const staticCandidates = [
+    nft.image?.cachedUrl,
+    nft.image?.pngUrl,
+    nft.image?.thumbnailUrl,
+    nft.raw?.metadata?.image,
+    nft.raw?.metadata?.image_url,
+    nft.raw?.metadata?.imageUrl,
+  ];
+
+  /*
+   * If Alchemy tells us the original asset is a
+   * video, prefer that source through our tiny
+   * image proxy. This gives OpenSea/SeaDN media
+   * a still frame instead of trying to render MP4
+   * in an <img>.
+   */
+  const original =
+    nft.image?.originalUrl;
+
+  if (
+    original &&
+    looksLikeVideo(
+      original,
+    )
+  ) {
+    return (
+      "/api/hoodwallet/image?url=" +
+      encodeURIComponent(
+        original,
+      )
+    );
+  }
+
+  for (
+    const candidate of
+    staticCandidates
+  ) {
+    if (
+      candidate &&
+      !looksLikeVideo(
+        candidate,
+      )
+    ) {
+      return candidate;
+    }
+  }
+
+  return original;
 }
 
 function normalizeAlchemyNft(
@@ -613,7 +675,7 @@ function normalizeAlchemyNft(
     nft.raw?.metadata?.name?.trim() ||
     `${collectionName} #${tokenId}`;
 
-  const quantity =
+  const balance =
     nft.balance?.trim() ||
     "1";
 
@@ -644,7 +706,7 @@ function normalizeAlchemyNft(
         nft,
       ),
 
-    quantity,
+    balance,
 
     kind,
 
@@ -654,6 +716,11 @@ function normalizeAlchemyNft(
       ),
 
     spam,
+
+    spamClassifications:
+      nft.contract
+        ?.spamClassifications ||
+      [],
   };
 }
 

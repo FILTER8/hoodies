@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 /*//////////////////////////////////////////////////////////////
                               CONFIG
 //////////////////////////////////////////////////////////////*/
 
 const ALLOWED_HOSTS = new Set([
+  "i.seadn.io",
+  "i2.seadn.io",
+  "raw.seadn.io",
+  "raw2.seadn.io",
   "nft2-cdn.alchemy.com",
   "nft-cdn.alchemy.com",
   "res.cloudinary.com",
@@ -20,14 +25,76 @@ const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
                               HELPERS
 //////////////////////////////////////////////////////////////*/
 
+function normalizeIpfsUrl(value: string) {
+  const trimmed = value.trim();
+
+  if (trimmed.startsWith("ipfs://")) {
+    const path = trimmed.slice(
+      "ipfs://".length,
+    );
+
+    return `https://ipfs.io/ipfs/${path}`;
+  }
+
+  return trimmed;
+}
+
+function normalizeImageUrl(value: string) {
+  const normalized =
+    normalizeIpfsUrl(value);
+
+  let url: URL;
+
+  try {
+    url = new URL(normalized);
+  } catch {
+    return normalized;
+  }
+
+  const host =
+    url.hostname.toLowerCase();
+
+  /*
+   * OpenSea raw media can be MP4. The image CDN
+   * can render a still frame from the same asset.
+   */
+  if (host === "raw2.seadn.io") {
+    url.hostname = "i2.seadn.io";
+  } else if (host === "raw.seadn.io") {
+    url.hostname = "i.seadn.io";
+  }
+
+  const finalHost =
+    url.hostname.toLowerCase();
+
+  if (
+    finalHost === "i.seadn.io" ||
+    finalHost === "i2.seadn.io"
+  ) {
+    url.searchParams.set(
+      "frame-time",
+      "1",
+    );
+
+    url.searchParams.set(
+      "w",
+      "800",
+    );
+
+    url.searchParams.set(
+      "h",
+      "800",
+    );
+  }
+
+  return url.toString();
+}
+
 function isAllowedRemoteUrl(value: string) {
   try {
     const url = new URL(value);
 
-    if (
-      url.protocol !== "https:" &&
-      url.protocol !== "http:"
-    ) {
+    if (url.protocol !== "https:") {
       return false;
     }
 
@@ -37,22 +104,6 @@ function isAllowedRemoteUrl(value: string) {
   } catch {
     return false;
   }
-}
-
-function normalizeIpfsUrl(value: string) {
-  const trimmed = value.trim();
-
-  if (
-    trimmed.startsWith("ipfs://")
-  ) {
-    const path = trimmed.slice(
-      "ipfs://".length,
-    );
-
-    return `https://ipfs.io/ipfs/${path}`;
-  }
-
-  return trimmed;
 }
 
 function isImageContentType(
@@ -88,15 +139,9 @@ export async function GET(
   }
 
   const remoteUrl =
-    normalizeIpfsUrl(
-      rawUrl,
-    );
+    normalizeImageUrl(rawUrl);
 
-  if (
-    !isAllowedRemoteUrl(
-      remoteUrl,
-    )
-  ) {
+  if (!isAllowedRemoteUrl(remoteUrl)) {
     return NextResponse.json(
       {
         error:
@@ -117,11 +162,6 @@ export async function GET(
             accept:
               "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
 
-            /*
-             * Some NFT CDNs behave
-             * better with a normal
-             * browser-style user agent.
-             */
             "user-agent":
               "Mozilla/5.0 HoodWallet Image Proxy",
           },
@@ -134,9 +174,7 @@ export async function GET(
         },
       );
 
-    if (
-      !response.ok
-    ) {
+    if (!response.ok) {
       throw new Error(
         `Remote NFT image request failed (${response.status}).`,
       );
@@ -158,7 +196,7 @@ export async function GET(
       return NextResponse.json(
         {
           error:
-            "The remote URL did not return an image.",
+            "The remote URL did not return a renderable image.",
         },
         {
           status: 415,
@@ -218,26 +256,11 @@ export async function GET(
           "Content-Type":
             contentType,
 
-          /*
-           * This route exists specifically
-           * so HoodWallet can safely use
-           * NFT artwork inside a canvas.
-           */
           "Access-Control-Allow-Origin":
             "*",
 
-          /*
-           * No cache while we are still
-           * testing NFT export behavior.
-           *
-           * Later this can safely become
-           * something like:
-           *
-           * public, s-maxage=86400,
-           * stale-while-revalidate=604800
-           */
           "Cache-Control":
-            "no-store",
+            "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",
 
           "X-Content-Type-Options":
             "nosniff",

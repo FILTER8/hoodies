@@ -430,6 +430,12 @@ function explorerToken(
   )}/token/${address}`;
 }
 
+function openSeaWallet(
+  address: string,
+) {
+  return `https://opensea.io/${address}`;
+}
+
 function requireWalletAccount<T>(
   account: T | undefined,
 ): T {
@@ -558,9 +564,7 @@ function NftArtwork({
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={
-        nft.image.startsWith("ipfs://")
-          ? `https://ipfs.io/ipfs/${nft.image.slice("ipfs://".length)}`
-          : nft.image
+        nft.image
       }
 
       alt={
@@ -728,6 +732,12 @@ export default function HoodWalletPage() {
   /*//////////////////////////////////////////////////////////////
                          TOKEN SEND STATE
   //////////////////////////////////////////////////////////////*/
+
+  const [
+    sendPanelOpen,
+    setSendPanelOpen,
+  ] =
+    useState(false);
 
   const [
     sendAssetKey,
@@ -2636,6 +2646,10 @@ export default function HoodWalletPage() {
             "",
           );
 
+          setSendPanelOpen(
+            false,
+          );
+
           setTxState({
             action:
               null,
@@ -3267,54 +3281,78 @@ export default function HoodWalletPage() {
 
                   <div className="p-3">
 
-                    <select
-                      value={
-                        selectedTokenId
-                      }
+                    <div className="flex items-stretch gap-2">
 
-                      onChange={(
-                        event,
-                      ) => {
-                        setSelectedWallet(
-                          null,
-                        );
+                      <select
+                        value={
+                          selectedTokenId
+                        }
 
-                        setSelectedNftToSend(
-                          null,
-                        );
+                        onChange={(
+                          event,
+                        ) => {
+                          setSelectedWallet(
+                            null,
+                          );
 
-                        setSelectedTokenId(
-                          event
-                            .target
-                            .value,
-                        );
-                      }}
+                          setSelectedNftToSend(
+                            null,
+                          );
 
-                      className="w-full border border-[var(--hood-fg)] bg-[var(--hood-bg)] px-3 py-3 text-[10px] uppercase text-[var(--hood-fg)] outline-none"
-                    >
-                      {ownedHoodies.map(
-                        (
-                          hoodie,
-                        ) => (
+                          setSendPanelOpen(
+                            false,
+                          );
 
-                          <option
-                            key={
-                              hoodie.tokenId
-                            }
+                          setSelectedTokenId(
+                            event
+                              .target
+                              .value,
+                          );
+                        }}
 
-                            value={
-                              hoodie.tokenId
-                            }
-                          >
-                            Hoodie #
-                            {
-                              hoodie.tokenId
-                            }
-                          </option>
+                        className="min-w-0 flex-1 border border-[var(--hood-fg)] bg-[var(--hood-bg)] px-3 py-3 text-[10px] uppercase text-[var(--hood-fg)] outline-none"
+                      >
+                        {ownedHoodies.map(
+                          (
+                            hoodie,
+                          ) => (
 
-                        ),
+                            <option
+                              key={
+                                hoodie.tokenId
+                              }
+
+                              value={
+                                hoodie.tokenId
+                              }
+                            >
+                              Hoodie #
+                              {
+                                hoodie.tokenId
+                              }
+                            </option>
+
+                          ),
+                        )}
+                      </select>
+
+                      {selectedWallet && (
+
+                        <span
+                          className={`flex shrink-0 items-center border border-[var(--hood-fg)] px-3 text-[7px] uppercase tracking-[0.1em] ${
+                            selectedWallet.active
+                              ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                              : ""
+                          }`}
+                        >
+                          {selectedWallet.active
+                            ? "● Active"
+                            : "○ Inactive"}
+                        </span>
+
                       )}
-                    </select>
+
+                    </div>
 
                   </div>
 
@@ -3522,21 +3560,45 @@ export default function HoodWalletPage() {
                           }
                         </code>
 
-                        <a
-                          href={
-                            explorerAddress(
-                              selectedWallet.walletAddress,
-                            )
-                          }
+                        <div className="flex shrink-0 items-center gap-3">
 
-                          target="_blank"
+                          <a
+                            href={
+                              explorerAddress(
+                                selectedWallet.walletAddress,
+                              )
+                            }
 
-                          rel="noreferrer"
+                            target="_blank"
 
-                          className="text-[8px] uppercase underline"
-                        >
-                          Explorer ↗
-                        </a>
+                            rel="noreferrer"
+
+                            className="text-[8px] uppercase underline underline-offset-2"
+                          >
+                            Explorer
+                          </a>
+
+                          <span className="text-[8px] opacity-30">
+                            /
+                          </span>
+
+                          <a
+                            href={
+                              openSeaWallet(
+                                selectedWallet.walletAddress,
+                              )
+                            }
+
+                            target="_blank"
+
+                            rel="noreferrer"
+
+                            className="text-[8px] uppercase underline underline-offset-2"
+                          >
+                            OpenSea
+                          </a>
+
+                        </div>
 
                       </div>
 
@@ -3839,15 +3901,42 @@ export default function HoodWalletPage() {
 
                 <div className="mt-4 border border-[var(--hood-fg)]">
 
-                  <div className="border-b border-[var(--hood-fg)] px-4 py-3">
+                  <button
+                    type="button"
 
-                    <p className="text-[9px] uppercase tracking-[0.15em]">
-                      Send funds from HoodWallet
-                    </p>
+                    onClick={() =>
+                      setSendPanelOpen(
+                        (current) =>
+                          !current,
+                      )
+                    }
 
-                  </div>
+                    className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
+                  >
 
-                  <div className="p-4">
+                    <div>
+
+                      <p className="text-[9px] uppercase tracking-[0.15em]">
+                        Send funds
+                      </p>
+
+                      <p className="mt-1 text-[7px] uppercase opacity-50">
+                        ETH + trusted tokens from HoodWallet
+                      </p>
+
+                    </div>
+
+                    <span className="text-xl leading-none">
+                      {sendPanelOpen
+                        ? "−"
+                        : "+"}
+                    </span>
+
+                  </button>
+
+                  {sendPanelOpen && (
+
+                    <div className="border-t border-[var(--hood-fg)] p-4">
 
                     {!selectedWallet.active ? (
 
@@ -4010,7 +4099,9 @@ export default function HoodWalletPage() {
 
                     )}
 
-                  </div>
+                    </div>
+
+                  )}
 
                 </div>
 
@@ -4281,6 +4372,12 @@ export default function HoodWalletPage() {
                                         }
                                       </p>
 
+                                      <p className="mt-2 text-[6px] uppercase opacity-50">
+                                        {nft.trusted
+                                          ? "Trusted"
+                                          : "Unverified"}
+                                      </p>
+
                                       <button
                                         type="button"
 
@@ -4503,7 +4600,7 @@ export default function HoodWalletPage() {
                               </button>
 
                               <p className="mt-3 text-[7px] uppercase leading-relaxed opacity-55">
-                                NFT transfers use the NFT contract returned by the loaded HoodWallet inventory.
+                                The HoodWallet transfers this NFT directly to the recipient address. Unverified means the collection is not in the trusted asset registry.
                               </p>
 
                             </div>
