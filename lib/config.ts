@@ -204,7 +204,7 @@ export const siteConfig = {
 
   mintbayUrl: "https://mintbay.xyz",
 
-  discordUrl: "https://discord.gg/onchainhood",
+  discordUrl: "https://discord.com/invite/y6dHgccE7R",
 
   openSeaUrl:
     process.env.NEXT_PUBLIC_OPENSEA_URL?.trim() || "#",
