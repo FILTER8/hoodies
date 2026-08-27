@@ -85,6 +85,35 @@ const apps: HoodOSApp[] = [
   },
 
   {
+  id:
+    "buyos",
+
+  name:
+    "BuyOS",
+
+  tagline:
+    "Collect as your Hoodie",
+
+  description:
+    "Browse Robinhood Chain OpenSea listings and buy NFTs directly through your activated HoodWallet.",
+
+  href:
+    "/hoodos/buyos",
+
+  icon:
+    "/hoodos/buyos.png",
+
+  fallbackIcon:
+    "B",
+
+  buildType:
+    "internal",
+
+  status:
+    "live",
+},
+
+  {
     id:
       "hoodwallet",
 
@@ -659,7 +688,7 @@ export default function HoodOSPage() {
                          BUILDER SECTION
         ////////////////////////////////////////////////////////*/}
 
-        
+
 
         <section className="mt-16 border-t border-black pt-8">
 
