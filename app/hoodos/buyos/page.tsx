@@ -514,8 +514,6 @@ function ListingImage({
 //////////////////////////////////////////////////////////////*/
 
 export default function BuyOSPage() {
-  const searchParams = useSearchParams();
-  const sharedCollection = searchParams.get("collection") || "";
   const {
     address,
     connect,
