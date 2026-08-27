@@ -144,7 +144,7 @@ export default function SiteHeader() {
                 WalletConnect. We
                 never request seed
                 phrases or private
-                keys.
+                keys
               </p>
             </div>
           </div>
