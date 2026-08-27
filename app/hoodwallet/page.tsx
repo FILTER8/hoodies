@@ -273,6 +273,7 @@ type InventoryResponse = {
 
 type TxAction =
   | "activate"
+  | "swap-activate"
   | "claim"
   | "send"
   | "send-nft"
@@ -283,6 +284,51 @@ type TxState = {
     TxAction;
 
   message:
+    string;
+};
+
+type ActivationSwapResponse = {
+  ok?: boolean;
+
+  mode?:
+    "EXACT_OUTPUT";
+
+  direction?:
+    "ETH_TO_OCH";
+
+  amountOut?:
+    string;
+
+  amountOutFormatted?:
+    string;
+
+  quotedAmountIn?:
+    string;
+
+  quotedAmountInFormatted?:
+    string;
+
+  amountInMaximum?:
+    string;
+
+  amountInMaximumFormatted?:
+    string;
+
+  slippageBps?:
+    number;
+
+  expiresAt?:
+    number;
+
+  execution?: {
+    to?: string;
+
+    data?: string;
+
+    value?: string;
+  };
+
+  error?:
     string;
 };
 
@@ -2026,6 +2072,541 @@ export default function HoodWalletPage() {
     );
 
   /*//////////////////////////////////////////////////////////////
+                SWAP MISSING OCH + ACTIVATE
+  //////////////////////////////////////////////////////////////*/
+
+  const swapMissingOchAndActivate =
+    useCallback(
+      async () => {
+        if (
+          !address
+        ) {
+          await connect();
+
+          return;
+        }
+
+        if (
+          !selectedWallet ||
+          !provider
+        ) {
+          return;
+        }
+
+        if (
+          selectedWallet.active
+        ) {
+          return;
+        }
+
+        if (
+          !sameAddress(
+            selectedWallet.owner,
+
+            address,
+          )
+        ) {
+          setError(
+            "Connected wallet is not the current Hoodie owner.",
+          );
+
+          return;
+        }
+
+        if (
+          !activationEnabled
+        ) {
+          setError(
+            "HoodWallet activation is currently disabled.",
+          );
+
+          return;
+        }
+
+        const missingOCH =
+          activationCost >
+          ownerOCHBalance
+            ? activationCost -
+              ownerOCHBalance
+            : BigInt(0);
+
+        if (
+          missingOCH ===
+          BigInt(0)
+        ) {
+          await activateHoodWallet();
+
+          return;
+        }
+
+        try {
+          setError(null);
+
+          setTxState({
+            action:
+              "swap-activate",
+
+            message:
+              `Quoting exactly ${formatBalance(
+                missingOCH,
+              )} OCH for activation…`,
+          });
+
+          /*
+           * Ask the shared OCH swap API for an exact-output
+           * ETH -> OCH transaction. This buys only the missing
+           * OCH, not another full 2,500 OCH.
+           */
+          const response =
+            await fetch(
+              "/api/och/swap",
+              {
+                method:
+                  "POST",
+
+                headers: {
+                  "Content-Type":
+                    "application/json",
+
+                  accept:
+                    "application/json",
+                },
+
+                cache:
+                  "no-store",
+
+                body:
+                  JSON.stringify({
+                    mode:
+                      "EXACT_OUTPUT",
+
+                    direction:
+                      "ETH_TO_OCH",
+
+                    amount:
+                      formatUnits(
+                        missingOCH,
+                        18,
+                      ),
+
+                    recipient:
+                      address,
+
+                    slippageBps:
+                      100,
+                  }),
+              },
+            );
+
+          const payload =
+            (await response.json()) as
+              ActivationSwapResponse;
+
+          if (
+            !response.ok ||
+            !payload.ok ||
+            !payload.execution?.to ||
+            !payload.execution?.data ||
+            payload.execution.value ===
+              undefined
+          ) {
+            throw new Error(
+              payload.error ||
+                "Unable to prepare the OCH activation swap.",
+            );
+          }
+
+          if (
+            !isAddress(
+              payload.execution.to,
+            )
+          ) {
+            throw new Error(
+              "Swap API returned an invalid execution target.",
+            );
+          }
+
+          let maxEth:
+            bigint;
+
+          try {
+            maxEth =
+              BigInt(
+                payload.execution.value,
+              );
+          } catch {
+            throw new Error(
+              "Swap API returned an invalid ETH value.",
+            );
+          }
+
+          if (
+            maxEth <=
+            BigInt(0)
+          ) {
+            throw new Error(
+              "Swap API returned an empty ETH quote.",
+            );
+          }
+
+          const ownerEthBalance =
+            await provider.getBalance(
+              address,
+            );
+
+          if (
+            ownerEthBalance <
+            maxEth
+          ) {
+            throw new Error(
+              `You need up to ${formatBalance(
+                maxEth,
+              )} ETH for the missing OCH swap, plus network gas.`,
+            );
+          }
+
+          await ensureRequiredNetwork();
+
+          const walletClient =
+            await getWalletClient();
+
+          const walletAccount =
+            requireWalletAccount(
+              walletClient.account,
+            );
+
+          setTxState({
+            action:
+              "swap-activate",
+
+            message:
+              `Confirm the swap for ${formatBalance(
+                missingOCH,
+              )} OCH. Maximum ETH: ${formatBalance(
+                maxEth,
+              )}. Unused ETH is returned by the router.`,
+          });
+
+          const swapHash =
+            await walletClient.sendTransaction({
+              chain:
+                null,
+
+              account:
+                walletAccount,
+
+              to:
+                getAddress(
+                  payload.execution.to,
+                ) as Address,
+
+              data:
+                payload.execution.data as Hex,
+
+              value:
+                maxEth,
+            });
+
+          setTxState({
+            action:
+              "swap-activate",
+
+            message:
+              `OCH swap submitted ${shortAddress(
+                swapHash,
+              )}. Waiting for confirmation…`,
+          });
+
+          await waitForHash(
+            swapHash,
+          );
+
+          /*
+           * Read fresh economy state directly from-chain.
+           * Do not rely on React state having updated yet.
+           */
+          const och =
+            new Contract(
+              siteConfig.ochAddress,
+
+              OCH_READ_ABI,
+
+              provider,
+            );
+
+          const freshBalance =
+            (await och.balanceOf(
+              address,
+            )) as bigint;
+
+          if (
+            freshBalance <
+            activationCost
+          ) {
+            throw new Error(
+              `Swap confirmed, but the wallet still has only ${formatBalance(
+                freshBalance,
+              )} OCH. Refresh and try again.`,
+            );
+          }
+
+          let freshAllowance =
+            (await och.allowance(
+              address,
+
+              siteConfig.hoodOSAddress,
+            )) as bigint;
+
+          setOwnerOCHBalance(
+            freshBalance,
+          );
+
+          setOwnerAllowance(
+            freshAllowance,
+          );
+
+          /*
+           * Continue directly into the existing activation flow.
+           */
+          if (
+            freshAllowance <
+            activationCost
+          ) {
+            setTxState({
+              action:
+                "swap-activate",
+
+              message:
+                `${formatBalance(
+                  missingOCH,
+                )} OCH received. Authorize ${formatBalance(
+                  activationCost,
+                )} OCH for HoodWallet activation.`,
+            });
+
+            const approvalHash =
+              await walletClient.writeContract({
+                chain:
+                  null,
+
+                address:
+                  siteConfig.ochAddress as Address,
+
+                abi: [
+                  {
+                    type:
+                      "function",
+
+                    name:
+                      "approve",
+
+                    stateMutability:
+                      "nonpayable",
+
+                    inputs: [
+                      {
+                        name:
+                          "spender",
+
+                        type:
+                          "address",
+                      },
+
+                      {
+                        name:
+                          "amount",
+
+                        type:
+                          "uint256",
+                      },
+                    ],
+
+                    outputs: [
+                      {
+                        name:
+                          "",
+
+                        type:
+                          "bool",
+                      },
+                    ],
+                  },
+                ] as const,
+
+                functionName:
+                  "approve",
+
+                args: [
+                  siteConfig.hoodOSAddress as Address,
+
+                  activationCost,
+                ],
+
+                account:
+                  walletAccount,
+              });
+
+            setTxState({
+              action:
+                "swap-activate",
+
+              message:
+                `OCH authorization submitted ${shortAddress(
+                  approvalHash,
+                )}. Waiting for confirmation…`,
+            });
+
+            await waitForHash(
+              approvalHash,
+            );
+
+            freshAllowance =
+              (await och.allowance(
+                address,
+
+                siteConfig.hoodOSAddress,
+              )) as bigint;
+
+            if (
+              freshAllowance <
+              activationCost
+            ) {
+              throw new Error(
+                "OCH authorization confirmed but allowance is still below the activation cost.",
+              );
+            }
+
+            setOwnerAllowance(
+              freshAllowance,
+            );
+          }
+
+          setTxState({
+            action:
+              "swap-activate",
+
+            message:
+              `OCH ready. Confirm activation of HoodWallet #${selectedWallet.tokenId}.`,
+          });
+
+          const activationHash =
+            await walletClient.writeContract({
+              chain:
+                null,
+
+              address:
+                siteConfig.hoodOSAddress as Address,
+
+              abi: [
+                {
+                  type:
+                    "function",
+
+                  name:
+                    "activate",
+
+                  stateMutability:
+                    "nonpayable",
+
+                  inputs: [
+                    {
+                      name:
+                        "tokenId",
+
+                      type:
+                        "uint256",
+                    },
+                  ],
+
+                  outputs:
+                    [],
+                },
+              ] as const,
+
+              functionName:
+                "activate",
+
+              args: [
+                BigInt(
+                  selectedWallet.tokenId,
+                ),
+              ],
+
+              account:
+                walletAccount,
+            });
+
+          setTxState({
+            action:
+              "swap-activate",
+
+            message:
+              `Activation submitted ${shortAddress(
+                activationHash,
+              )}. Waiting for confirmation…`,
+          });
+
+          await waitForHash(
+            activationHash,
+          );
+
+          await loadSelectedWallet(
+            selectedWallet.tokenId,
+          );
+
+          await refreshOwnerEconomy();
+
+          setTxState({
+            action:
+              null,
+
+            message:
+              `OCH acquired and HoodWallet #${selectedWallet.tokenId} activated successfully.`,
+          });
+        } catch (
+          transactionError
+        ) {
+          console.error(
+            transactionError,
+          );
+
+          const message =
+            errorMessage(
+              transactionError,
+
+              "OCH swap + HoodWallet activation failed.",
+            );
+
+          setTxState({
+            action:
+              null,
+
+            message,
+          });
+
+          setError(
+            message,
+          );
+        }
+      },
+      [
+        activationCost,
+        activationEnabled,
+        activateHoodWallet,
+        address,
+        connect,
+        ensureRequiredNetwork,
+        getWalletClient,
+        loadSelectedWallet,
+        ownerOCHBalance,
+        provider,
+        refreshOwnerEconomy,
+        selectedWallet,
+        waitForHash,
+      ],
+    );
+
+  /*//////////////////////////////////////////////////////////////
                           CLAIM PING
   //////////////////////////////////////////////////////////////*/
 
@@ -3095,6 +3676,13 @@ export default function HoodWalletPage() {
     ownerOCHBalance >=
     activationCost;
 
+  const missingActivationOCH =
+    activationCost >
+    ownerOCHBalance
+      ? activationCost -
+        ownerOCHBalance
+      : BigInt(0);
+
   const processing =
     txState.action !==
     null;
@@ -3745,56 +4333,105 @@ export default function HoodWalletPage() {
 
                         </div>
 
-                        {!ownerHasEnough && (
+                        {!ownerHasEnough ? (
 
-                          <p className="mt-3 border border-[var(--hood-fg)] p-3 text-[8px] uppercase">
-                            Insufficient OCH for activation.
-                          </p>
+                          <div className="mt-3">
+
+                            <div className="border border-[var(--hood-fg)] p-4">
+
+                              <p className="text-[7px] uppercase tracking-[0.14em] opacity-55">
+                                Missing for activation
+                              </p>
+
+                              <p className="mt-2 text-2xl">
+                                {formatBalance(
+                                  missingActivationOCH,
+                                )}{" "}
+                                OCH
+                              </p>
+
+                              <p className="mt-2 text-[7px] uppercase leading-relaxed opacity-55">
+                                Swap ETH for exactly the missing OCH, then continue directly into HoodWallet activation.
+                              </p>
+
+                            </div>
+
+                            <button
+                              type="button"
+
+                              disabled={
+                                processing
+                              }
+
+                              onClick={() =>
+                                void swapMissingOchAndActivate()
+                              }
+
+                              className="mt-3 w-full bg-[var(--hood-fg)] px-4 py-5 text-[var(--hood-bg)] disabled:opacity-35"
+                            >
+
+                              <span className="block text-[11px] uppercase tracking-[0.16em]">
+                                {txState.action ===
+                                "swap-activate"
+                                  ? "Getting OCH + Activating…"
+                                  : `Get ${formatBalance(
+                                      missingActivationOCH,
+                                    )} OCH + Activate`}
+                              </span>
+
+                              <span className="mx-auto mt-3 block max-w-xl text-[7px] uppercase leading-relaxed opacity-65">
+                                Uses the live OCH / ETH pool on Robinhood Chain. Your connected EVM wallet pays ETH and network gas. Only the missing OCH is purchased.
+                              </span>
+
+                            </button>
+
+                          </div>
+
+                        ) : (
+
+                          <button
+                            type="button"
+
+                            disabled={
+                              processing
+                            }
+
+                            onClick={() =>
+                              void activateHoodWallet()
+                            }
+
+                            className="mt-3 w-full bg-[var(--hood-fg)] px-4 py-5 text-[var(--hood-bg)] disabled:opacity-35"
+                          >
+
+                            <span className="block text-[11px] uppercase tracking-[0.16em]">
+                              {txState.action ===
+                              "activate"
+                                ? "Activating HoodWallet…"
+                                : "Activate HoodWallet"}
+                            </span>
+
+                            <span className="mt-2 block text-[18px]">
+                              {formatBalance(
+                                activationCost,
+                              )}{" "}
+                              OCH
+                            </span>
+
+                            <span className="mx-auto mt-3 block max-w-xl text-[7px] uppercase leading-relaxed opacity-65">
+                              Uses{" "}
+                              {formatBalance(
+                                activationCost,
+                              )}{" "}
+                              OCH from your connected EVM wallet.
+                              {ownerAllowance <
+                              activationCost
+                                ? " Your wallet may first request OCH authorization, then the activation confirmation."
+                                : " OCH authorization already exists."}
+                            </span>
+
+                          </button>
 
                         )}
-
-                        <button
-                          type="button"
-
-                          disabled={
-                            processing ||
-                            !ownerHasEnough
-                          }
-
-                          onClick={() =>
-                            void activateHoodWallet()
-                          }
-
-                          className="mt-3 w-full bg-[var(--hood-fg)] px-4 py-5 text-[var(--hood-bg)] disabled:opacity-35"
-                        >
-
-                          <span className="block text-[11px] uppercase tracking-[0.16em]">
-                            {txState.action ===
-                            "activate"
-                              ? "Activating HoodWallet…"
-                              : "Activate HoodWallet"}
-                          </span>
-
-                          <span className="mt-2 block text-[18px]">
-                            {formatBalance(
-                              activationCost,
-                            )}{" "}
-                            OCH
-                          </span>
-
-                          <span className="mx-auto mt-3 block max-w-xl text-[7px] uppercase leading-relaxed opacity-65">
-                            Uses{" "}
-                            {formatBalance(
-                              activationCost,
-                            )}{" "}
-                            OCH from your connected EVM wallet.
-                            {ownerAllowance <
-                            activationCost
-                              ? " Your wallet may first request OCH authorization, then the activation confirmation."
-                              : " OCH authorization already exists."}
-                          </span>
-
-                        </button>
 
                       </>
 

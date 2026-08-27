@@ -12,6 +12,9 @@ import {
 
 const API_BASE = "https://api.onchainhoodies.xyz";
 
+const PING_OPENSEA_URL =
+  `https://opensea.io/assets/robinhood/${siteConfig.pingAddress}`;
+
 type NeighborName = "Builder" | "Collector" | "Flipper" | "HODLer";
 
 type NeighborToken = {
@@ -123,11 +126,25 @@ const tools = [
   },
 ];
 
-const faqs = [
+type FaqLink = {
+  label: string;
+  href: string;
+  external?: boolean;
+};
+
+type Faq = {
+  question: string;
+  answer: string;
+  href?: string;
+  linkLabel?: string;
+  links?: FaqLink[];
+};
+
+const faqs: Faq[] = [
   {
     question: "What are OnChainHoodies?",
     answer:
-      "OnChainHoodies is a collection of 6,000 1-bit Hoodies living as a fully on-chain neighborhood. Each Hoodie has its own traits, artwork and identity inside a growing ecosystem of tools and experiences.",
+      "OnChainHoodies is a collection of 6,000 1-bit Hoodies living as a fully on-chain neighborhood on Robinhood Chain. Each Hoodie has its own artwork, traits and identity inside a growing ecosystem of wallets, apps, tools and community builds.",
     href: "/tools/explorer",
     linkLabel: "Explore the Hoodies",
   },
@@ -141,9 +158,9 @@ const faqs = [
   {
     question: "What can I do with my Hoodie?",
     answer:
-      "Explore traits and rarity, give your Hoodie a permanent Hood Talk, make collages and wallet grids, use Hoodie Cam, create a Gym Hoodie and discover more experiences built around the collection.",
-    href: "#builds",
-    linkLabel: "Explore the tools",
+      "Your Hoodie can speak through Hood Talk, own assets through HoodWallet and use apps through HoodOS. MintOS lets a Hoodie mint supported public OpenSea drops, BuyOS lets it collect secondary NFTs, and the wider ecosystem adds tools, games and experiments around the collection.",
+    href: "/hoodos",
+    linkLabel: "Explore HoodOS",
   },
   {
     question: "What is Hood Talk?",
@@ -155,37 +172,80 @@ const faqs = [
   {
     question: "What are HoodWallet and HoodOS?",
     answer:
-      "HoodWallet gives every Hoodie its own programmable on-chain account. $OCH is used to activate it for the current owner, while HoodOS handles the wallet logic and permissions. When the Hoodie changes owners, the HoodWallet becomes inactive and the new owner activates it again.",
-    href: "/hoodwallet",
-    linkLabel: "Explore HoodWallet",
+      "HoodWallet is the on-chain account belonging to a Hoodie. It can hold ETH, $OCH, Ping and other assets. HoodOS is the capability and app layer built around that account, letting the Hoodie mint, collect and interact on-chain while the current Hoodie owner remains in control.",
+    links: [
+      {
+        label: "Open HoodWallet",
+        href: "/hoodwallet",
+      },
+      {
+        label: "Explore HoodOS",
+        href: "/hoodos",
+      },
+    ],
+  },
+  {
+    question: "What is Ping?",
+    answer:
+      "Ping is the first matching asset a Hoodie can unlock through HoodWallet. The first activation makes the corresponding Ping claimable and it is delivered directly into that Hoodie's on-chain wallet.",
+    links: [
+      {
+        label: "View Ping contract",
+        href: contractExplorerUrl(siteConfig.pingAddress),
+        external: true,
+      },
+      {
+        label: "View Ping on OpenSea",
+        href: PING_OPENSEA_URL,
+        external: true,
+      },
+    ],
   },
   {
     question: "What is $OCH?",
     answer:
-      "$OCH is the fixed-supply currency of the Hood. It powers participation across the OnChainHoodies ecosystem and is used to activate HoodWallets. The official $OCH contract is deployed on Robinhood Chain and Season 01 distribution is being prepared.",
+      "$OCH is the fixed-supply currency of the Hood. It is live on Robinhood Chain, powers HoodWallet activation and is designed to grow alongside real utility across HoodOS, community integrations and the wider Hoodie economy. Season 01 is complete and Season 02 focuses on builders extending HoodOS or creating meaningful $OCH utility.",
     href: "/och",
     linkLabel: "Explore the Hood Economy",
   },
   {
     question: "Can I build with OnChainHoodies?",
     answer:
-      "Yes. OnChainHoodies is CC0, so the artwork and culture are open for people to build with. The public Builder API also exposes collection, ownership, market, Hood Talk and intelligence data for new tools and experiments.",
-    href: "/api",
-    linkLabel: "Open the Builder API",
+      "Yes. OnChainHoodies is CC0 and the public API exposes collection, ownership, market and Hood Talk data. Builders can create around the wider ecosystem or go deeper by building HoodOS integrations that give Hoodies new capabilities or meaningful uses for $OCH.",
+    links: [
+      {
+        label: "Open the Builder API",
+        href: "/api",
+      },
+      {
+        label: "Explore builders",
+        href: "/builders",
+      },
+    ],
   },
   {
     question: "Where can I see community projects?",
     answer:
-      "The Builders page collects tools, experiments and projects created around OnChainHoodies. The homepage keeps only a smaller selection so the full ecosystem has room to grow elsewhere.",
+      "The Builders page is the wider ecosystem showcase for tools, games, visualizers, experiments and integrations created around OnChainHoodies. HoodOS is the app layer specifically for capabilities that the Hoodie itself can use.",
     href: "/builders",
     linkLabel: "See community builds",
   },
   {
     question: "Where can I follow what happens next?",
     answer:
-      "New tools and ecosystem updates appear across the site, while the community pages and Discord are the best places to follow what is shipping and talk with other Hoodie holders.",
-    href: "/community",
-    linkLabel: "Enter the community",
+      "Follow OnChainHoodies on X for shipped updates, announcements and new integrations. Join Discord to talk with holders and builders, share what you are working on and stay close to what is being built next.",
+    links: [
+      {
+        label: "Follow on X",
+        href: siteConfig.xUrl,
+        external: true,
+      },
+      {
+        label: "Join Discord",
+        href: siteConfig.discordUrl,
+        external: true,
+      },
+    ],
   },
 ];
 
@@ -1499,7 +1559,7 @@ export default function Home() {
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
             <p>03 / The Hood Economy</p>
-            <p>$OCH / Drop Preparation</p>
+            <p>$OCH / Live Economy</p>
           </div>
 
           <div className="mt-12 grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
@@ -1521,10 +1581,9 @@ export default function Home() {
               </h2>
 
               <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-75 md:text-xl">
-                A fixed-supply ERC-20 powering
-                participation, HoodWallet activation
-                and the wider OnChainHoodies
-                ecosystem.
+                A fixed-supply ERC-20 powering HoodWallet activation,
+                on-chain participation and a growing economy of apps,
+                integrations and builders around the Hood.
               </p>
 
               <div className="mt-8 grid max-w-xl grid-cols-2 border-l border-t border-[#ccff00] text-[9px] uppercase tracking-[0.14em] sm:grid-cols-4">
@@ -1532,7 +1591,7 @@ export default function Home() {
                   ["Supply", "100M"],
                   ["Inflation", "None"],
                   ["Trading Tax", "0%"],
-                  ["Season 01", "Complete"],
+                  ["Status", "Live"],
                 ].map(([label, value]) => (
                   <div
                     key={label}
@@ -1553,7 +1612,7 @@ export default function Home() {
                 href="/och"
                 className="mt-10 inline-block text-xs uppercase tracking-[0.18em] underline underline-offset-4"
               >
-                Explore the Economy →
+                Explore the live economy →
               </Link>
             </div>
 
@@ -1577,63 +1636,28 @@ export default function Home() {
 
                   <g transform="rotate(-90 120 120)">
                     {[
-                      {
-                        dash: "30 70",
-                        offset: 0,
-                        opacity: 1,
-                      },
-                      {
-                        dash: "35 65",
-                        offset: -30,
-                        opacity: 0.82,
-                      },
-                      {
-                        dash: "20 80",
-                        offset: -65,
-                        opacity: 0.66,
-                      },
-                      {
-                        dash: "5 95",
-                        offset: -85,
-                        opacity: 0.5,
-                      },
-                      {
-                        dash: "5 95",
-                        offset: -90,
-                        opacity: 0.34,
-                      },
-                      {
-                        dash: "5 95",
-                        offset: -95,
-                        opacity: 0.22,
-                      },
-                    ].map(
-                      (
-                        segment,
-                        index,
-                      ) => (
-                        <circle
-                          key={index}
-                          cx="120"
-                          cy="120"
-                          r="86"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="30"
-                          pathLength="100"
-                          strokeDasharray={
-                            segment.dash
-                          }
-                          strokeDashoffset={
-                            segment.offset
-                          }
-                          strokeLinecap="butt"
-                          opacity={
-                            segment.opacity
-                          }
-                        />
-                      ),
-                    )}
+                      { dash: "30 70", offset: 0, opacity: 1 },
+                      { dash: "35 65", offset: -30, opacity: 0.82 },
+                      { dash: "20 80", offset: -65, opacity: 0.66 },
+                      { dash: "5 95", offset: -85, opacity: 0.5 },
+                      { dash: "5 95", offset: -90, opacity: 0.34 },
+                      { dash: "5 95", offset: -95, opacity: 0.22 },
+                    ].map((segment, index) => (
+                      <circle
+                        key={index}
+                        cx="120"
+                        cy="120"
+                        r="86"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="30"
+                        pathLength="100"
+                        strokeDasharray={segment.dash}
+                        strokeDashoffset={segment.offset}
+                        strokeLinecap="butt"
+                        opacity={segment.opacity}
+                      />
+                    ))}
                   </g>
 
                   <circle
@@ -1674,10 +1698,7 @@ export default function Home() {
                   ["Community Fund", "35%"],
                   ["Liquidity", "20%"],
                   ["Treasury", "5%"],
-                  [
-                    "Robinhood Ecosystem",
-                    "5%",
-                  ],
+                  ["Robinhood Ecosystem", "5%"],
                   ["Team", "5%"],
                 ].map(([label, value]) => (
                   <div
@@ -1697,7 +1718,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="mt-10 grid border-l border-t border-[#ccff00] md:grid-cols-3">
+          <div className="mt-10 grid border-l border-t border-[#ccff00] md:grid-cols-4">
             <div className="border-b border-r border-[#ccff00] p-4">
               <p className="text-[8px] uppercase tracking-[0.14em] opacity-50">
                 Season 01
@@ -1708,9 +1729,22 @@ export default function Home() {
               </p>
 
               <p className="mt-2 text-xs leading-relaxed opacity-60">
-                Early participation has closed and
-                the first distribution is being
-                prepared.
+                The first community season has closed.
+              </p>
+            </div>
+
+            <div className="border-b border-r border-[#ccff00] p-4">
+              <p className="text-[8px] uppercase tracking-[0.14em] opacity-50">
+                Season 02
+              </p>
+
+              <p className="mt-2 text-xl">
+                Builders
+              </p>
+
+              <p className="mt-2 text-xs leading-relaxed opacity-60">
+                Supporting builders extending HoodOS or creating meaningful
+                utility for $OCH.
               </p>
             </div>
 
@@ -1724,8 +1758,8 @@ export default function Home() {
               </p>
 
               <p className="mt-2 text-xs leading-relaxed opacity-60">
-                Initial activation cost for the
-                current Hoodie owner.
+                Current activation cost, with an integrated ETH → OCH swap
+                when the owner is short.
               </p>
             </div>
 
@@ -1735,13 +1769,12 @@ export default function Home() {
               </p>
 
               <p className="mt-2 text-xl">
-                Hoodie + Buddy
+                Matching Ping
               </p>
 
               <p className="mt-2 text-xs leading-relaxed opacity-60">
-                The first activation introduces the
-                Hoodie to its first HoodWallet
-                companion.
+                Activate the Hoodie and unlock its matching Ping directly
+                into HoodWallet.
               </p>
             </div>
           </div>
@@ -1752,9 +1785,7 @@ export default function Home() {
             </span>
 
             <a
-              href={contractExplorerUrl(
-                siteConfig.ochAddress,
-              )}
+              href={contractExplorerUrl(siteConfig.ochAddress)}
               target="_blank"
               rel="noreferrer"
               className="break-all underline underline-offset-4"
@@ -1764,9 +1795,102 @@ export default function Home() {
 
             <span className="opacity-60">
               {" "}
-              · Always verify the contract before
-              interacting.
+              · Always verify the contract before interacting.
             </span>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="ping"
+        className="px-6 py-20 md:py-24"
+      >
+        <div className="mx-auto max-w-[1440px]">
+          <div className="section-heading-row border-black">
+            <p>04 / Ping</p>
+            <p>The first HoodWallet asset</p>
+          </div>
+
+          <div className="mt-12 grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+            <div className="overflow-hidden border-2 border-black bg-black">
+              <img
+                src="/ping.gif"
+                alt="Animated Ping collection"
+                className="image-render-pixel aspect-square h-full w-full object-cover"
+              />
+            </div>
+
+            <div>
+              <p className="text-[9px] uppercase tracking-[0.18em] opacity-50">
+                Hoodie #N → Ping #N
+              </p>
+
+              <h2 className="section-title mt-5">
+                MEET
+                <br />
+                PING.
+              </h2>
+
+              <p className="mt-7 max-w-xl text-lg leading-relaxed opacity-75 md:text-xl">
+                Ping is the first matching asset your Hoodie can unlock.
+                The first activation makes its corresponding Ping claimable
+                and sends it directly into that Hoodie&apos;s HoodWallet.
+              </p>
+
+              <div className="mt-8 grid max-w-xl grid-cols-2 border-l-2 border-t-2 border-black">
+                {[
+                  ["Relationship", "1 per Hoodie"],
+                  ["Unlock", "First activation"],
+                  ["Destination", "HoodWallet"],
+                  ["Network", "Robinhood"],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="border-b-2 border-r-2 border-black p-4"
+                  >
+                    <p className="text-[7px] uppercase tracking-[0.14em] opacity-50">
+                      {label}
+                    </p>
+                    <p className="mt-2 text-sm uppercase">
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-7 flex flex-wrap gap-3">
+                <Link
+                  href="/hoodwallet"
+                  className="pixel-cta pixel-cta-dark"
+                >
+                  Open HoodWallet
+                </Link>
+
+                <a
+                  href={PING_OPENSEA_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="pixel-cta"
+                >
+                  View Ping on OpenSea ↗
+                </a>
+              </div>
+
+              <div className="mt-7 border border-black p-4">
+                <p className="text-[7px] uppercase tracking-[0.14em] opacity-50">
+                  Ping contract
+                </p>
+
+                <a
+                  href={contractExplorerUrl(siteConfig.pingAddress)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 block break-all text-[9px] underline underline-offset-4"
+                >
+                  {siteConfig.pingAddress}
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -1777,7 +1901,7 @@ export default function Home() {
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>04 / Things to do</p>
+            <p>05 / Things to do</p>
             <p>Use your Hoodie</p>
           </div>
 
@@ -1852,72 +1976,96 @@ export default function Home() {
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
-            <p>
-              05 / HoodOS + HoodWallet
-            </p>
-            <p>A wallet for your Hoodie</p>
+            <p>06 / HoodOS</p>
+            <p>What can your Hoodie do?</p>
           </div>
 
-          <div className="mt-12 grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+          <div className="mt-12 grid gap-12 lg:grid-cols-[0.78fr_1.22fr] lg:items-end">
             <div>
               <p className="text-[9px] uppercase tracking-[0.18em] opacity-55">
-                More than a collectible
+                Hoodie capabilities
               </p>
 
               <h2 className="section-title mt-5">
-                Your Hoodie
+                YOUR HOODIE
                 <br />
-                gets its own wallet.
+                CAN ACT.
               </h2>
 
               <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-78 md:text-xl">
-                HoodWallet gives every Hoodie its
-                own on-chain account. It can hold
-                assets and interact with the
-                on-chain world, while HoodOS keeps
-                the Hoodie owner in control and
-                makes optional delegation possible.
+                HoodWallet gives every Hoodie its own on-chain account.
+                HoodOS is the app layer that gives that account things to do:
+                mint, collect, hold assets and interact with the on-chain world
+                as the Hoodie itself.
               </p>
 
-              <Link
-                href="/hoodwallet"
-                className="pixel-cta mt-9 inline-flex border-[#ccff00]"
-              >
-                Explore HoodWallet →
-              </Link>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link
+                  href="/hoodos"
+                  className="pixel-cta border-[#ccff00]"
+                >
+                  Explore HoodOS →
+                </Link>
+
+                <Link
+                  href="/hoodwallet"
+                  className="pixel-cta border-[#ccff00] bg-[#ccff00] text-black"
+                >
+                  Open HoodWallet →
+                </Link>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 border-l-2 border-t-2 border-[#ccff00]">
+            <div className="grid border-l-2 border-t-2 border-[#ccff00] sm:grid-cols-2">
               {[
-                [
-                  "Own assets",
-                  "A wallet address that belongs to the Hoodie.",
-                ],
-                [
-                  "Use on-chain apps",
-                  "Let the Hoodie interact beyond the collection itself.",
-                ],
-                [
-                  "Delegate actions",
-                  "Give approved access without handing over the Hoodie.",
-                ],
-                [
-                  "Stay in control",
-                  "Ownership of the Hoodie remains with its holder.",
-                ],
-              ].map(([title, copy]) => (
-                <div
-                  key={title}
-                  className="min-h-[190px] border-b-2 border-r-2 border-[#ccff00] p-5 md:p-6"
+                {
+                  eyebrow: "Account",
+                  title: "HoodWallet",
+                  copy: "The deterministic on-chain account belonging to your Hoodie.",
+                  href: "/hoodwallet",
+                },
+                {
+                  eyebrow: "HoodOS / App 01",
+                  title: "MintOS",
+                  copy: "Mint supported Robinhood OpenSea public drops directly as your Hoodie.",
+                  href: "/hoodos/mintos",
+                },
+                {
+                  eyebrow: "HoodOS / App 02",
+                  title: "BuyOS",
+                  copy: "Browse secondary listings and collect NFTs directly into HoodWallet.",
+                  href: "/hoodos/buyos",
+                },
+                {
+                  eyebrow: "Open platform",
+                  title: "Build for HoodOS",
+                  copy: "Builders can add new capabilities and integrations for Hoodies to use.",
+                  href: "/builders",
+                },
+              ].map((app) => (
+                <Link
+                  key={app.title}
+                  href={app.href}
+                  className="flex min-h-[220px] flex-col justify-between border-b-2 border-r-2 border-[#ccff00] p-5 transition-colors hover:bg-[#ccff00] hover:text-black md:p-6"
                 >
-                  <h3 className="text-xl leading-none tracking-[-0.03em] md:text-2xl">
-                    {title}
-                  </h3>
+                  <div>
+                    <p className="text-[7px] uppercase tracking-[0.15em] opacity-50">
+                      {app.eyebrow}
+                    </p>
 
-                  <p className="mt-4 text-sm leading-relaxed opacity-65">
-                    {copy}
-                  </p>
-                </div>
+                    <h3 className="mt-5 text-2xl leading-none tracking-[-0.04em] md:text-3xl">
+                      {app.title}
+                    </h3>
+
+                    <p className="mt-4 max-w-sm text-sm leading-relaxed opacity-65">
+                      {app.copy}
+                    </p>
+                  </div>
+
+                  <span className="mt-7 text-[8px] uppercase tracking-[0.15em] underline underline-offset-4">
+                    Open →
+                  </span>
+                </Link>
               ))}
             </div>
           </div>
@@ -1930,7 +2078,7 @@ export default function Home() {
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>06 / Builders</p>
+            <p>07 / Builders</p>
             <p>Build in the Hood</p>
           </div>
 
@@ -2021,7 +2169,7 @@ export default function Home() {
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
-            <p>07 / On-chain</p>
+            <p>08 / On-chain</p>
             <p>Verify everything</p>
           </div>
 
@@ -2099,7 +2247,7 @@ export default function Home() {
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>08 / FAQ</p>
+            <p>09 / FAQ</p>
             <p>Read the Hood</p>
           </div>
 
@@ -2153,7 +2301,31 @@ export default function Home() {
                         {faq.answer}
                       </p>
 
-                      {faq.href ? (
+                      {faq.links && faq.links.length > 0 ? (
+                        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-3">
+                          {faq.links.map((item) =>
+                            item.external ? (
+                              <a
+                                key={`${faq.question}-${item.label}`}
+                                href={item.href}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[9px] uppercase tracking-[0.15em] underline underline-offset-4"
+                              >
+                                {item.label} ↗
+                              </a>
+                            ) : (
+                              <Link
+                                key={`${faq.question}-${item.label}`}
+                                href={item.href}
+                                className="text-[9px] uppercase tracking-[0.15em] underline underline-offset-4"
+                              >
+                                {item.label} →
+                              </Link>
+                            ),
+                          )}
+                        </div>
+                      ) : faq.href ? (
                         <Link
                           href={faq.href}
                           className="mt-4 inline-block text-[9px] uppercase tracking-[0.15em] underline underline-offset-4"
@@ -2170,33 +2342,43 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-black px-6 py-7 text-[#ccff00]">
-        <div className="mx-auto flex max-w-[1440px] flex-col gap-5 border-y border-[#ccff00] py-6 md:flex-row md:items-center md:justify-between">
+      <section className="bg-black px-6 py-8 text-[#ccff00]">
+        <div className="mx-auto grid max-w-[1440px] gap-6 border-y border-[#ccff00] py-7 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
             <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
-              Community / Discord
+              Stay in the Hood
             </p>
 
             <h2 className="mt-2 text-2xl leading-none tracking-[-0.04em] md:text-3xl">
-              Build with your Hoodies.
+              FOLLOW WHAT SHIPS.
             </h2>
 
             <p className="mt-3 max-w-2xl text-sm leading-relaxed opacity-70 md:text-base">
-              Meet other Hoodie holders inside the
-              Hood. Share what you are working on,
-              find collaborators and stay close to
-              what ships next.
+              Follow OnChainHoodies on X for announcements and shipped
+              updates. Join Discord to meet holders, builders and the people
+              extending the Hood.
             </p>
           </div>
 
-          <a
-            href="https://discord.gg/onchainhood"
-            target="_blank"
-            rel="noreferrer"
-            className="pixel-cta shrink-0 border-[#ccff00]"
-          >
-            Join the Hood →
-          </a>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <a
+              href={siteConfig.xUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="pixel-cta shrink-0 border-[#ccff00]"
+            >
+              Follow on X ↗
+            </a>
+
+            <a
+              href={siteConfig.discordUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="pixel-cta shrink-0 border-[#ccff00] bg-[#ccff00] text-black"
+            >
+              Join Discord ↗
+            </a>
+          </div>
         </div>
       </section>
 

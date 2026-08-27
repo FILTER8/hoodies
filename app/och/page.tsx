@@ -1,453 +1,628 @@
+"use client";
+
 import Link from "next/link";
+import {
+  Contract,
+  JsonRpcProvider,
+  formatUnits,
+} from "ethers";
+import {
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
+import type {
+  Address,
+  Hex,
+} from "viem";
+
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
+import { useWallet } from "../../components/WalletProvider";
 import {
   contractExplorerUrl,
   siteConfig,
 } from "../../lib/config";
 
-/* =========================================================
-   OCH CONFIG
-   ========================================================= */
+/*//////////////////////////////////////////////////////////////
+                            CONFIG
+//////////////////////////////////////////////////////////////*/
 
 const OCH_CONTRACT_ADDRESS = siteConfig.ochAddress;
-
-const WHITEPAPER_HREF = "/whitepaper";
-
-const HOOD_TALK_QUALIFYING_HOODIES = 2540;
-
-const HOOD_TALK_FIRST_REWARD = "2,500 OCH";
+const PING_CONTRACT_ADDRESS = siteConfig.pingAddress;
 
 const INITIAL_ACTIVATION_FEE = "2,500 OCH";
 const INITIAL_BURN_RATE = "5%";
 const INITIAL_TREASURY_RATE = "95%";
 
+const PING_OPENSEA_URL = PING_CONTRACT_ADDRESS
+  ? `https://opensea.io/assets/robinhood/${PING_CONTRACT_ADDRESS}`
+  : "#";
+
 const contractIsLive = Boolean(OCH_CONTRACT_ADDRESS);
 
-const shortAddress = (address: string) => {
-  if (!address) return "TBA";
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+const ERC20_READ_ABI = [
+  "function allowance(address owner,address spender) view returns (uint256)",
+] as const;
+
+const ERC20_APPROVE_ABI = [
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
+
+/*//////////////////////////////////////////////////////////////
+                              TYPES
+//////////////////////////////////////////////////////////////*/
+
+type SwapDirection = "ETH_TO_OCH" | "OCH_TO_ETH";
+
+type SwapQuote = {
+  ok?: boolean;
+  chainId?: number;
+  direction?: SwapDirection;
+  amountIn?: string;
+  amountInFormatted?: string;
+  amountOut?: string;
+  amountOutFormatted?: string;
+  amountOutMinimum?: string;
+  amountOutMinimumFormatted?: string;
+  slippageBps?: number;
+  expiresAt?: number;
+  approval?: {
+    required: boolean;
+    token: string | null;
+    spender: string | null;
+  };
+  execution?: {
+    to: string;
+    data: Hex;
+    value: string;
+  };
+  error?: string;
 };
 
-/* =========================================================
-   TOKEN DISTRIBUTION
-   ========================================================= */
+/*//////////////////////////////////////////////////////////////
+                           STATIC DATA
+//////////////////////////////////////////////////////////////*/
 
 const allocations = [
-  {
-    label: "Hoodies",
-    percent: 30,
-    amount: "30,000,000 OCH",
-    dash: "30 70",
-    offset: 0,
-    opacity: 1,
-  },
-  {
-    label: "Community Fund",
-    percent: 35,
-    amount: "35,000,000 OCH",
-    dash: "35 65",
-    offset: -30,
-    opacity: 0.82,
-  },
-  {
-    label: "Liquidity",
-    percent: 20,
-    amount: "20,000,000 OCH",
-    dash: "20 80",
-    offset: -65,
-    opacity: 0.66,
-  },
-  {
-    label: "Treasury",
-    percent: 5,
-    amount: "5,000,000 OCH",
-    dash: "5 95",
-    offset: -85,
-    opacity: 0.5,
-  },
-  {
-    label: "Robinhood Ecosystem",
-    percent: 5,
-    amount: "5,000,000 OCH",
-    dash: "5 95",
-    offset: -90,
-    opacity: 0.34,
-  },
-  {
-    label: "Team",
-    percent: 5,
-    amount: "5,000,000 OCH",
-    dash: "5 95",
-    offset: -95,
-    opacity: 0.22,
-  },
-];
-
-const hoodieRounds = [
-  {
-    number: "01",
-    timing: "Launch",
-    amount: "10%",
-    description: "First Hoodie distribution.",
-  },
-  {
-    number: "02",
-    timing: "+2 Months",
-    amount: "10%",
-    description: "Second Hoodie distribution.",
-  },
-  {
-    number: "03",
-    timing: "+4 Months",
-    amount: "10%",
-    description: "Final Hoodie distribution.",
-  },
-];
-
-const communityRounds = [
-  {
-    number: "01",
-    timing: "Season 01",
-    amount: "15%",
-    label: "Growth",
-    description:
-      "Season 01 recognizes early participation across Hood Talk, submitted X contributions and verified Hoodie PFPs.",
-  },
-  {
-    number: "02",
-    timing: "+2 Months",
-    amount: "10%",
-    label: "Season 02",
-    description:
-      "Reserved for the next season of participation and community contribution.",
-  },
-  {
-    number: "03",
-    timing: "+4 Months",
-    amount: "10%",
-    label: "Season 03",
-    description:
-      "Reserved for the third seasonal participation period.",
-  },
+  { label: "Hoodies", percent: 30, amount: "30,000,000 OCH" },
+  { label: "Community Fund", percent: 35, amount: "35,000,000 OCH" },
+  { label: "Liquidity", percent: 20, amount: "20,000,000 OCH" },
+  { label: "Treasury", percent: 5, amount: "5,000,000 OCH" },
+  { label: "Robinhood Ecosystem", percent: 5, amount: "5,000,000 OCH" },
+  { label: "Team", percent: 5, amount: "5,000,000 OCH" },
 ];
 
 const tokenDetails = [
+  ["Total Supply", "100,000,000"],
+  ["Inflation", "None"],
+  ["Buy Tax", "0%"],
+  ["Sell Tax", "0%"],
+  ["Transfer Tax", "0%"],
+];
+
+const seasonTwoPillars = [
   {
-    label: "Total Supply",
-    value: "100,000,000",
+    number: "01",
+    title: "HoodOS",
+    description:
+      "Build apps that give Hoodies new on-chain capabilities through their HoodWallet.",
   },
   {
-    label: "Inflation",
-    value: "None",
+    number: "02",
+    title: "$OCH",
+    description:
+      "Create meaningful uses for the currency of the Hood inside products, games and protocols.",
   },
   {
-    label: "Buy Tax",
-    value: "0%",
+    number: "03",
+    title: "Usage",
+    description:
+      "Working products and real usage matter more than announcements or passive integrations.",
   },
   {
-    label: "Sell Tax",
-    value: "0%",
-  },
-  {
-    label: "Transfer Tax",
-    value: "0%",
+    number: "04",
+    title: "Open",
+    description:
+      "Build permissionlessly. Season 02 is about extending what the Hood can actually do.",
   },
 ];
 
-const hoodWalletDetails = [
-  {
-    label: "Before Activation",
-    value: "Receive",
-    description:
-      "The HoodWallet can receive supported on-chain assets before activation.",
-  },
-  {
-    label: "Initial Activation",
-    value: "2,500 OCH",
-    description:
-      "The initial activation fee enables the HoodWallet for the current Hoodie owner.",
-  },
-  {
-    label: "Initial Burn",
-    value: "5%",
-    description:
-      "125 OCH is burned from a 2,500 OCH activation under the initial parameters.",
-  },
-  {
-    label: "Treasury Flow",
-    value: "95%",
-    description:
-      "2,375 OCH flows to the Hood Treasury under the initial parameters.",
-  },
-];
+/*//////////////////////////////////////////////////////////////
+                            HELPERS
+//////////////////////////////////////////////////////////////*/
 
-const liquidityDetails = [
-  {
-    label: "Initial OCH Liquidity",
-    value: "15M OCH",
-    description:
-      "Allocated to the initial Uniswap V4 liquidity position.",
-  },
-  {
-    label: "Initial Pair",
-    value: "OCH / ETH",
-    description:
-      "The initial market is paired against native ETH on Uniswap V4.",
-  },
-  {
-    label: "Liquidity Reserve",
-    value: "5M OCH",
-    description:
-      "Reserved exclusively for future liquidity deployment.",
-  },
-  {
-    label: "Initial LP Lock",
-    value: "730 Days",
-    description:
-      "The initial Uniswap V4 position is committed to the on-chain liquidity locker.",
-  },
-];
+function shortAddress(address: string) {
+  if (!address) return "TBA";
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
 
-/* =========================================================
-   PAGE
-   ========================================================= */
+function errorMessage(error: unknown, fallback: string) {
+  if (typeof error === "object" && error !== null) {
+    const candidate = error as {
+      shortMessage?: string;
+      message?: string;
+      cause?: { shortMessage?: string; message?: string };
+    };
+
+    return (
+      candidate.shortMessage ||
+      candidate.cause?.shortMessage ||
+      candidate.cause?.message ||
+      candidate.message ||
+      fallback
+    );
+  }
+
+  return fallback;
+}
+
+function requireWalletAccount<T>(account: T | undefined): T {
+  if (!account) throw new Error("Wallet account unavailable.");
+  return account;
+}
+
+function format18(raw: bigint, maxDecimals = 6) {
+  const value = formatUnits(raw, 18);
+  const [whole, fraction = ""] = value.split(".");
+  const trimmed = fraction.slice(0, maxDecimals).replace(/0+$/, "");
+  return trimmed ? `${whole}.${trimmed}` : whole;
+}
+
+/*//////////////////////////////////////////////////////////////
+                           SWAP MODULE
+//////////////////////////////////////////////////////////////*/
+
+function OCHSwap() {
+  const {
+    address,
+    connect,
+    ensureRequiredNetwork,
+    getWalletClient,
+  } = useWallet();
+
+  const provider = useMemo(() => {
+    if (!siteConfig.rpcUrl) return null;
+
+    return new JsonRpcProvider(
+      siteConfig.rpcUrl,
+      Number(siteConfig.chainId),
+      { staticNetwork: true },
+    );
+  }, []);
+
+  const [direction, setDirection] = useState<SwapDirection>("ETH_TO_OCH");
+  const [amount, setAmount] = useState("");
+  const [slippageBps, setSlippageBps] = useState(100);
+  const [quote, setQuote] = useState<SwapQuote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [swapPending, setSwapPending] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const inputSymbol = direction === "ETH_TO_OCH" ? "ETH" : "OCH";
+  const outputSymbol = direction === "ETH_TO_OCH" ? "OCH" : "ETH";
+
+  const resetQuote = useCallback(() => {
+    setQuote(null);
+    setMessage("");
+    setError("");
+  }, []);
+
+  const flipDirection = useCallback(() => {
+    setDirection((current) =>
+      current === "ETH_TO_OCH" ? "OCH_TO_ETH" : "ETH_TO_OCH",
+    );
+    setAmount("");
+    resetQuote();
+  }, [resetQuote]);
+
+  const getQuote = useCallback(async () => {
+    if (!address) {
+      await connect();
+      return;
+    }
+
+    if (!amount.trim()) {
+      setError("Enter an amount first.");
+      return;
+    }
+
+    setQuoteLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/och/swap", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          direction,
+          amount: amount.trim(),
+          recipient: address,
+          slippageBps,
+        }),
+      });
+
+      const payload = (await response.json()) as SwapQuote;
+
+      if (!response.ok || !payload.ok || !payload.execution) {
+        throw new Error(payload.error || "Unable to quote this swap.");
+      }
+
+      setQuote(payload);
+    } catch (quoteError) {
+      setQuote(null);
+      setError(errorMessage(quoteError, "Unable to quote this swap."));
+    } finally {
+      setQuoteLoading(false);
+    }
+  }, [address, amount, connect, direction, slippageBps]);
+
+  const executeSwap = useCallback(async () => {
+    if (!address) {
+      await connect();
+      return;
+    }
+
+    if (!quote?.execution || !quote.amountIn) {
+      setError("Get a fresh quote first.");
+      return;
+    }
+
+    if (quote.expiresAt && Math.floor(Date.now() / 1000) >= quote.expiresAt) {
+      setQuote(null);
+      setError("Quote expired. Get a fresh quote.");
+      return;
+    }
+
+    try {
+      setSwapPending(true);
+      setError("");
+      setMessage("Preparing swap…");
+
+      await ensureRequiredNetwork();
+      const walletClient = await getWalletClient();
+      const account = requireWalletAccount(walletClient.account);
+      const amountIn = BigInt(quote.amountIn);
+
+      if (
+        quote.approval?.required &&
+        quote.approval.token &&
+        quote.approval.spender
+      ) {
+        if (!provider) throw new Error("RPC provider unavailable.");
+
+        const token = new Contract(
+          quote.approval.token,
+          ERC20_READ_ABI,
+          provider,
+        );
+
+        const allowance = BigInt(
+          await token.allowance(address, quote.approval.spender),
+        );
+
+        if (allowance < amountIn) {
+          setMessage("Authorize OCH for this swap…");
+
+          const approvalHash = await walletClient.writeContract({
+            chain: null,
+            address: quote.approval.token as Address,
+            abi: ERC20_APPROVE_ABI,
+            functionName: "approve",
+            args: [quote.approval.spender as Address, amountIn],
+            account,
+          });
+
+          const approvalReceipt = await provider.waitForTransaction(
+            approvalHash,
+            1,
+          );
+
+          if (!approvalReceipt || approvalReceipt.status !== 1) {
+            throw new Error("OCH approval failed.");
+          }
+        }
+      }
+
+      setMessage(`Swapping ${inputSymbol} for ${outputSymbol}…`);
+
+      const hash = await walletClient.sendTransaction({
+        chain: null,
+        account,
+        to: quote.execution.to as Address,
+        data: quote.execution.data,
+        value: BigInt(quote.execution.value),
+      });
+
+      if (!provider) throw new Error("RPC provider unavailable.");
+
+      const receipt = await provider.waitForTransaction(hash, 1);
+      if (!receipt || receipt.status !== 1) {
+        throw new Error("Swap transaction reverted.");
+      }
+
+      setMessage(
+        `Swap confirmed · ${quote.amountOutFormatted || ""} ${outputSymbol} quoted.`,
+      );
+      setAmount("");
+      setQuote(null);
+    } catch (swapError) {
+      setError(errorMessage(swapError, "Swap failed."));
+      setMessage("");
+    } finally {
+      setSwapPending(false);
+    }
+  }, [
+    address,
+    connect,
+    ensureRequiredNetwork,
+    getWalletClient,
+    inputSymbol,
+    outputSymbol,
+    provider,
+    quote,
+  ]);
+
+  return (
+    <div className="border-2 border-[#ccff00] bg-black text-[#ccff00]">
+      <div className="flex items-center justify-between border-b-2 border-[#ccff00] px-4 py-3">
+        <div>
+          <p className="text-[9px] uppercase tracking-[0.16em]">OCH Swap</p>
+          <p className="mt-1 text-[7px] uppercase tracking-[0.14em] opacity-55">
+            Official Uniswap V4 Pool
+          </p>
+        </div>
+
+        <span className="border border-[#ccff00] px-2 py-1 text-[7px] uppercase tracking-[0.14em]">
+          Robinhood
+        </span>
+      </div>
+
+      <div className="p-4 md:p-6">
+        <div className="border border-[#ccff00] p-4">
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[8px] uppercase opacity-55">You pay</p>
+            <p className="text-[10px] uppercase">{inputSymbol}</p>
+          </div>
+
+          <input
+            value={amount}
+            onChange={(event) => {
+              setAmount(event.target.value);
+              resetQuote();
+            }}
+            inputMode="decimal"
+            placeholder="0.0"
+            className="mt-3 w-full bg-transparent text-4xl outline-none placeholder:text-[#ccff00]/25 md:text-5xl"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={flipDirection}
+          className="mx-auto my-3 flex h-10 w-10 items-center justify-center border border-[#ccff00] text-lg"
+          aria-label="Reverse swap direction"
+        >
+          ↕
+        </button>
+
+        <div className="border border-[#ccff00] p-4">
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[8px] uppercase opacity-55">You receive</p>
+            <p className="text-[10px] uppercase">{outputSymbol}</p>
+          </div>
+
+          <p className="mt-3 min-h-[48px] text-4xl md:text-5xl">
+            {quote?.amountOutFormatted || "—"}
+          </p>
+
+          {quote?.amountOutMinimumFormatted ? (
+            <p className="mt-2 text-[7px] uppercase opacity-55">
+              Minimum received · {quote.amountOutMinimumFormatted} {outputSymbol}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="mt-3 flex items-center justify-between border border-[#ccff00] px-3 py-2">
+          <span className="text-[7px] uppercase opacity-55">Max slippage</span>
+
+          <select
+            value={slippageBps}
+            onChange={(event) => {
+              setSlippageBps(Number(event.target.value));
+              resetQuote();
+            }}
+            className="bg-black text-[8px] uppercase text-[#ccff00] outline-none"
+          >
+            <option value={50}>0.5%</option>
+            <option value={100}>1.0%</option>
+            <option value={200}>2.0%</option>
+            <option value={300}>3.0%</option>
+          </select>
+        </div>
+
+        {!quote ? (
+          <button
+            type="button"
+            disabled={quoteLoading || !amount.trim()}
+            onClick={() => void getQuote()}
+            className="mt-4 w-full bg-[#ccff00] px-5 py-5 text-[10px] uppercase tracking-[0.16em] text-black disabled:opacity-30"
+          >
+            {!address
+              ? "Connect to swap"
+              : quoteLoading
+                ? "Getting quote…"
+                : "Review swap"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={swapPending}
+            onClick={() => void executeSwap()}
+            className="mt-4 w-full bg-[#ccff00] px-5 py-5 text-[10px] uppercase tracking-[0.16em] text-black disabled:opacity-30"
+          >
+            {swapPending ? "Swapping…" : `Swap ${inputSymbol} → ${outputSymbol}`}
+          </button>
+        )}
+
+        {direction === "OCH_TO_ETH" ? (
+          <p className="mt-3 text-[7px] uppercase leading-relaxed opacity-50">
+            Your first OCH sell may require one token approval before the swap transaction.
+          </p>
+        ) : null}
+
+        {message ? (
+          <div className="mt-4 border border-[#ccff00] p-3">
+            <p className="text-[8px] uppercase leading-relaxed">{message}</p>
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="mt-4 bg-[#ccff00] p-3 text-black">
+            <p className="text-[8px] uppercase leading-relaxed">{error}</p>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/*//////////////////////////////////////////////////////////////
+                              PAGE
+//////////////////////////////////////////////////////////////*/
 
 export default function OCHPage() {
-  const ochExplorerUrl =
-    contractIsLive
-      ? contractExplorerUrl(OCH_CONTRACT_ADDRESS)
-      : "#";
+  const ochExplorerUrl = contractIsLive
+    ? contractExplorerUrl(OCH_CONTRACT_ADDRESS)
+    : "#";
+
+  const pingExplorerUrl = PING_CONTRACT_ADDRESS
+    ? contractExplorerUrl(PING_CONTRACT_ADDRESS)
+    : "#";
 
   return (
     <main className="bg-[#ccff00] text-black">
       <SiteHeader />
 
-      {/* =====================================================
-          SECURITY / OFFICIAL CONTRACT
-         ===================================================== */}
-
+      {/* OFFICIAL CONTRACT */}
       <div className="border-b border-black bg-black px-6 pt-20 text-[#ccff00]">
         <div className="mx-auto flex max-w-[1440px] items-center justify-center py-3 text-center">
-          {contractIsLive ? (
-            <p className="text-[8px] uppercase leading-relaxed tracking-[0.16em] md:text-[9px]">
-              Official $OCH Contract ·{" "}
-              <a
-                href={ochExplorerUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="break-all underline underline-offset-4"
-              >
-                {OCH_CONTRACT_ADDRESS}
-              </a>
-              {" "}· Verify before interacting
-            </p>
-          ) : (
-            <p className="text-[8px] uppercase leading-relaxed tracking-[0.16em] md:text-[9px]">
-              Official $OCH contract unavailable.
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* =====================================================
-          HERO
-         ===================================================== */}
-
-      <section className="mx-auto flex min-h-[calc(100vh-110px)] max-w-[1440px] flex-col items-center justify-center px-6 pb-16 pt-12 text-center">
-        <img
-          src="/coin1.gif"
-          alt="Animated OCH coin"
-          className="image-render-pixel mb-8 h-40 w-40 object-contain md:h-56 md:w-56"
-        />
-
-        <p className="mb-5 text-[10px] uppercase tracking-[0.24em] md:text-xs">
-          The Hood Economy
-        </p>
-
-        <h1 className="text-[clamp(5rem,14vw,11rem)] leading-[0.74] tracking-[-0.09em]">
-          $OCH
-        </h1>
-
-        <h2 className="mt-10 text-[clamp(2.2rem,5vw,4.8rem)] leading-[0.9] tracking-[-0.06em]">
-          THE CURRENCY
-          <br />
-          OF THE HOOD.
-        </h2>
-
-        <p className="mt-8 max-w-2xl text-base leading-relaxed md:text-xl">
-          A fixed-supply ERC-20 connecting Hoodies, participation and the
-          programmable HoodWallet layer.
-        </p>
-
-        {contractIsLive ? (
-          <div className="mt-10 w-full max-w-3xl border-2 border-black bg-black p-5 text-[#ccff00] md:p-6">
-            <p className="text-[8px] uppercase tracking-[0.18em] opacity-60">
-              Official Contract Address
-            </p>
-
+          <p className="text-[8px] uppercase leading-relaxed tracking-[0.16em] md:text-[9px]">
+            $OCH is live on Robinhood Chain · Official CA ·{" "}
             <a
               href={ochExplorerUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-4 block break-all text-sm underline underline-offset-4 md:text-base"
+              className="break-all underline underline-offset-4"
             >
               {OCH_CONTRACT_ADDRESS}
             </a>
-
-            <p className="mt-4 text-[8px] uppercase leading-relaxed tracking-[0.14em] opacity-55">
-              Robinhood Chain · Always verify the CA before interacting
-            </p>
-          </div>
-        ) : null}
-
-        <div className="mt-8 grid w-full max-w-5xl grid-cols-2 border-2 border-black text-[9px] uppercase tracking-[0.15em] md:grid-cols-4">
-          {[
-            "100M Fixed Supply",
-            "No Inflation",
-            "0% Trading Tax",
-            contractIsLive
-              ? shortAddress(OCH_CONTRACT_ADDRESS)
-              : "Contract TBA",
-          ].map((item, index) => (
-            <div
-              key={item}
-              className={[
-                "border-black p-3",
-                index % 2 === 1 ? "border-l-2" : "",
-                index > 1 ? "border-t-2 md:border-t-0" : "",
-                index > 0 ? "md:border-l-2" : "",
-              ].join(" ")}
-            >
-              {item}
-            </div>
-          ))}
+          </p>
         </div>
+      </div>
 
-        <p className="mt-8 max-w-2xl text-base leading-relaxed md:text-xl">
-          HoodWallet activation · 2,500 $OCH initial fee
-        </p>
-      </section>
+{/* HERO */}
+<section className="mx-auto max-w-[1440px] px-6 pb-20 pt-16 text-center md:pt-24">
+  <div className="mx-auto flex max-w-5xl flex-col items-center">
+    <img
+      src="/coin1.gif"
+      alt="Animated OCH coin"
+      className="image-render-pixel mb-8 h-32 w-32 object-contain md:h-44 md:w-44"
+    />
 
-      {/* =====================================================
-          01 / DISTRIBUTION
-         ===================================================== */}
+    <p className="text-[10px] uppercase tracking-[0.24em]">
+      The Hood Economy · Live
+    </p>
 
+    <h1 className="mt-4 text-[clamp(5rem,14vw,11rem)] leading-[0.74] tracking-[-0.09em]">
+      $OCH
+    </h1>
+
+    <h2 className="mt-10 text-[clamp(2.2rem,5vw,4.8rem)] leading-[0.9] tracking-[-0.06em]">
+      THE CURRENCY
+      <br />
+      OF THE HOOD.
+    </h2>
+
+    <p className="mt-8 max-w-2xl text-base leading-relaxed md:text-xl">
+      A fixed-supply ERC-20 connecting Hoodies, HoodWallet, HoodOS and the
+      builders extending the economy around them.
+    </p>
+  </div>
+</section>
+
+      {/* 01 SWAP */}
       <section className="bg-black px-6 py-24 text-[#ccff00]">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
-            <p>01 / Distribution</p>
-            <p>Allocation</p>
+            <p>01 / Swap</p>
+            <p>OCH ↔ ETH</p>
           </div>
 
-          <div className="mt-12 grid gap-16 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
+          <div className="mt-12 grid gap-10 lg:grid-cols-[0.72fr_1.28fr]">
             <div>
-              <h2 className="section-title">
-                Built for the
+              <p className="text-[10px] uppercase tracking-[0.2em] opacity-60">Live market</p>
+              <h2 className="section-title mt-4">
+                SWAP IN
                 <br />
-                whole Hood.
+                THE HOOD.
               </h2>
-
-              <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-70 md:text-xl">
-                100 million $OCH. Fixed supply. Allocated across Hoodies,
-                community participation, liquidity, treasury operations and
-                the wider Robinhood ecosystem.
+              <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
+                Trade directly against the official hookless OCH / ETH Uniswap V4 pool on Robinhood Chain.
               </p>
-
-              <div className="mx-auto mt-12 aspect-square w-full max-w-[500px] lg:mx-0">
-                <svg
-                  viewBox="0 0 240 240"
-                  role="img"
-                  aria-label="OCH token distribution chart"
-                  className="h-full w-full"
-                >
-                  <circle
-                    cx="120"
-                    cy="120"
-                    r="86"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="30"
-                    opacity="0.12"
-                  />
-
-                  <g transform="rotate(-90 120 120)">
-                    {allocations.map((allocation) => (
-                      <circle
-                        key={allocation.label}
-                        cx="120"
-                        cy="120"
-                        r="86"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="30"
-                        pathLength="100"
-                        strokeDasharray={allocation.dash}
-                        strokeDashoffset={allocation.offset}
-                        strokeLinecap="butt"
-                        opacity={allocation.opacity}
-                      />
-                    ))}
-                  </g>
-
-                  <circle
-                    cx="120"
-                    cy="120"
-                    r="58"
-                    fill="black"
-                    stroke="currentColor"
-                    strokeWidth="1"
-                  />
-
-                  <text
-                    x="120"
-                    y="109"
-                    textAnchor="middle"
-                    fill="currentColor"
-                    fontSize="10"
-                    letterSpacing="2"
-                  >
-                    FIXED
-                  </text>
-
-                  <text
-                    x="120"
-                    y="137"
-                    textAnchor="middle"
-                    fill="currentColor"
-                    fontSize="24"
-                  >
-                    100M
-                  </text>
-                </svg>
-              </div>
+              <p className="mt-6 max-w-lg text-sm leading-relaxed opacity-55">
+                Quotes are generated from the live v4 pool. The transaction enforces the minimum output shown before execution.
+              </p>
             </div>
 
-            <div className="border-l-2 border-t-2 border-[#ccff00]">
-              {allocations.map((allocation) => (
+            <OCHSwap />
+          </div>
+        </div>
+      </section>
+
+      {/* 02 DISTRIBUTION */}
+      <section className="px-6 py-24">
+        <div className="mx-auto max-w-[1440px]">
+          <div className="section-heading-row border-black">
+            <p>02 / Distribution</p>
+            <p>100,000,000 OCH</p>
+          </div>
+
+          <div className="mt-12 grid gap-12 lg:grid-cols-[0.7fr_1.3fr]">
+            <div>
+              <h2 className="section-title">
+                BUILT FOR
+                <br />
+                THE WHOLE HOOD.
+              </h2>
+              <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
+                Fixed supply allocated across Hoodies, community seasons, liquidity, treasury operations, the Robinhood ecosystem and team vesting.
+              </p>
+            </div>
+
+            <div className="border-l-2 border-t-2 border-black">
+              {allocations.map((item) => (
                 <div
-                  key={allocation.label}
-                  className="grid grid-cols-[44px_1fr_auto] items-center gap-4 border-b-2 border-r-2 border-[#ccff00] p-4 md:grid-cols-[60px_1fr_auto] md:p-6"
+                  key={item.label}
+                  className="grid grid-cols-[1fr_auto] items-center gap-4 border-b-2 border-r-2 border-black p-5 md:p-6"
                 >
-                  <span
-                    className="block h-4 w-4 border border-[#ccff00] bg-[#ccff00]"
-                    style={{ opacity: allocation.opacity }}
-                    aria-hidden="true"
-                  />
-
                   <div>
-                    <p className="text-lg leading-none md:text-2xl">
-                      {allocation.label}
-                    </p>
-
-                    <p className="mt-2 text-[9px] uppercase tracking-[0.14em] opacity-60">
-                      {allocation.amount}
-                    </p>
+                    <p className="text-lg md:text-2xl">{item.label}</p>
+                    <p className="mt-2 text-[8px] uppercase tracking-[0.14em] opacity-55">{item.amount}</p>
                   </div>
-
-                  <p className="text-3xl leading-none md:text-5xl">
-                    {allocation.percent}%
-                  </p>
+                  <p className="text-4xl tracking-[-0.05em] md:text-5xl">{item.percent}%</p>
                 </div>
               ))}
             </div>
@@ -455,786 +630,293 @@ export default function OCHPage() {
         </div>
       </section>
 
-      {/* =====================================================
-          02 / HOODIE REWARDS
-         ===================================================== */}
-
-      <section className="px-6 py-24">
-        <div className="mx-auto max-w-[1440px]">
-          <div className="section-heading-row border-black">
-            <p>02 / Hoodie Rewards</p>
-            <p>30% Allocation</p>
-          </div>
-
-          <div className="mt-12 grid gap-12 lg:grid-cols-[0.7fr_1.3fr]">
-            <div>
-              <h2 className="section-title">
-                Every Hoodie.
-                <br />
-                Equal Hoodies.
-              </h2>
-
-              <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                Every Hoodie receives the same Hoodie allocation across three
-                rounds. Traits define identity, not allocation value.
-              </p>
-
-              <p className="mt-6 max-w-lg text-sm leading-relaxed opacity-60 md:text-base">
-                Hoodie rewards and Community Fund participation are separate
-                allocation paths.
-              </p>
-            </div>
-
-            <div className="border-l-2 border-t-2 border-black md:grid md:grid-cols-3">
-              {hoodieRounds.map((round) => (
-                <article
-                  key={round.number}
-                  className="flex min-h-[360px] flex-col justify-between border-b-2 border-r-2 border-black p-6 md:p-8"
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-4">
-                      <span className="text-[10px] uppercase tracking-[0.18em] opacity-60">
-                        Round {round.number}
-                      </span>
-
-                      <span className="border border-black px-2 py-1 text-[9px] uppercase tracking-[0.14em]">
-                        TBA
-                      </span>
-                    </div>
-
-                    <p className="mt-12 text-sm uppercase tracking-[0.18em] opacity-60">
-                      {round.timing}
-                    </p>
-
-                    <p className="mt-3 text-6xl leading-none tracking-[-0.06em] md:text-7xl">
-                      {round.amount}
-                    </p>
-                  </div>
-
-                  <p className="mt-10 max-w-xs text-sm leading-relaxed opacity-70">
-                    {round.description}
-                  </p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* =====================================================
-          03 / COMMUNITY FUND
-         ===================================================== */}
-
+      {/* 03 COMMUNITY SEASONS */}
       <section className="bg-black px-6 py-24 text-[#ccff00]">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
             <p>03 / Community Fund</p>
-            <p>35% Allocation</p>
+            <p>35% Across Three Seasons</p>
           </div>
 
-          <div className="mt-12 grid gap-12 lg:grid-cols-[0.7fr_1.3fr]">
-            <div>
-              <h2 className="section-title">
-                Participation
-                <br />
-                matters.
-              </h2>
-
-              <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                The Community Fund is distributed across three seasons.
-                Season 01 receives 15% of total $OCH supply and recognizes
-                early participation across Hood Talk, X contributions and
-                verified Hoodie representation.
+          <div className="mt-12 grid border-l-2 border-t-2 border-[#ccff00] lg:grid-cols-3">
+            <article className="border-b-2 border-r-2 border-[#ccff00] p-6 md:p-8">
+              <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Season 01 · Complete</p>
+              <p className="mt-6 text-6xl tracking-[-0.06em]">15%</p>
+              <h3 className="mt-6 text-2xl">EARLY PARTICIPATION</h3>
+              <p className="mt-4 text-sm leading-relaxed opacity-70">
+                Hood Talk, submitted X contributions and verified Hoodie representation. The participation window is closed.
               </p>
-            </div>
+              <Link href="/passport" className="mt-6 inline-block text-[8px] uppercase underline underline-offset-4">
+                View Season 01
+              </Link>
+            </article>
 
-            <div className="border-l-2 border-t-2 border-[#ccff00] md:grid md:grid-cols-3">
-              {communityRounds.map((round) => (
-                <article
-                  key={round.number}
-                  className="flex min-h-[410px] flex-col justify-between border-b-2 border-r-2 border-[#ccff00] p-6 md:p-8"
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-4">
-                      <span className="text-[10px] uppercase tracking-[0.18em] opacity-60">
-                        Round {round.number}
-                      </span>
+            <article className="border-b-2 border-r-2 border-[#ccff00] bg-[#ccff00] p-6 text-black md:p-8">
+              <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Season 02 · Builders</p>
+              <p className="mt-6 text-6xl tracking-[-0.06em]">10%</p>
+              <h3 className="mt-6 text-2xl">BUILD THE ECONOMY</h3>
+              <p className="mt-4 text-sm leading-relaxed opacity-70">
+                For builders extending the Hood through HoodOS or creating meaningful utility for $OCH.
+              </p>
+              <a href="#season-02" className="mt-6 inline-block text-[8px] uppercase !text-black underline underline-offset-4">
+                Season 02 direction
+              </a>
+            </article>
 
-                      <span className="border border-[#ccff00] px-2 py-1 text-[9px] uppercase tracking-[0.14em]">
-                        {round.number === "01" ? "Season 01" : "Next"}
-                      </span>
-                    </div>
-
-                    <p className="mt-12 text-sm uppercase tracking-[0.18em] opacity-60">
-                      {round.timing}
-                    </p>
-
-                    <p className="mt-3 text-6xl leading-none tracking-[-0.06em] md:text-7xl">
-                      {round.amount}
-                    </p>
-
-                    <p className="mt-5 text-lg uppercase tracking-[0.12em]">
-                      {round.label}
-                    </p>
-                  </div>
-
-                  <p className="mt-10 max-w-xs text-sm leading-relaxed opacity-70">
-                    {round.description}
-                  </p>
-                </article>
-              ))}
-            </div>
-          </div>
-
-          {/* Season 01 Split */}
-
-          <div className="mt-16">
-            <div className="section-heading-row">
-              <p>Season 01 Breakdown</p>
-              <p>15,000,000 OCH</p>
-            </div>
-
-            <div className="mt-8 grid border-l-2 border-t-2 border-[#ccff00] lg:grid-cols-2">
-              <article className="border-b-2 border-r-2 border-[#ccff00] p-6 md:p-8">
-                <p className="text-[10px] uppercase tracking-[0.18em] opacity-60">
-                  Hood Talk
-                </p>
-
-                <div className="mt-6 flex items-end justify-between gap-4">
-                  <p className="text-6xl leading-none tracking-[-0.06em] md:text-7xl">
-                    10%
-                  </p>
-
-                  <p className="text-right text-sm uppercase tracking-[0.14em] opacity-60">
-                    10,000,000 OCH
-                  </p>
-                </div>
-
-                <p className="mt-8 text-lg leading-relaxed">
-                  Season 01 rewards native on-chain Hood Talk activity. The
-                  first qualifying activation receives the full reward; the
-                  second and third activations receive progressively smaller
-                  rewards.
-                </p>
-
-                <div className="mt-8 grid border-l border-t border-[#ccff00] sm:grid-cols-3">
-                  <div className="border-b border-r border-[#ccff00] p-4">
-                    <p className="text-[9px] uppercase tracking-[0.14em] opacity-60">
-                      01 / First Activation
-                    </p>
-
-                    <p className="mt-3 text-3xl">
-                      {HOOD_TALK_FIRST_REWARD}
-                    </p>
-
-                    <p className="mt-3 text-xs leading-relaxed opacity-60">
-                      Full Season 01 Hood Talk reward.
-                    </p>
-                  </div>
-
-                  <div className="border-b border-r border-[#ccff00] p-4">
-                    <p className="text-[9px] uppercase tracking-[0.14em] opacity-60">
-                      02 / Second Activation
-                    </p>
-
-                    <p className="mt-3 text-3xl">Reduced</p>
-
-                    <p className="mt-3 text-xs leading-relaxed opacity-60">
-                      Progressively smaller than the first activation.
-                    </p>
-                  </div>
-
-                  <div className="border-b border-r border-[#ccff00] p-4">
-                    <p className="text-[9px] uppercase tracking-[0.14em] opacity-60">
-                      03 / Third Activation
-                    </p>
-
-                    <p className="mt-3 text-3xl">Reduced</p>
-
-                    <p className="mt-3 text-xs leading-relaxed opacity-60">
-                      Final Season 01 Hood Talk activation tier.
-                    </p>
-                  </div>
-                </div>
-
-                <p className="mt-5 text-[10px] uppercase leading-relaxed tracking-[0.14em] opacity-50">
-                  Current Hood Talk state:{" "}
-                  {HOOD_TALK_QUALIFYING_HOODIES.toLocaleString()} unique
-                  Hoodies spoken. Final rewards follow recorded Season 01
-                  activations.
-                </p>
-              </article>
-
-              <article className="border-b-2 border-r-2 border-[#ccff00] p-6 md:p-8">
-                <p className="text-[10px] uppercase tracking-[0.18em] opacity-60">
-                  X + Verified Hoodie PFP
-                </p>
-
-                <div className="mt-6 flex items-end justify-between gap-4">
-                  <p className="text-6xl leading-none tracking-[-0.06em] md:text-7xl">
-                    5%
-                  </p>
-
-                  <p className="text-right text-sm uppercase tracking-[0.14em] opacity-60">
-                    5,000,000 OCH
-                  </p>
-                </div>
-
-                <p className="mt-8 text-lg leading-relaxed">
-                  The second Season 01 participation track recognizes
-                  submitted X contributions and verified Hoodie PFP
-                  participation.
-                </p>
-
-                <p className="mt-8 text-sm leading-relaxed opacity-70">
-                  Community Fund allocations are based on recorded Season 01
-                  participation and review criteria. Participation does not
-                  guarantee equal allocation.
-                </p>
-
-                <div className="mt-8 border border-[#ccff00] p-4">
-                  <p className="text-[9px] uppercase tracking-[0.14em] opacity-60">
-                    X Submission Window
-                  </p>
-
-                  <p className="mt-2 text-2xl">Closed</p>
-                </div>
-              </article>
-            </div>
+            <article className="border-b-2 border-r-2 border-[#ccff00] p-6 md:p-8">
+              <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Season 03 · Future</p>
+              <p className="mt-6 text-6xl tracking-[-0.06em]">10%</p>
+              <h3 className="mt-6 text-2xl">NEXT CHAPTER</h3>
+              <p className="mt-4 text-sm leading-relaxed opacity-70">
+                Reserved for the next phase of community participation and ecosystem contribution.
+              </p>
+            </article>
           </div>
         </div>
       </section>
 
-      {/* =====================================================
-          04 / HOODWALLET
-         ===================================================== */}
-
+      {/* 04 HOODWALLET */}
       <section className="px-6 py-24">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
             <p>04 / HoodWallet</p>
-            <p>Programmable Identity</p>
+            <p>OCH Utility</p>
           </div>
 
           <div className="mt-12 grid gap-12 lg:grid-cols-[0.75fr_1.25fr]">
             <div>
-              <p className="text-[10px] uppercase tracking-[0.2em] opacity-60">
-                One Hoodie. One Account.
-              </p>
-
+              <p className="text-[10px] uppercase tracking-[0.2em] opacity-60">One Hoodie. One Account.</p>
               <h2 className="section-title mt-4">
-                Your Hoodie
+                YOUR HOODIE
                 <br />
-                has a wallet.
+                HAS A WALLET.
               </h2>
-
               <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                Every Hoodie has its own on-chain HoodWallet. Before
-                activation, the account can receive supported assets. $OCH is
-                used to activate the wallet for the current Hoodie owner.
+                $OCH activates the HoodWallet for the current Hoodie owner. Once active, the Hoodie can hold assets and use HoodOS apps as its own on-chain account.
               </p>
-
-              <Link href="/hoodwallet" className="pixel-cta mt-10">
-                Explore HoodWallet
-              </Link>
+              <Link href="/hoodwallet" className="pixel-cta mt-10">Explore HoodWallet</Link>
             </div>
 
             <div className="grid border-l-2 border-t-2 border-black sm:grid-cols-2">
-              {hoodWalletDetails.map((detail) => (
-                <article
-                  key={detail.label}
-                  className="flex min-h-[250px] flex-col justify-between border-b-2 border-r-2 border-black p-6 md:p-8"
-                >
+              {[
+                ["Activation", INITIAL_ACTIVATION_FEE, "Initial activation cost paid from the owner wallet."],
+                ["Burn", INITIAL_BURN_RATE, "125 OCH from the initial 2,500 OCH activation is sent to the burn recipient."],
+                ["Treasury", INITIAL_TREASURY_RATE, "2,375 OCH flows to the Hood Treasury under the initial parameters."],
+                ["Transfer", "RESET", "When the Hoodie changes owners, access resets and the new owner activates again."],
+              ].map(([label, value, description]) => (
+                <article key={label} className="flex min-h-[245px] flex-col justify-between border-b-2 border-r-2 border-black p-6 md:p-8">
                   <div>
-                    <p className="text-[10px] uppercase tracking-[0.16em] opacity-60">
-                      {detail.label}
-                    </p>
-
-                    <p className="mt-6 text-4xl leading-none tracking-[-0.05em] md:text-5xl">
-                      {detail.value}
-                    </p>
+                    <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">{label}</p>
+                    <p className="mt-6 text-4xl tracking-[-0.05em] md:text-5xl">{value}</p>
                   </div>
-
-                  <p className="mt-8 max-w-sm text-sm leading-relaxed opacity-70">
-                    {detail.description}
-                  </p>
+                  <p className="mt-8 text-sm leading-relaxed opacity-70">{description}</p>
                 </article>
               ))}
-            </div>
-          </div>
-
-          <div className="mt-16 border-2 border-black">
-            <div className="grid lg:grid-cols-[0.65fr_1.35fr]">
-              <div className="border-b-2 border-black p-6 md:p-8 lg:border-b-0 lg:border-r-2">
-                <p className="text-[10px] uppercase tracking-[0.18em] opacity-60">
-                  Ownership Change
-                </p>
-
-                <p className="mt-5 text-4xl leading-none md:text-5xl">
-                  TRANSFER
-                  <br />
-                  = RESET
-                </p>
-              </div>
-
-              <div className="p-6 md:p-8">
-                <p className="text-xl leading-relaxed md:text-3xl">
-                  When a Hoodie changes owners, its HoodWallet becomes
-                  inactive and must be activated again by the new owner.
-                </p>
-
-                <p className="mt-6 text-base leading-relaxed opacity-70 md:text-xl">
-                  Assets already held by the HoodWallet remain with the
-                  Hoodie. Reactivation changes access for the new owner - it
-                  does not erase the Hoodie&apos;s on-chain inventory.
-                </p>
-              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* =====================================================
-          05 / PING
-         ===================================================== */}
-
+      {/* 05 PING */}
       <section className="bg-black px-6 py-24 text-[#ccff00]">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
-            <p>05 / First Activation</p>
-            <p>Ping</p>
+            <p>05 / Ping</p>
+            <p>First Activation Asset</p>
           </div>
 
-          <div className="mt-12 grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.2em] opacity-60">
-                The first HoodWallet asset
-              </p>
-
-              <h2 className="section-title mt-4">
-                One Hoodie.
-                <br />
-                One Ping.
-              </h2>
-
-              <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                The first successful HoodWallet activation delivers a Ping
-                directly into the Hoodie&apos;s own on-chain account.
-              </p>
+          <div className="mt-12 grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-stretch">
+            <div className="overflow-hidden border-2 border-[#ccff00] bg-[#ccff00]">
+              <img
+                src="/ping.gif"
+                alt="Ping collection"
+                className="image-render-pixel aspect-square h-full w-full object-cover"
+              />
             </div>
 
-            <div className="border-2 border-[#ccff00]">
-              <div className="grid sm:grid-cols-3">
-                {[
-                  ["01", "Activate", INITIAL_ACTIVATION_FEE],
-                  ["02", "Receive", "1 Ping"],
-                  ["03", "Destination", "HoodWallet"],
-                ].map(([number, label, value]) => (
-                  <div
-                    key={number}
-                    className="border-b-2 border-[#ccff00] p-6 last:border-b-0 sm:border-b-0 sm:border-r-2 sm:last:border-r-0 md:p-8"
-                  >
-                    <p className="text-[9px] uppercase tracking-[0.16em] opacity-60">
-                      {number}
-                    </p>
+            <div className="flex flex-col border-2 border-[#ccff00] p-6 md:p-8">
+              <p className="text-[10px] uppercase tracking-[0.2em] opacity-55">The first asset of your Hoodie</p>
+              <h2 className="mt-4 text-[clamp(3rem,7vw,7rem)] leading-[0.8] tracking-[-0.07em]">
+                ONE HOODIE.
+                <br />
+                ONE PING.
+              </h2>
+              <p className="mt-8 max-w-2xl text-lg leading-relaxed opacity-75 md:text-xl">
+                The first successful activation of a Hoodie unlocks its matching Ping and delivers it directly into that Hoodie&apos;s HoodWallet.
+              </p>
 
-                    <p className="mt-8 text-sm uppercase tracking-[0.15em] opacity-60">
-                      {label}
-                    </p>
-
-                    <p className="mt-3 text-3xl leading-none md:text-4xl">
-                      {value}
-                    </p>
-                  </div>
-                ))}
+              <div className="mt-8 border border-[#ccff00] p-4">
+                <p className="text-[7px] uppercase tracking-[0.14em] opacity-55">Ping Contract</p>
+                <p className="mt-2 break-all text-[9px] md:text-xs">{PING_CONTRACT_ADDRESS}</p>
               </div>
 
-              <div className="border-t-2 border-[#ccff00] p-6 text-center md:p-10">
-                <p className="text-[10px] uppercase tracking-[0.2em] opacity-60">
-                  First Activation Ping
-                </p>
-
-                <p className="mt-6 text-[clamp(3rem,8vw,7rem)] leading-none tracking-[-0.08em]">
-                  Ping
-                </p>
-
-                <p className="mx-auto mt-6 max-w-xl text-sm leading-relaxed opacity-70 md:text-base">
-                  Sent directly to the Hoodie&apos;s Token Bound Account. The
-                  Hoodie receives the asset - not the owner wallet.
-                </p>
+              <div className="mt-auto grid gap-2 pt-6 sm:grid-cols-2">
+                <a
+                  href={pingExplorerUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex min-h-[52px] items-center justify-center border border-[#ccff00] px-4 text-[8px] uppercase tracking-[0.14em]"
+                >
+                  View Contract
+                </a>
+                <a
+                  href={PING_OPENSEA_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex min-h-[52px] items-center justify-center bg-[#ccff00] px-4 text-[8px] uppercase tracking-[0.14em] !text-black"
+                >
+                  View on OpenSea
+                </a>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* =====================================================
-          06 / LIQUIDITY
-         ===================================================== */}
-
+      {/* 06 HOODOS */}
       <section className="px-6 py-24">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>06 / Liquidity</p>
-            <p>20% Total Allocation</p>
+            <p>06 / HoodOS</p>
+            <p>Capability Layer</p>
           </div>
 
-          <div className="mt-12 grid gap-12 lg:grid-cols-[0.7fr_1.3fr]">
+          <div className="mt-12 grid gap-10 lg:grid-cols-[1fr_0.8fr] lg:items-end">
             <div>
               <h2 className="section-title">
-                Launch depth.
+                AN ECONOMY
                 <br />
-                Room to grow.
+                HOODIES CAN USE.
               </h2>
-
-              <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                20% of total $OCH supply is allocated to liquidity. 15% is
-                allocated to the initial Uniswap V4 position and 5% is
-                reserved exclusively for future liquidity deployment.
+              <p className="mt-8 max-w-2xl text-lg leading-relaxed opacity-75 md:text-xl">
+                HoodOS turns the Hoodie into an active on-chain account. MintOS lets it mint. BuyOS lets it collect. Community builders can add the next capabilities.
               </p>
             </div>
-
-            <div className="grid border-l-2 border-t-2 border-black sm:grid-cols-2">
-              {liquidityDetails.map((detail) => (
-                <article
-                  key={detail.label}
-                  className="flex min-h-[250px] flex-col justify-between border-b-2 border-r-2 border-black p-6 md:p-8"
-                >
-                  <div>
-                    <p className="text-[10px] uppercase tracking-[0.16em] opacity-60">
-                      {detail.label}
-                    </p>
-
-                    <p className="mt-6 text-4xl leading-none tracking-[-0.05em] md:text-5xl">
-                      {detail.value}
-                    </p>
-                  </div>
-
-                  <p className="mt-8 text-sm leading-relaxed opacity-70">
-                    {detail.description}
-                  </p>
-                </article>
-              ))}
+            <div className="border-2 border-black p-6 md:p-8">
+              <p className="text-[8px] uppercase opacity-55">HoodOS today</p>
+              <p className="mt-4 text-3xl">MINT · BUY · BUILD</p>
+              <Link href="/hoodos" className="pixel-cta mt-7">Explore HoodOS</Link>
             </div>
           </div>
+        </div>
+      </section>
 
-          <div className="mt-12 border-2 border-black p-6 md:p-8">
-            <p className="text-[10px] uppercase tracking-[0.18em] opacity-60">
-              Initial Liquidity Position
-            </p>
+      {/* 07 LIQUIDITY */}
+      <section className="bg-black px-6 py-24 text-[#ccff00]">
+        <div className="mx-auto max-w-[1440px]">
+          <div className="section-heading-row">
+            <p>07 / Liquidity</p>
+            <p>Live Uniswap V4</p>
+          </div>
 
-            <p className="mt-5 max-w-4xl text-lg leading-relaxed md:text-2xl">
-              The initial Uniswap V4 LP position is configured for a 730-day
-              hard lock through the OCH Liquidity Locker. The remaining
-              5,000,000 OCH liquidity reserve stays separate for future
-              liquidity deployment.
+          <div className="mt-12 grid border-l-2 border-t-2 border-[#ccff00] sm:grid-cols-2 lg:grid-cols-5">
+            {[
+              ["Market", "OCH / ETH"],
+              ["Initial OCH", "15M"],
+              ["Initial ETH", "7.5"],
+              ["Pool Fee", "0.30%"],
+              ["Official LP", "730 DAYS"],
+            ].map(([label, value]) => (
+              <div key={label} className="border-b-2 border-r-2 border-[#ccff00] p-5 md:p-6">
+                <p className="text-[8px] uppercase opacity-55">{label}</p>
+                <p className="mt-5 text-3xl tracking-[-0.05em] md:text-4xl">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 border-2 border-[#ccff00] p-6 md:p-8">
+            <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Official liquidity position</p>
+            <p className="mt-4 max-w-4xl text-lg leading-relaxed md:text-2xl">
+              The official OCH / ETH pool is hookless. Its initial Uniswap V4 LP position is hard-locked for 730 days while fee collection remains possible without reducing principal liquidity.
             </p>
 
             {siteConfig.ochLiquidityLockerAddress ? (
               <a
-                href={contractExplorerUrl(
-                  siteConfig.ochLiquidityLockerAddress,
-                )}
+                href={contractExplorerUrl(siteConfig.ochLiquidityLockerAddress)}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-6 inline-block break-all text-[10px] uppercase tracking-[0.14em] underline underline-offset-4"
+                className="mt-6 inline-block break-all text-[9px] uppercase underline underline-offset-4"
               >
-                Verify Liquidity Locker ·{" "}
-                {siteConfig.ochLiquidityLockerAddress} ↗
+                Verify liquidity locker · {siteConfig.ochLiquidityLockerAddress}
               </a>
             ) : null}
           </div>
         </div>
       </section>
 
-      {/* =====================================================
-          07 / TREASURY
-         ===================================================== */}
-
-      <section className="bg-black px-6 py-24 text-[#ccff00]">
+      {/* 08 SEASON 02 */}
+      <section id="season-02" className="px-6 py-24">
         <div className="mx-auto max-w-[1440px]">
-          <div className="section-heading-row">
-            <p>07 / Hood Treasury</p>
-            <p>5% Initial Allocation</p>
+          <div className="section-heading-row border-black">
+            <p>08 / Season 02</p>
+            <p>Builders</p>
           </div>
 
           <div className="mt-12 grid gap-12 lg:grid-cols-[0.75fr_1.25fr]">
             <div>
-              <h2 className="section-title">
-                Built to
+              <p className="text-[10px] uppercase tracking-[0.2em] opacity-55">The next season</p>
+              <h2 className="section-title mt-4">
+                BUILD THE
                 <br />
-                keep building.
+                ECONOMY.
               </h2>
-
               <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                The Hood Treasury supports ecosystem operations, development,
-                experimentation and future OnChainHoodies initiatives.
+                Season 02 supports builders extending the Hood through HoodOS or creating meaningful utility for $OCH.
               </p>
+              <p className="mt-5 max-w-lg text-sm leading-relaxed opacity-60">
+                The direction is utility and usage. Final measurement and allocation rules can be published separately before rewards are finalized.
+              </p>
+              <Link href="/builders" className="pixel-cta mt-10">Explore Builders</Link>
             </div>
 
-            <div className="border-2 border-[#ccff00]">
-              <div className="grid sm:grid-cols-2">
-                <div className="border-b-2 border-[#ccff00] p-6 sm:border-b-0 sm:border-r-2 md:p-8">
-                  <p className="text-[10px] uppercase tracking-[0.16em] opacity-60">
-                    Initial Allocation
-                  </p>
-
-                  <p className="mt-6 text-5xl leading-none md:text-6xl">
-                    5M OCH
-                  </p>
-
-                  <p className="mt-6 text-sm leading-relaxed opacity-70">
-                    5% of total supply.
-                  </p>
-                </div>
-
-                <div className="p-6 md:p-8">
-                  <p className="text-[10px] uppercase tracking-[0.16em] opacity-60">
-                    Activation Flow
-                  </p>
-
-                  <p className="mt-6 text-5xl leading-none md:text-6xl">
-                    {INITIAL_TREASURY_RATE}
-                  </p>
-
-                  <p className="mt-6 text-sm leading-relaxed opacity-70">
-                    Under the initial parameters, 95% of every HoodWallet
-                    activation fee flows to the Hood Treasury.
-                  </p>
-                </div>
-              </div>
-
-              <div className="border-t-2 border-[#ccff00] p-6 md:p-8">
-                <p className="text-lg leading-relaxed md:text-2xl">
-                  Treasury assets may be used for ecosystem operations,
-                  development and documented on-chain experiments, including
-                  potential acquisitions of Hoodies or other ecosystem assets.
-                </p>
-
-                {siteConfig.treasuryVaultAddress ? (
-                  <a
-                    href={contractExplorerUrl(
-                      siteConfig.treasuryVaultAddress,
-                    )}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-6 inline-block break-all text-[10px] uppercase tracking-[0.14em] underline underline-offset-4"
-                  >
-                    Verify Treasury Vault ·{" "}
-                    {siteConfig.treasuryVaultAddress} ↗
-                  </a>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* =====================================================
-          08 / TOKEN DESIGN
-         ===================================================== */}
-
-      <section className="px-6 py-24">
-        <div className="mx-auto max-w-[1440px]">
-          <div className="section-heading-row border-black">
-            <p>08 / Token</p>
-            <p>Token Design</p>
-          </div>
-
-          <div className="mt-12">
-            <h2 className="section-title">
-              Fixed supply.
-              <br />
-              No trading tax.
-            </h2>
-
-            <div className="mt-12 grid border-l-2 border-t-2 border-black sm:grid-cols-2 lg:grid-cols-5">
-              {tokenDetails.map((detail) => (
+            <div className="grid border-l-2 border-t-2 border-black sm:grid-cols-2">
+              {seasonTwoPillars.map((pillar) => (
                 <article
-                  key={detail.label}
-                  className="flex min-h-[190px] flex-col justify-between border-b-2 border-r-2 border-black p-5 md:min-h-[230px] md:p-7"
+                  key={pillar.number}
+                  className="flex min-h-[260px] flex-col justify-between border-b-2 border-r-2 border-black p-6 md:p-8"
                 >
-                  <p className="text-[10px] uppercase tracking-[0.16em] opacity-60">
-                    {detail.label}
-                  </p>
-
-                  <p
-                    className={[
-                      "mt-10 leading-none tracking-[-0.05em]",
-                      detail.label === "Total Supply"
-                        ? "break-all text-3xl md:text-4xl lg:text-3xl xl:text-4xl"
-                        : "text-5xl md:text-6xl",
-                    ].join(" ")}
-                  >
-                    {detail.value}
-                  </p>
+                  <div>
+                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-55">{pillar.number}</p>
+                    <h3 className="mt-5 text-3xl tracking-[-0.045em] md:text-4xl">{pillar.title}</h3>
+                  </div>
+                  <p className="mt-8 text-sm leading-relaxed opacity-70">{pillar.description}</p>
                 </article>
               ))}
             </div>
-
-            <div className="mt-8 border-2 border-black p-6 md:p-8">
-              <p className="text-[10px] uppercase tracking-[0.18em] opacity-60">
-                Trading Tax ≠ HoodWallet Activation Fee
-              </p>
-
-              <p className="mt-5 max-w-4xl text-lg leading-relaxed md:text-2xl">
-                $OCH has 0% buy, sell and transfer tax. HoodWallet activation
-                is a separate ecosystem utility with an initial fee of{" "}
-                {INITIAL_ACTIVATION_FEE}.
-              </p>
-            </div>
-
-            {contractIsLive ? (
-              <div className="mt-8 border-2 border-black bg-black p-6 text-[#ccff00] md:p-8">
-                <p className="text-[10px] uppercase tracking-[0.18em] opacity-60">
-                  Official $OCH Contract
-                </p>
-
-                <p className="mt-5 text-xl leading-relaxed md:text-3xl">
-                  Verify the contract address before interacting with $OCH.
-                </p>
-
-                <a
-                  href={ochExplorerUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-6 block break-all text-sm underline underline-offset-4 md:text-base"
-                >
-                  {OCH_CONTRACT_ADDRESS}
-                </a>
-
-                <div className="mt-6 grid border-l border-t border-[#ccff00] sm:grid-cols-3">
-                  <div className="border-b border-r border-[#ccff00] p-4">
-                    <p className="text-[8px] uppercase tracking-[0.14em] opacity-55">
-                      Network
-                    </p>
-                    <p className="mt-2 text-lg">{siteConfig.chainName}</p>
-                  </div>
-
-                  <div className="border-b border-r border-[#ccff00] p-4">
-                    <p className="text-[8px] uppercase tracking-[0.14em] opacity-55">
-                      Symbol
-                    </p>
-                    <p className="mt-2 text-lg">OCH</p>
-                  </div>
-
-                  <div className="border-b border-r border-[#ccff00] p-4">
-                    <p className="text-[8px] uppercase tracking-[0.14em] opacity-55">
-                      Supply
-                    </p>
-                    <p className="mt-2 text-lg">100,000,000</p>
-                  </div>
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
       </section>
 
-      {/* =====================================================
-          09 / SEASON 01
-         ===================================================== */}
-
+      {/* 09 TOKEN */}
       <section className="bg-black px-6 py-24 text-[#ccff00]">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
-            <p>09 / Hoodie Passport</p>
-            <p>Season 01 Complete</p>
+            <p>09 / Token Design</p>
+            <p>Fixed Supply</p>
           </div>
 
-          <div className="mt-12 grid gap-12 lg:grid-cols-[0.7fr_1.3fr] lg:items-center">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.2em] opacity-60">
-                Grow the Hood
-              </p>
+          <div className="mt-12 grid border-l-2 border-t-2 border-[#ccff00] sm:grid-cols-2 lg:grid-cols-5">
+            {tokenDetails.map(([label, value]) => (
+              <article key={label} className="flex min-h-[190px] flex-col justify-between border-b-2 border-r-2 border-[#ccff00] p-5 md:min-h-[220px] md:p-7">
+                <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">{label}</p>
+                <p className={`${label === "Total Supply" ? "text-3xl" : "text-5xl"} mt-10 break-all tracking-[-0.05em]`}>
+                  {value}
+                </p>
+              </article>
+            ))}
+          </div>
 
-              <h2 className="mt-4 text-[clamp(4rem,9vw,8rem)] leading-[0.78] tracking-[-0.08em]">
-                SEASON
-                <br />
-                01
-              </h2>
-
-              <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                Season 01 participation is complete. The final season
-                recognized Hoodie ownership, Hood Talk, submitted X
-                contributions and verified Hoodie PFP participation.
-              </p>
-
-              <Link href="/passport" className="pixel-cta mt-10">
-                View Passport
-              </Link>
-            </div>
-
-            <div className="border-2 border-[#ccff00]">
-              <div className="flex items-center justify-between border-b-2 border-[#ccff00] p-4 text-[10px] uppercase tracking-[0.16em] md:p-6">
-                <span>Hoodie Passport</span>
-                <span>Season 01</span>
-              </div>
-
-              <div className="p-5 md:p-8">
-                <div className="flex items-start justify-between gap-6">
-                  <div>
-                    <p className="text-[9px] uppercase tracking-[0.16em] opacity-60">
-                      Season Status
-                    </p>
-
-                    <p className="mt-3 text-3xl leading-none md:text-5xl">
-                      Complete
-                    </p>
-                  </div>
-
-                  <div className="flex h-16 w-16 items-center justify-center border-2 border-[#ccff00] text-3xl leading-none">
-                    01
-                  </div>
-                </div>
-
-                <div className="mt-10 grid border-l border-t border-[#ccff00] sm:grid-cols-3">
-                  {[
-                    [
-                      "01 / Hoodie",
-                      "Automatic",
-                      "Every Hoodie qualifies for the Hoodie allocation path.",
-                    ],
-                    [
-                      "02 / Hood Talk",
-                      "10%",
-                      "Season 01 participation complete.",
-                    ],
-                    [
-                      "03 / X + PFP",
-                      "5%",
-                      "Season 01 participation complete.",
-                    ],
-                  ].map(([label, value, description]) => (
-                    <div
-                      key={label}
-                      className="border-b border-r border-[#ccff00] p-4 md:min-h-[190px]"
-                    >
-                      <p className="text-[9px] uppercase tracking-[0.14em] opacity-60">
-                        {label}
-                      </p>
-
-                      <p className="mt-5 text-3xl leading-none">
-                        {value}
-                      </p>
-
-                      <p className="mt-3 text-xs leading-relaxed opacity-60">
-                        {description}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+          <div className="mt-8 border-2 border-[#ccff00] p-6 md:p-8">
+            <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Trading tax ≠ HoodWallet activation fee</p>
+            <p className="mt-5 max-w-4xl text-lg leading-relaxed md:text-2xl">
+              $OCH has 0% buy, sell and transfer tax. HoodWallet activation is a separate ecosystem utility with an initial fee of {INITIAL_ACTIVATION_FEE}.
+            </p>
           </div>
         </div>
       </section>
 
-      {/* =====================================================
-          10 / RISK DISCLOSURE
-         ===================================================== */}
-
-      <section className="border-t-2 border-black bg-[#ccff00] px-6 py-20 md:py-24">
+      {/* 10 RISK */}
+      <section className="border-t-2 border-black px-6 py-20 md:py-24">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
             <p>10 / Risk Disclosure</p>
@@ -1243,35 +925,19 @@ export default function OCHPage() {
 
           <div className="mt-12 grid gap-10 lg:grid-cols-[0.75fr_1.25fr]">
             <h2 className="section-title">
-              Participate
+              PARTICIPATE
               <br />
-              responsibly.
+              RESPONSIBLY.
             </h2>
 
             <div className="border-l-2 border-black pl-6 md:pl-10">
               <p className="text-xl leading-relaxed md:text-3xl">
-                $OCH is a community token designed to support the
-                OnChainHoodies ecosystem. Participation is voluntary and
-                should not be viewed as an investment or financial product.
+                $OCH is a community token designed to support the OnChainHoodies ecosystem. Digital assets are volatile and involve significant risk.
               </p>
-
               <p className="mt-6 max-w-3xl text-base leading-relaxed opacity-75 md:text-xl">
-                Digital assets are highly volatile and involve significant
-                risk, including the potential loss of your entire purchase
-                price. Liquidity, market value, future utility and future
-                rewards are not guaranteed.
+                Liquidity, market value, future utility and future rewards are not guaranteed. Nothing on this page constitutes financial, investment, legal or tax advice.
               </p>
-
-              <p className="mt-6 max-w-3xl text-base leading-relaxed opacity-75 md:text-xl">
-                Nothing presented by OnChainHoodies constitutes financial,
-                investment, legal or tax advice. Please conduct your own
-                research and only participate with funds you can afford to
-                lose.
-              </p>
-
-              <p className="mt-8 text-[10px] uppercase tracking-[0.2em]">
-                NOT FINANCIAL ADVICE • DO YOUR OWN RESEARCH
-              </p>
+              <p className="mt-8 text-[10px] uppercase tracking-[0.2em]">NOT FINANCIAL ADVICE · DO YOUR OWN RESEARCH</p>
             </div>
           </div>
         </div>

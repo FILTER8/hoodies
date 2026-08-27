@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import {
   useCallback,
@@ -514,6 +515,8 @@ function ListingImage({
 //////////////////////////////////////////////////////////////*/
 
 export default function BuyOSPage() {
+  const searchParams = useSearchParams();
+  const sharedCollection = searchParams.get("collection") || "";
   const {
     address,
     connect,
@@ -600,7 +603,7 @@ export default function BuyOSPage() {
     openSeaUrl,
     setOpenSeaUrl,
   ] =
-    useState("");
+    useState(() => sharedCollection);
 
   const [
     slug,
@@ -1012,9 +1015,11 @@ export default function BuyOSPage() {
 
   const loadCollection =
     useCallback(
-      async () => {
+      async (
+        urlInput?: string,
+      ) => {
         const input =
-          openSeaUrl.trim();
+          (urlInput ?? openSeaUrl).trim();
 
         if (!input) {
           setError(
@@ -1138,6 +1143,43 @@ export default function BuyOSPage() {
         openSeaUrl,
       ],
     );
+
+  /*//////////////////////////////////////////////////////////////
+                    SHARED COLLECTION LINK
+  //////////////////////////////////////////////////////////////*/
+
+  useEffect(() => {
+    const value = sharedCollection.trim();
+    if (!value) return;
+
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void loadCollection(value);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadCollection, sharedCollection]);
+
+  const shareCollection = useCallback(async () => {
+    const value = openSeaUrl.trim();
+    if (!value || typeof window === "undefined") return;
+
+    const shareUrl = new URL(
+      window.location.pathname,
+      window.location.origin,
+    );
+    shareUrl.searchParams.set("collection", value);
+
+    try {
+      await navigator.clipboard.writeText(shareUrl.toString());
+      setSuccess("Collection link copied.");
+      setError("");
+    } catch {
+      setError("Unable to copy the collection link.");
+    }
+  }, [openSeaUrl]);
 
   /*//////////////////////////////////////////////////////////////
                            LOAD MORE
@@ -1864,6 +1906,15 @@ export default function BuyOSPage() {
                   {listingsLoading
                     ? "Loading…"
                     : "Load floor"}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={!openSeaUrl.trim()}
+                  onClick={() => void shareCollection()}
+                  className="border border-black px-7 py-4 text-[8px] uppercase tracking-[0.15em] disabled:opacity-30"
+                >
+                  Share
                 </button>
 
               </div>

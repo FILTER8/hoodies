@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import {
   useCallback,
@@ -531,6 +532,8 @@ function HoodieArtwork({
 //////////////////////////////////////////////////////////////*/
 
 export default function MintOSPage() {
+  const searchParams = useSearchParams();
+  const sharedCollection = searchParams.get("collection") || "";
   const {
     address,
     connect,
@@ -626,7 +629,7 @@ export default function MintOSPage() {
     openSeaUrl,
     setOpenSeaUrl,
   ] =
-    useState("");
+    useState(() => sharedCollection);
 
   const [
     resolvedNftContract,
@@ -1053,9 +1056,11 @@ useEffect(() => {
 
   const resolveOpenSeaUrl =
     useCallback(
-      async () => {
+      async (
+        urlInput?: string,
+      ) => {
         const value =
-          openSeaUrl.trim();
+          (urlInput ?? openSeaUrl).trim();
 
         if (!value) {
           setError(
@@ -1219,6 +1224,46 @@ useEffect(() => {
         openSeaUrl,
       ],
     );
+
+  /*//////////////////////////////////////////////////////////////
+                    SHARED COLLECTION LINK
+  //////////////////////////////////////////////////////////////*/
+
+  useEffect(() => {
+    const value = sharedCollection.trim();
+    if (!value) return;
+
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void resolveOpenSeaUrl(value);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resolveOpenSeaUrl, sharedCollection]);
+
+  const shareCollection = useCallback(async () => {
+    const value = openSeaUrl.trim();
+    if (!value || typeof window === "undefined") return;
+
+    const shareUrl = new URL(
+      window.location.pathname,
+      window.location.origin,
+    );
+    shareUrl.searchParams.set("collection", value);
+
+    try {
+      await navigator.clipboard.writeText(shareUrl.toString());
+      setError(null);
+      setTxState({
+        pending: false,
+        message: "Collection link copied.",
+      });
+    } catch {
+      setError("Unable to copy the collection link.");
+    }
+  }, [openSeaUrl]);
 
   /*//////////////////////////////////////////////////////////////
                        READ PUBLIC DROP
@@ -2355,6 +2400,15 @@ useEffect(() => {
                     {resolvingUrl
                       ? "Finding collection…"
                       : "Find public mint"}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={!openSeaUrl.trim()}
+                    onClick={() => void shareCollection()}
+                    className="mt-2 w-full border border-black px-4 py-4 text-[8px] uppercase tracking-[0.15em] disabled:opacity-30"
+                  >
+                    Share collection
                   </button>
 
                 </div>
