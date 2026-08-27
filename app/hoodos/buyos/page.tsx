@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 
 import {
   useCallback,
@@ -603,7 +602,7 @@ export default function BuyOSPage() {
     openSeaUrl,
     setOpenSeaUrl,
   ] =
-    useState(() => sharedCollection);
+    useState("");
 
   const [
     slug,
@@ -1149,18 +1148,46 @@ export default function BuyOSPage() {
   //////////////////////////////////////////////////////////////*/
 
   useEffect(() => {
-    const value = sharedCollection.trim();
-    if (!value) return;
-
     let cancelled = false;
+
     queueMicrotask(() => {
-      if (!cancelled) void loadCollection(value);
+      if (
+        cancelled ||
+        typeof window === "undefined"
+      ) {
+        return;
+      }
+
+      const params =
+        new URLSearchParams(
+          window.location.search,
+        );
+
+      const sharedCollection =
+        params
+          .get("collection")
+          ?.trim() ||
+        "";
+
+      if (!sharedCollection) {
+        return;
+      }
+
+      setOpenSeaUrl(
+        sharedCollection,
+      );
+
+      void loadCollection(
+        sharedCollection,
+      );
     });
 
     return () => {
       cancelled = true;
     };
-  }, [loadCollection, sharedCollection]);
+  }, [
+    loadCollection,
+  ]);
 
   const shareCollection = useCallback(async () => {
     const value = openSeaUrl.trim();

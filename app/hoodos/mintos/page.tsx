@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 
 import {
   useCallback,
@@ -629,7 +628,7 @@ export default function MintOSPage() {
     openSeaUrl,
     setOpenSeaUrl,
   ] =
-    useState(() => sharedCollection);
+    useState("");
 
   const [
     resolvedNftContract,
@@ -1230,18 +1229,46 @@ useEffect(() => {
   //////////////////////////////////////////////////////////////*/
 
   useEffect(() => {
-    const value = sharedCollection.trim();
-    if (!value) return;
-
     let cancelled = false;
+
     queueMicrotask(() => {
-      if (!cancelled) void resolveOpenSeaUrl(value);
+      if (
+        cancelled ||
+        typeof window === "undefined"
+      ) {
+        return;
+      }
+
+      const params =
+        new URLSearchParams(
+          window.location.search,
+        );
+
+      const sharedCollection =
+        params
+          .get("collection")
+          ?.trim() ||
+        "";
+
+      if (!sharedCollection) {
+        return;
+      }
+
+      setOpenSeaUrl(
+        sharedCollection,
+      );
+
+      void resolveOpenSeaUrl(
+        sharedCollection,
+      );
     });
 
     return () => {
       cancelled = true;
     };
-  }, [resolveOpenSeaUrl, sharedCollection]);
+  }, [
+    resolveOpenSeaUrl,
+  ]);
 
   const shareCollection = useCallback(async () => {
     const value = openSeaUrl.trim();
