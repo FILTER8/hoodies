@@ -531,8 +531,6 @@ function HoodieArtwork({
 //////////////////////////////////////////////////////////////*/
 
 export default function MintOSPage() {
-  const searchParams = useSearchParams();
-  const sharedCollection = searchParams.get("collection") || "";
   const {
     address,
     connect,
