@@ -64,6 +64,9 @@ const SEAPORT_ADDRESS =
 const SEAPORT_SELECTOR =
   "0xe7acab24";
 
+const EXPORT_SIZE =
+  1200;
+
 /*//////////////////////////////////////////////////////////////
                               ABIS
 //////////////////////////////////////////////////////////////*/
@@ -801,6 +804,163 @@ function buyOsImageUrl(
   )}`;
 }
 
+function padTime(
+  value: number,
+) {
+  return String(
+    value,
+  ).padStart(
+    2,
+    "0",
+  );
+}
+
+/*//////////////////////////////////////////////////////////////
+                       EXPORT IMAGE HELPERS
+//////////////////////////////////////////////////////////////*/
+
+async function loadCanvasImage(
+  source: string,
+) {
+  const response =
+    await fetch(
+      source,
+      {
+        cache:
+          "no-store",
+      },
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      "Unable to load Hoodie artwork for export.",
+    );
+  }
+
+  const blob =
+    await response.blob();
+
+  const objectUrl =
+    URL.createObjectURL(
+      blob,
+    );
+
+  try {
+    const image =
+      await new Promise<HTMLImageElement>(
+        (
+          resolve,
+          reject,
+        ) => {
+          const element =
+            new window.Image();
+
+          element.onload =
+            () =>
+              resolve(
+                element,
+              );
+
+          element.onerror =
+            () =>
+              reject(
+                new Error(
+                  "Unable to decode Hoodie artwork.",
+                ),
+              );
+
+          element.src =
+            objectUrl;
+        },
+      );
+
+    return image;
+  } finally {
+    /*
+     * Image has decoded before this point,
+     * so revoking is safe.
+     */
+    window.setTimeout(
+      () => {
+        URL.revokeObjectURL(
+          objectUrl,
+        );
+      },
+      1000,
+    );
+  }
+}
+
+function canvasToBlob(
+  canvas: HTMLCanvasElement,
+) {
+  return new Promise<Blob>(
+    (
+      resolve,
+      reject,
+    ) => {
+      canvas.toBlob(
+        (
+          blob,
+        ) => {
+          if (!blob) {
+            reject(
+              new Error(
+                "Unable to create PNG.",
+              ),
+            );
+
+            return;
+          }
+
+          resolve(
+            blob,
+          );
+        },
+        "image/png",
+      );
+    },
+  );
+}
+
+function downloadBlob(
+  blob: Blob,
+  filename: string,
+) {
+  const url =
+    URL.createObjectURL(
+      blob,
+    );
+
+  const anchor =
+    document.createElement(
+      "a",
+    );
+
+  anchor.href =
+    url;
+
+  anchor.download =
+    filename;
+
+  document.body.appendChild(
+    anchor,
+  );
+
+  anchor.click();
+
+  anchor.remove();
+
+  window.setTimeout(
+    () => {
+      URL.revokeObjectURL(
+        url,
+      );
+    },
+    1000,
+  );
+}
+
 /*//////////////////////////////////////////////////////////////
                          HOODIE IMAGE
 //////////////////////////////////////////////////////////////*/
@@ -1067,11 +1227,39 @@ export default function FloorOSPage() {
     );
 
   const [
+    exporting,
+    setExporting,
+  ] =
+    useState(
+      false,
+    );
+
+  const [
+    sharing,
+    setSharing,
+  ] =
+    useState(
+      false,
+    );
+
+  const [
     walletCopied,
     setWalletCopied,
   ] =
     useState(
       false,
+    );
+
+  const [
+    now,
+    setNow,
+  ] =
+    useState(
+      () =>
+        Math.floor(
+          Date.now() /
+          1000,
+        ),
     );
 
   const [
@@ -1085,6 +1273,31 @@ export default function FloorOSPage() {
     setError,
   ] =
     useState("");
+
+  /*//////////////////////////////////////////////////////////////
+                         CLOCK
+  //////////////////////////////////////////////////////////////*/
+
+  useEffect(() => {
+    const interval =
+      window.setInterval(
+        () => {
+          setNow(
+            Math.floor(
+              Date.now() /
+              1000,
+            ),
+          );
+        },
+        1000,
+      );
+
+    return () => {
+      window.clearInterval(
+        interval,
+      );
+    };
+  }, []);
 
   /*//////////////////////////////////////////////////////////////
                          OWNERSHIP
@@ -1579,13 +1792,13 @@ export default function FloorOSPage() {
             destination:
               String(
                 destination.destination ??
-                destination[0],
+                  destination[0],
               ),
 
             inventorySyncEnabled:
               Boolean(
                 destination.inventorySyncEnabled ??
-                destination[1],
+                  destination[1],
               ),
           });
         } catch (
@@ -1798,6 +2011,590 @@ export default function FloorOSPage() {
   }, [
     loadListings,
   ]);
+
+  /*//////////////////////////////////////////////////////////////
+                           DERIVED
+  //////////////////////////////////////////////////////////////*/
+
+  const selectedHoodie =
+    ownedHoodies.find(
+      (
+        hoodie,
+      ) =>
+        hoodie.tokenId ===
+        selectedTokenId,
+    ) ||
+    null;
+
+  const connectedOwner =
+    Boolean(
+      selectedWallet &&
+      address &&
+      sameAddress(
+        selectedWallet.owner,
+        address,
+      ),
+    );
+
+  const epochSecondsRemaining =
+    floorState
+      ? Math.max(
+          0,
+          Number(
+            floorState.epochEnd,
+          ) - now,
+        )
+      : 0;
+
+  const epochHours =
+    Math.floor(
+      epochSecondsRemaining /
+        3600,
+    );
+
+  const epochMinutes =
+    Math.floor(
+      (
+        epochSecondsRemaining %
+        3600
+      ) /
+        60,
+    );
+
+  const epochSeconds =
+    epochSecondsRemaining %
+    60;
+
+  const epochCountdown =
+    `${padTime(
+      epochHours,
+    )}:${padTime(
+      epochMinutes,
+    )}:${padTime(
+      epochSeconds,
+    )}`;
+
+  const floorPaused =
+    Boolean(
+      floorState &&
+      floorState.remainingEpochPurchases ===
+        BigInt(0) &&
+      epochSecondsRemaining >
+        0,
+    );
+
+  const eligibleListings =
+    useMemo(
+      () =>
+        listings.filter(
+          (
+            listing,
+          ) => {
+            if (
+              !floorState
+            ) {
+              return false;
+            }
+
+            const price =
+              BigInt(
+                listing.priceWei,
+              );
+
+            return (
+              sameAddress(
+                listing.contract,
+                HOODIES_ADDRESS,
+              ) &&
+              price <=
+                floorState.maxETHPerHoodie &&
+              price <=
+                floorState.ethBalance &&
+              price <=
+                floorState.remainingEpochETH &&
+              floorState.remainingEpochPurchases >
+                BigInt(
+                  0,
+                )
+            );
+          },
+        ),
+      [
+        floorState,
+        listings,
+      ],
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                      AUTO REFRESH EPOCH
+  //////////////////////////////////////////////////////////////*/
+
+  useEffect(() => {
+    if (
+      !floorState ||
+      epochSecondsRemaining !==
+        0 ||
+      floorState.remainingEpochPurchases >
+        BigInt(0)
+    ) {
+      return;
+    }
+
+    let cancelled =
+      false;
+
+    queueMicrotask(
+      () => {
+        if (
+          !cancelled
+        ) {
+          void loadFloorState();
+
+          void loadListings();
+        }
+      },
+    );
+
+    return () => {
+      cancelled =
+        true;
+    };
+  }, [
+    epochSecondsRemaining,
+    floorState,
+    loadFloorState,
+    loadListings,
+  ]);
+
+  /*//////////////////////////////////////////////////////////////
+                       CREATE SHARE PNG
+  //////////////////////////////////////////////////////////////*/
+
+  const createSharePng =
+    useCallback(
+      async () => {
+        if (
+          !selectedHoodie ||
+          !selectedWallet ||
+          !floorState
+        ) {
+          throw new Error(
+            "Select a Hoodie first.",
+          );
+        }
+
+        const canvas =
+          document.createElement(
+            "canvas",
+          );
+
+        canvas.width =
+          EXPORT_SIZE;
+
+        canvas.height =
+          EXPORT_SIZE;
+
+        const context =
+          canvas.getContext(
+            "2d",
+          );
+
+        if (!context) {
+          throw new Error(
+            "Canvas unavailable.",
+          );
+        }
+
+        /*
+         * OCH green background.
+         */
+        context.fillStyle =
+          "#ccff00";
+
+        context.fillRect(
+          0,
+          0,
+          EXPORT_SIZE,
+          EXPORT_SIZE,
+        );
+
+        /*
+         * Outer frame.
+         */
+        context.strokeStyle =
+          "#000000";
+
+        context.lineWidth =
+          6;
+
+        context.strokeRect(
+          54,
+          54,
+          EXPORT_SIZE - 108,
+          EXPORT_SIZE - 108,
+        );
+
+        /*
+         * Header.
+         */
+        context.fillStyle =
+          "#000000";
+
+        context.font =
+          "700 34px monospace";
+
+        context.textAlign =
+          "left";
+
+        context.fillText(
+          "FLOOROS",
+          90,
+          120,
+        );
+
+        context.font =
+          "24px monospace";
+
+        context.fillText(
+          "BUY FOR THE HOOD",
+          90,
+          160,
+        );
+
+        /*
+         * Divider.
+         */
+        context.fillRect(
+          90,
+          192,
+          1020,
+          4,
+        );
+
+        /*
+         * Hoodie image.
+         */
+        const artwork =
+          await loadCanvasImage(
+            tokenArtwork(
+              selectedHoodie.tokenId,
+            ),
+          );
+
+        const artworkSize =
+          620;
+
+        const artworkX =
+          (
+            EXPORT_SIZE -
+            artworkSize
+          ) /
+          2;
+
+        const artworkY =
+          245;
+
+        /*
+         * Artwork frame.
+         */
+        context.fillStyle =
+          "#000000";
+
+        context.fillRect(
+          artworkX - 6,
+          artworkY - 6,
+          artworkSize + 12,
+          artworkSize + 12,
+        );
+
+        context.fillStyle =
+          "#ccff00";
+
+        context.fillRect(
+          artworkX,
+          artworkY,
+          artworkSize,
+          artworkSize,
+        );
+
+        context.imageSmoothingEnabled =
+          false;
+
+        context.drawImage(
+          artwork,
+          artworkX,
+          artworkY,
+          artworkSize,
+          artworkSize,
+        );
+
+        /*
+         * Hoodie ID.
+         */
+        context.fillStyle =
+          "#000000";
+
+        context.font =
+          "700 48px monospace";
+
+        context.textAlign =
+          "left";
+
+        context.fillText(
+          `HOODIE #${selectedHoodie.tokenId}`,
+          90,
+          950,
+        );
+
+        /*
+         * Worker status.
+         */
+        context.font =
+          "700 25px monospace";
+
+        context.fillText(
+          selectedWallet.active
+            ? "● ACTIVE WORKER"
+            : "○ INACTIVE",
+          90,
+          995,
+        );
+
+        /*
+         * Reward.
+         */
+        context.textAlign =
+          "right";
+
+        context.font =
+          "700 32px monospace";
+
+        context.fillText(
+          `+${formatOCH(
+            floorState.triggerReward,
+          )} OCH / BUY`,
+          1110,
+          950,
+        );
+
+        /*
+         * Wallet.
+         */
+        context.font =
+          "20px monospace";
+
+        context.fillText(
+          shortAddress(
+            selectedWallet.walletAddress,
+          ),
+          1110,
+          995,
+        );
+
+        /*
+         * Bottom divider.
+         */
+        context.fillRect(
+          90,
+          1035,
+          1020,
+          4,
+        );
+
+        /*
+         * Footer.
+         */
+        context.textAlign =
+          "left";
+
+        context.font =
+          "21px monospace";
+
+        context.fillText(
+          "ONCHAINHOODIES · HOODOS · ROBINHOOD CHAIN",
+          90,
+          1090,
+        );
+
+        context.textAlign =
+          "right";
+
+        context.fillText(
+          "WORKING FOR THE HOOD",
+          1110,
+          1090,
+        );
+
+        return canvasToBlob(
+          canvas,
+        );
+      },
+      [
+        floorState,
+        selectedHoodie,
+        selectedWallet,
+      ],
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                          EXPORT PNG
+  //////////////////////////////////////////////////////////////*/
+
+  const exportWorkerPng =
+    useCallback(
+      async () => {
+        if (
+          !selectedHoodie
+        ) {
+          return;
+        }
+
+        setExporting(
+          true,
+        );
+
+        setError(
+          "",
+        );
+
+        try {
+          const blob =
+            await createSharePng();
+
+          downloadBlob(
+            blob,
+            `flooros-hoodie-${selectedHoodie.tokenId}.png`,
+          );
+        } catch (
+          exportError
+        ) {
+          setError(
+            errorMessage(
+              exportError,
+              "Unable to export FloorOS image.",
+            ),
+          );
+        } finally {
+          setExporting(
+            false,
+          );
+        }
+      },
+      [
+        createSharePng,
+        selectedHoodie,
+      ],
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                              SHARE
+  //////////////////////////////////////////////////////////////*/
+
+  const shareWorker =
+    useCallback(
+      async () => {
+        if (
+          !selectedHoodie
+        ) {
+          return;
+        }
+
+        setSharing(
+          true,
+        );
+
+        setError(
+          "",
+        );
+
+        try {
+          const blob =
+            await createSharePng();
+
+          const file =
+            new File(
+              [
+                blob,
+              ],
+              `flooros-hoodie-${selectedHoodie.tokenId}.png`,
+              {
+                type:
+                  "image/png",
+              },
+            );
+
+          const shareData = {
+            title:
+              `FloorOS · Hoodie #${selectedHoodie.tokenId}`,
+
+            text:
+              `Hoodie #${selectedHoodie.tokenId} is working for the Hood on FloorOS.`,
+
+            files: [
+              file,
+            ],
+          };
+
+          if (
+            navigator.share &&
+            navigator.canShare?.(
+              shareData,
+            )
+          ) {
+            await navigator.share(
+              shareData,
+            );
+
+            return;
+          }
+
+          /*
+           * Desktop browsers commonly do not
+           * support file sharing.
+           *
+           * Fall back to PNG download.
+           */
+          downloadBlob(
+            blob,
+            `flooros-hoodie-${selectedHoodie.tokenId}.png`,
+          );
+
+          setSuccess(
+            "Share image exported. Post it wherever you like.",
+          );
+        } catch (
+          shareError
+        ) {
+          /*
+           * User cancelling the native share
+           * sheet is not really an app error.
+           */
+          if (
+            shareError instanceof
+              DOMException &&
+            shareError.name ===
+              "AbortError"
+          ) {
+            return;
+          }
+
+          setError(
+            errorMessage(
+              shareError,
+              "Unable to share FloorOS image.",
+            ),
+          );
+        } finally {
+          setSharing(
+            false,
+          );
+        }
+      },
+      [
+        createSharePng,
+        selectedHoodie,
+      ],
+    );
 
   /*//////////////////////////////////////////////////////////////
                            BUY
@@ -2206,72 +3003,6 @@ export default function FloorOSPage() {
     );
 
   /*//////////////////////////////////////////////////////////////
-                           DERIVED
-  //////////////////////////////////////////////////////////////*/
-
-  const selectedHoodie =
-    ownedHoodies.find(
-      (
-        hoodie,
-      ) =>
-        hoodie.tokenId ===
-        selectedTokenId,
-    ) ||
-    null;
-
-  const connectedOwner =
-    Boolean(
-      selectedWallet &&
-      address &&
-      sameAddress(
-        selectedWallet.owner,
-        address,
-      ),
-    );
-
-  const eligibleListings =
-    useMemo(
-      () =>
-        listings.filter(
-          (
-            listing,
-          ) => {
-            if (
-              !floorState
-            ) {
-              return false;
-            }
-
-            const price =
-              BigInt(
-                listing.priceWei,
-              );
-
-            return (
-              sameAddress(
-                listing.contract,
-                HOODIES_ADDRESS,
-              ) &&
-              price <=
-                floorState.maxETHPerHoodie &&
-              price <=
-                floorState.ethBalance &&
-              price <=
-                floorState.remainingEpochETH &&
-              floorState.remainingEpochPurchases >
-                BigInt(
-                  0,
-                )
-            );
-          },
-        ),
-      [
-        floorState,
-        listings,
-      ],
-    );
-
-  /*//////////////////////////////////////////////////////////////
                               UI
   //////////////////////////////////////////////////////////////*/
 
@@ -2297,6 +3028,8 @@ export default function FloorOSPage() {
           </Link>
 
         </div>
+
+        {/* HERO */}
 
         <div className="grid gap-8 border-b border-black py-10 lg:grid-cols-[1fr_0.8fr] lg:items-end">
 
@@ -2329,6 +3062,8 @@ export default function FloorOSPage() {
           </div>
 
         </div>
+
+        {/* FLOOR STATUS */}
 
         <section className="mt-6">
 
@@ -2369,6 +3104,7 @@ export default function FloorOSPage() {
             <div className="grid border-x border-b border-black sm:grid-cols-2 lg:grid-cols-5">
 
               <div className="border-b border-black p-4 lg:border-b-0 lg:border-r">
+
                 <p className="text-[6px] uppercase opacity-45">
                   Available ETH
                 </p>
@@ -2378,9 +3114,11 @@ export default function FloorOSPage() {
                     floorState.ethBalance,
                   )} ETH
                 </p>
+
               </div>
 
               <div className="border-b border-black p-4 lg:border-b-0 lg:border-r">
+
                 <p className="text-[6px] uppercase opacity-45">
                   Max / Hoodie
                 </p>
@@ -2390,11 +3128,13 @@ export default function FloorOSPage() {
                     floorState.maxETHPerHoodie,
                   )} ETH
                 </p>
+
               </div>
 
               <div className="border-b border-black p-4 lg:border-b-0 lg:border-r">
+
                 <p className="text-[6px] uppercase opacity-45">
-                  ETH left today
+                  ETH left
                 </p>
 
                 <p className="mt-2 text-xl">
@@ -2402,9 +3142,11 @@ export default function FloorOSPage() {
                     floorState.remainingEpochETH,
                   )} ETH
                 </p>
+
               </div>
 
               <div className="border-b border-black p-4 lg:border-b-0 lg:border-r">
+
                 <p className="text-[6px] uppercase opacity-45">
                   Buys left
                 </p>
@@ -2412,9 +3154,11 @@ export default function FloorOSPage() {
                 <p className="mt-2 text-xl">
                   {floorState.remainingEpochPurchases.toString()}
                 </p>
+
               </div>
 
               <div className="p-4">
+
                 <p className="text-[6px] uppercase opacity-45">
                   Hoodie reward
                 </p>
@@ -2424,6 +3168,7 @@ export default function FloorOSPage() {
                     floorState.triggerReward,
                   )} OCH
                 </p>
+
               </div>
 
             </div>
@@ -2431,6 +3176,8 @@ export default function FloorOSPage() {
           )}
 
         </section>
+
+        {/* CONNECT */}
 
         {!address ? (
 
@@ -2477,6 +3224,8 @@ export default function FloorOSPage() {
         ) : (
 
           <>
+
+            {/* WORKER */}
 
             <section className="mt-6 grid gap-4 border-b border-black pb-6 md:grid-cols-[100px_minmax(0,1fr)_auto] md:items-center">
 
@@ -2613,27 +3362,113 @@ export default function FloorOSPage() {
 
               </div>
 
-              {selectedWallet &&
-                !selectedWallet.active ? (
+              <div className="flex flex-wrap gap-2 md:justify-end">
 
-                <Link
-                  href="/hoodwallet"
+                {selectedWallet &&
+                  !selectedWallet.active ? (
 
-                  className="border border-black px-4 py-3 text-[8px] uppercase"
-                >
-                  Activate →
-                </Link>
+                  <Link
+                    href="/hoodwallet"
 
-              ) : selectedWallet &&
-                connectedOwner ? (
+                    className="border border-black px-4 py-3 text-[8px] uppercase"
+                  >
+                    Activate →
+                  </Link>
 
-                <span className="bg-black px-4 py-3 text-[7px] uppercase text-[#ccff00]">
-                  Ready to work
-                </span>
+                ) : selectedWallet &&
+                  connectedOwner ? (
 
-              ) : null}
+                  <>
+                    <span className="bg-black px-4 py-3 text-[7px] uppercase text-[#ccff00]">
+                      Ready to work
+                    </span>
+
+                    <button
+                      type="button"
+
+                      disabled={
+                        exporting
+                      }
+
+                      onClick={() =>
+                        void exportWorkerPng()
+                      }
+
+                      className="border border-black px-4 py-3 text-[7px] uppercase disabled:opacity-30"
+                    >
+                      {exporting
+                        ? "Exporting…"
+                        : "Export PNG"}
+                    </button>
+
+                    <button
+                      type="button"
+
+                      disabled={
+                        sharing
+                      }
+
+                      onClick={() =>
+                        void shareWorker()
+                      }
+
+                      className="border border-black px-4 py-3 text-[7px] uppercase disabled:opacity-30"
+                    >
+                      {sharing
+                        ? "Sharing…"
+                        : "Share"}
+                    </button>
+                  </>
+
+                ) : null}
+
+              </div>
 
             </section>
+
+            {/* COUNTDOWN */}
+
+            {floorPaused && (
+
+              <section className="mt-9 border border-black">
+
+                <div className="grid gap-6 p-6 md:grid-cols-[1fr_auto] md:items-center">
+
+                  <div>
+
+                    <p className="text-[7px] uppercase tracking-[0.16em] opacity-45">
+                      FloorOS paused
+                    </p>
+
+                    <h2 className="mt-2 text-3xl tracking-[-0.04em]">
+                      Next purchase window
+                    </h2>
+
+                    <p className="mt-3 max-w-xl text-[8px] uppercase leading-relaxed opacity-50">
+                      The purchase limit for this epoch has been reached. FloorOS reopens automatically when the next window starts.
+                    </p>
+
+                  </div>
+
+                  <div className="md:text-right">
+
+                    <p className="text-[6px] uppercase tracking-[0.16em] opacity-45">
+                      Opens in
+                    </p>
+
+                    <p className="mt-2 text-4xl tracking-[-0.04em] md:text-5xl">
+                      {epochCountdown}
+                    </p>
+
+                  </div>
+
+                </div>
+
+              </section>
+
+            )}
+
+            {/* LISTINGS */}
 
             <section className="mt-9">
 
@@ -2646,7 +3481,9 @@ export default function FloorOSPage() {
                   </p>
 
                   <h2 className="mt-2 text-3xl">
-                    Eligible floor
+                    {floorPaused
+                      ? "Next floor"
+                      : "Eligible floor"}
                   </h2>
 
                 </div>
@@ -2739,7 +3576,9 @@ export default function FloorOSPage() {
                               >
                                 {eligible
                                   ? "Eligible"
-                                  : "Blocked"}
+                                  : floorPaused
+                                    ? "Paused"
+                                    : "Blocked"}
                               </span>
 
                             </div>
@@ -2776,7 +3615,9 @@ export default function FloorOSPage() {
 
                               className="mt-auto bg-black px-3 py-3 text-[7px] uppercase text-[#ccff00] disabled:opacity-25"
                             >
-                              Buy for Treasury →
+                              {floorPaused
+                                ? `Opens ${epochCountdown}`
+                                : "Buy for Treasury →"}
                             </button>
 
                           </div>
@@ -2824,6 +3665,8 @@ export default function FloorOSPage() {
           </>
 
         )}
+
+        {/* HISTORY */}
 
         {floorState && (
 
@@ -2881,6 +3724,8 @@ export default function FloorOSPage() {
 
         )}
 
+        {/* SUCCESS */}
+
         {success && (
 
           <div className="mt-6 bg-black p-4 text-[#ccff00]">
@@ -2888,6 +3733,8 @@ export default function FloorOSPage() {
           </div>
 
         )}
+
+        {/* ERROR */}
 
         {error && (
 
@@ -2907,13 +3754,15 @@ export default function FloorOSPage() {
 
       </section>
 
+      {/* CONFIRM */}
+
       {selectedListing &&
         selectedWallet &&
         floorState && (
 
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4">
 
-          <div className="w-full max-w-md border border-black bg-[#ccff00]">
+          <div className="max-h-[92vh] w-full max-w-md overflow-y-auto border border-black bg-[#ccff00]">
 
             <div className="flex items-center justify-between border-b border-black p-4">
 
@@ -2977,6 +3826,7 @@ export default function FloorOSPage() {
 
                 <div className="flex justify-between border-b border-black p-3">
                   <span>Worker gas ETH</span>
+
                   <span>
                     {formatEth(
                       selectedWallet.nativeBalance,
@@ -2987,6 +3837,7 @@ export default function FloorOSPage() {
 
                 <div className="flex justify-between p-3">
                   <span>Reward</span>
+
                   <span>
                     +{formatOCH(
                       floorState.triggerReward,
