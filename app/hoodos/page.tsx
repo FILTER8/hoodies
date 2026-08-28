@@ -56,6 +56,35 @@ type HoodOSApp = {
 
 const apps: HoodOSApp[] = [
   {
+  id:
+    "flooros",
+
+  name:
+    "FloorOS",
+
+  tagline:
+    "Buy the floor for the Hood",
+
+  description:
+    "Use your activated Hoodie to acquire eligible OnChainHoodies for the protocol Treasury and earn OCH directly into your HoodWallet.",
+
+  href:
+    "/hoodos/flooros",
+
+  icon:
+    "/hoodos/flooros.png",
+
+  fallbackIcon:
+    "F",
+
+  buildType:
+    "internal",
+
+  status:
+    "live",
+},
+
+  {
     id:
       "mintos",
 
