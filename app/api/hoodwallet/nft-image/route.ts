@@ -1,117 +1,1033 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAddress, isAddress } from "ethers";
+
+import { siteConfig } from "../../../../lib/config";
+import trustedAssetRegistryJson from "../../../../lib/hoodwallet-assets.json";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 300;
 export const runtime = "nodejs";
 
+const OPENSEA_API =
+  "https://api.opensea.io/api/v2";
+
+const ROBINHOOD_CHAIN =
+  "robinhood";
+
+const MAX_OPENSEA_IMAGE_FALLBACKS =
+  8;
+
+
 /*//////////////////////////////////////////////////////////////
-                              CONFIG
+                              TYPES
 //////////////////////////////////////////////////////////////*/
 
-const ALLOWED_HOSTS = new Set([
-  "i.seadn.io",
-  "i2.seadn.io",
-  "raw.seadn.io",
-  "raw2.seadn.io",
-  "nft2-cdn.alchemy.com",
-  "nft-cdn.alchemy.com",
-  "res.cloudinary.com",
-  "ipfs.io",
-  "gateway.pinata.cloud",
-]);
+type TrustedRegistryEntry = {
+  contract: string;
+  name?: string;
+  symbol?: string;
+};
 
-const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+type TrustedAssetRegistry = {
+  erc20?: TrustedRegistryEntry[];
+  nfts?: TrustedRegistryEntry[];
+};
+
+type BlockscoutTokenBalance = {
+  value?: string;
+
+  token?: {
+    address?: string;
+    hash?: string;
+    address_hash?: string;
+    contract_address?: string;
+
+    name?: string;
+    symbol?: string;
+    decimals?: string | number;
+    type?: string;
+  };
+};
+
+type AssetResponse = {
+  symbol: string;
+  name: string;
+  balanceRaw: string;
+  balanceFormatted: string;
+  contract?: string;
+  decimals: number;
+  kind: "erc20";
+  trusted: boolean;
+};
+
+type AlchemyOwnedNft = {
+  contract?: {
+    address?: string;
+    name?: string;
+
+    isSpam?: boolean;
+
+    spamClassifications?: string[];
+  };
+
+  tokenId?: string;
+
+  tokenType?:
+    | "ERC721"
+    | "ERC1155"
+    | string;
+
+  name?: string;
+
+  description?: string;
+
+  balance?: string;
+
+  image?: {
+    cachedUrl?: string;
+    thumbnailUrl?: string;
+    pngUrl?: string;
+    contentType?: string;
+    size?: number;
+    originalUrl?: string;
+  };
+
+  raw?: {
+    metadata?: {
+      name?: string;
+      image?: string;
+      image_url?: string;
+      imageUrl?: string;
+    };
+  };
+};
+
+type AlchemyNftResponse = {
+  ownedNfts?: AlchemyOwnedNft[];
+  pageKey?: string;
+  totalCount?: number;
+};
+
+type NftResponse = {
+  contract: string;
+  tokenId: string;
+
+  name: string;
+  collectionName: string;
+
+  image?: string;
+
+  balance: string;
+
+  kind:
+    | "erc721"
+    | "erc1155";
+
+  trusted: boolean;
+
+  spam: boolean;
+
+  spamClassifications: string[];
+};
+
+/*//////////////////////////////////////////////////////////////
+                        TRUSTED REGISTRY
+//////////////////////////////////////////////////////////////*/
+
+const trustedAssetRegistry =
+  trustedAssetRegistryJson as TrustedAssetRegistry;
+
+function normalizeContractAddress(
+  value?: string,
+) {
+  if (!value) {
+    return "";
+  }
+
+  const trimmed =
+    value.trim();
+
+  if (
+    !isAddress(trimmed)
+  ) {
+    return "";
+  }
+
+  return trimmed.toLowerCase();
+}
+
+const trustedErc20Contracts =
+  new Set(
+    (
+      trustedAssetRegistry.erc20 ??
+      []
+    )
+      .map((item) =>
+        normalizeContractAddress(
+          item.contract,
+        ),
+      )
+      .filter(Boolean),
+  );
+
+const trustedNftContracts =
+  new Set(
+    (
+      trustedAssetRegistry.nfts ??
+      []
+    )
+      .map((item) =>
+        normalizeContractAddress(
+          item.contract,
+        ),
+      )
+      .filter(Boolean),
+  );
+
+function isTrustedErc20(
+  contract?: string,
+) {
+  const normalized =
+    normalizeContractAddress(
+      contract,
+    );
+
+  return (
+    normalized.length > 0 &&
+    trustedErc20Contracts.has(
+      normalized,
+    )
+  );
+}
+
+function isTrustedNft(
+  contract?: string,
+) {
+  const normalized =
+    normalizeContractAddress(
+      contract,
+    );
+
+  return (
+    normalized.length > 0 &&
+    trustedNftContracts.has(
+      normalized,
+    )
+  );
+}
 
 /*//////////////////////////////////////////////////////////////
                               HELPERS
 //////////////////////////////////////////////////////////////*/
 
-function normalizeIpfsUrl(value: string) {
-  const trimmed = value.trim();
+function formatTokenBalance(
+  value: bigint,
+  decimals = 18,
+  maximumDecimals = 6,
+) {
+  const negative =
+    value < BigInt(0);
 
-  if (trimmed.startsWith("ipfs://")) {
-    const path = trimmed.slice(
-      "ipfs://".length,
-    );
+  const absolute =
+    negative
+      ? -value
+      : value;
 
-    return `https://ipfs.io/ipfs/${path}`;
-  }
+  const base =
+    BigInt(10) **
+    BigInt(decimals);
 
-  return trimmed;
-}
+  const whole =
+    absolute / base;
 
-function normalizeImageUrl(value: string) {
-  const normalized =
-    normalizeIpfsUrl(value);
-
-  let url: URL;
-
-  try {
-    url = new URL(normalized);
-  } catch {
-    return normalized;
-  }
-
-  const host =
-    url.hostname.toLowerCase();
-
-  /*
-   * OpenSea raw media can be MP4. The image CDN
-   * can render a still frame from the same asset.
-   */
-  if (host === "raw2.seadn.io") {
-    url.hostname = "i2.seadn.io";
-  } else if (host === "raw.seadn.io") {
-    url.hostname = "i.seadn.io";
-  }
-
-  const finalHost =
-    url.hostname.toLowerCase();
+  const remainder =
+    absolute % base;
 
   if (
-    finalHost === "i.seadn.io" ||
-    finalHost === "i2.seadn.io"
+    remainder ===
+      BigInt(0) ||
+    maximumDecimals <=
+      0
   ) {
-    url.searchParams.set(
-      "frame-time",
-      "1",
+    return `${
+      negative ? "-" : ""
+    }${whole.toString()}`;
+  }
+
+  const fraction =
+    remainder
+      .toString()
+      .padStart(
+        decimals,
+        "0",
+      )
+      .slice(
+        0,
+        maximumDecimals,
+      )
+      .replace(
+        /0+$/,
+        "",
+      );
+
+  return fraction
+    ? `${
+        negative ? "-" : ""
+      }${whole.toString()}.${fraction}`
+    : `${
+        negative ? "-" : ""
+      }${whole.toString()}`;
+}
+
+function getBlockscoutContractAddress(
+  item: BlockscoutTokenBalance,
+) {
+  const candidates = [
+    item.token?.address,
+    item.token?.hash,
+    item.token?.address_hash,
+    item.token?.contract_address,
+  ];
+
+  for (const candidate of candidates) {
+    if (
+      candidate &&
+      isAddress(
+        candidate.trim(),
+      )
+    ) {
+      return candidate.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeTokenBalances(
+  payload: unknown,
+): AssetResponse[] {
+  if (
+    !Array.isArray(
+      payload,
+    )
+  ) {
+    return [];
+  }
+
+  return (
+    payload as BlockscoutTokenBalance[]
+  )
+    .filter(
+      (item) =>
+        item.token?.type ===
+        "ERC-20",
+    )
+    .map(
+      (
+        item,
+      ): AssetResponse | null => {
+        let balanceRaw: bigint;
+
+        try {
+          balanceRaw =
+            BigInt(
+              item.value ??
+                "0",
+            );
+        } catch {
+          return null;
+        }
+
+        if (
+          balanceRaw <=
+          BigInt(0)
+        ) {
+          return null;
+        }
+
+        const parsedDecimals =
+          Number(
+            item.token?.decimals ??
+              18,
+          );
+
+        const decimals =
+          Number.isInteger(
+            parsedDecimals,
+          ) &&
+          parsedDecimals >=
+            0 &&
+          parsedDecimals <=
+            255
+            ? parsedDecimals
+            : 18;
+
+        const rawContract =
+          getBlockscoutContractAddress(
+            item,
+          );
+
+        let contract:
+          | string
+          | undefined;
+
+        if (
+          rawContract &&
+          isAddress(
+            rawContract,
+          )
+        ) {
+          contract =
+            getAddress(
+              rawContract,
+            );
+        }
+
+        return {
+          symbol:
+            item.token?.symbol?.trim() ||
+            "TOKEN",
+
+          name:
+            item.token?.name?.trim() ||
+            "ERC-20",
+
+          balanceRaw:
+            balanceRaw.toString(),
+
+          balanceFormatted:
+            formatTokenBalance(
+              balanceRaw,
+              decimals,
+              6,
+            ),
+
+          contract,
+
+          decimals,
+
+          kind:
+            "erc20",
+
+          trusted:
+            isTrustedErc20(
+              rawContract,
+            ),
+        };
+      },
+    )
+    .filter(
+      (
+        asset,
+      ): asset is AssetResponse =>
+        asset !== null,
+    )
+    .sort(
+      (
+        left,
+        right,
+      ) =>
+        left.symbol.localeCompare(
+          right.symbol,
+        ),
+    );
+}
+
+/*//////////////////////////////////////////////////////////////
+                         BLOCKSCOUT ERC-20
+//////////////////////////////////////////////////////////////*/
+
+async function fetchBlockscoutBalances(
+  walletAddress: string,
+) {
+  const explorerBase =
+    siteConfig.explorerUrl.replace(
+      /\/$/,
+      "",
     );
 
-    url.searchParams.set(
-      "w",
-      "800",
-    );
-
-    url.searchParams.set(
-      "h",
-      "800",
+  if (
+    !explorerBase
+  ) {
+    throw new Error(
+      "Explorer URL is not configured.",
     );
   }
 
-  return url.toString();
+  const url =
+    `${explorerBase}/api/v2/addresses/` +
+    `${encodeURIComponent(
+      walletAddress,
+    )}/token-balances`;
+
+  const response =
+    await fetch(
+      url,
+      {
+        headers: {
+          accept:
+            "application/json",
+        },
+
+        cache:
+          "force-cache",
+        next: {
+          revalidate: 60,
+        },
+      },
+    );
+
+  if (
+    !response.ok
+  ) {
+    throw new Error(
+      `Blockscout token balance request failed (${response.status}).`,
+    );
+  }
+
+  return response.json() as Promise<unknown>;
 }
 
-function isAllowedRemoteUrl(value: string) {
-  try {
-    const url = new URL(value);
+/*//////////////////////////////////////////////////////////////
+                     OPENSEA IMAGE FALLBACK
+//////////////////////////////////////////////////////////////*/
 
-    if (url.protocol !== "https:") {
-      return false;
+function getOpenSeaApiKey() {
+  return process.env
+    .OPENSEA_API_KEY
+    ?.trim() ||
+    "";
+}
+
+async function fetchOpenSeaNftImage(
+  contract: string,
+  tokenId: string,
+) {
+  const apiKey =
+    getOpenSeaApiKey();
+
+  if (!apiKey) {
+    return undefined;
+  }
+
+  try {
+    const response =
+      await fetch(
+        `${OPENSEA_API}/chain/${ROBINHOOD_CHAIN}/contract/${encodeURIComponent(
+          contract,
+        )}/nfts/${encodeURIComponent(
+          tokenId,
+        )}`,
+        {
+          headers: {
+            accept:
+              "application/json",
+            "x-api-key":
+              apiKey,
+          },
+          cache:
+            "no-store",
+        },
+      );
+
+    if (!response.ok) {
+      console.warn(
+        `HoodWallet OpenSea image fallback failed (${response.status}) for ${contract}:${tokenId}.`,
+      );
+      return undefined;
     }
 
-    return ALLOWED_HOSTS.has(
-      url.hostname.toLowerCase(),
+    const payload =
+      (await response.json()) as {
+        nft?: {
+          display_image_url?: string;
+          image_url?: string;
+          original_image_url?: string;
+          image?: string;
+        };
+      };
+
+    const nft =
+      payload.nft ||
+      {};
+
+    return (
+      nft.display_image_url?.trim() ||
+      nft.image_url?.trim() ||
+      nft.original_image_url?.trim() ||
+      nft.image?.trim() ||
+      undefined
     );
-  } catch {
-    return false;
+  } catch (error) {
+    console.warn(
+      `HoodWallet OpenSea image fallback unavailable for ${contract}:${tokenId}.`,
+      error,
+    );
+    return undefined;
   }
 }
 
-function isImageContentType(
-  contentType: string,
+/*//////////////////////////////////////////////////////////////
+                           ALCHEMY NFT
+//////////////////////////////////////////////////////////////*/
+
+function getAlchemyNftBaseUrl() {
+  const rawBase =
+    process.env
+      .ALCHEMY_NFT_API_BASE_URL
+      ?.trim();
+
+  if (!rawBase) {
+    throw new Error(
+      "ALCHEMY_NFT_API_BASE_URL is not configured.",
+    );
+  }
+
+  return rawBase.replace(
+    /\/$/,
+    "",
+  );
+}
+
+function getAlchemyApiKey() {
+  const key =
+    process.env
+      .ALCHEMY_API_KEY
+      ?.trim();
+
+  if (!key) {
+    throw new Error(
+      "ALCHEMY_API_KEY is not configured.",
+    );
+  }
+
+  return key;
+}
+
+function buildAlchemyNftUrl(
+  walletAddress: string,
+  pageKey?: string,
 ) {
-  return contentType
-    .toLowerCase()
-    .startsWith("image/");
+  const base =
+    getAlchemyNftBaseUrl();
+
+  const apiKey =
+    getAlchemyApiKey();
+
+  const params =
+    new URLSearchParams({
+      owner:
+        walletAddress,
+
+      withMetadata:
+        "true",
+
+      pageSize:
+        "100",
+
+      excludeFilters:
+        "",
+    });
+
+  if (pageKey) {
+    params.set(
+      "pageKey",
+      pageKey,
+    );
+  }
+
+  return (
+    `${base}/${apiKey}/getNFTsForOwner?` +
+    params.toString()
+  );
+}
+
+function looksLikeVideo(
+  value?: string,
+) {
+  if (!value) {
+    return false;
+  }
+
+  const lower =
+    value.toLowerCase();
+
+  return (
+    lower.includes(".mp4") ||
+    lower.includes(".webm") ||
+    lower.includes(".mov")
+  );
+}
+
+function pickNftImage(
+  nft: AlchemyOwnedNft,
+) {
+  const original =
+    nft.image?.originalUrl;
+
+  /*
+   * Original NFT artwork first.
+   *
+   * GIFs work directly in <img> and should stay animated.
+   * Only actual video formats need special handling.
+   */
+  if (
+    original &&
+    !looksLikeVideo(
+      original,
+    )
+  ) {
+    return original;
+  }
+
+  /*
+   * Raw on-chain / metadata image next.
+   */
+  const rawCandidates = [
+    nft.raw?.metadata?.image,
+    nft.raw?.metadata?.image_url,
+    nft.raw?.metadata?.imageUrl,
+  ];
+
+  for (
+    const candidate of
+    rawCandidates
+  ) {
+    if (
+      candidate &&
+      !looksLikeVideo(
+        candidate,
+      )
+    ) {
+      return candidate;
+    }
+  }
+
+  /*
+   * Alchemy-rendered/cache versions only
+   * after the actual NFT artwork.
+   */
+  const cachedCandidates = [
+    nft.image?.cachedUrl,
+    nft.image?.pngUrl,
+    nft.image?.thumbnailUrl,
+  ];
+
+  for (
+    const candidate of
+    cachedCandidates
+  ) {
+    if (
+      candidate &&
+      !looksLikeVideo(
+        candidate,
+      )
+    ) {
+      return candidate;
+    }
+  }
+
+  /*
+   * Video remains last.
+   * The HoodWallet image proxy can attempt
+   * to produce a still preview.
+   */
+  return original;
+}
+
+  for (
+    const candidate of
+    staticCandidates
+  ) {
+    if (
+      candidate &&
+      !looksLikeVideo(
+        candidate,
+      )
+    ) {
+      return candidate;
+    }
+  }
+
+  return original;
+}
+
+function normalizeAlchemyNft(
+  nft: AlchemyOwnedNft,
+): NftResponse | null {
+  const rawContract =
+    nft.contract?.address?.trim();
+
+  if (
+    !rawContract ||
+    !isAddress(
+      rawContract,
+    )
+  ) {
+    return null;
+  }
+
+  const tokenId =
+    nft.tokenId?.trim();
+
+  if (
+    !tokenId
+  ) {
+    return null;
+  }
+
+  const tokenType =
+    nft.tokenType?.toUpperCase();
+
+  const kind:
+    | "erc721"
+    | "erc1155" =
+    tokenType ===
+    "ERC1155"
+      ? "erc1155"
+      : "erc721";
+
+  const collectionName =
+    nft.contract?.name?.trim() ||
+    "NFT Collection";
+
+  const name =
+    nft.name?.trim() ||
+    nft.raw?.metadata?.name?.trim() ||
+    `${collectionName} #${tokenId}`;
+
+  const balance =
+    nft.balance?.trim() ||
+    "1";
+
+  const spam =
+    nft.contract?.isSpam ===
+      true ||
+    (
+      nft.contract
+        ?.spamClassifications
+        ?.length ??
+      0
+    ) > 0;
+
+  return {
+    contract:
+      getAddress(
+        rawContract,
+      ),
+
+    tokenId,
+
+    name,
+
+    collectionName,
+
+    image:
+      pickNftImage(
+        nft,
+      ),
+
+    balance,
+
+    kind,
+
+    trusted:
+      isTrustedNft(
+        rawContract,
+      ),
+
+    spam,
+
+    spamClassifications:
+      nft.contract
+        ?.spamClassifications ||
+      [],
+  };
+}
+
+async function fetchAlchemyNfts(
+  walletAddress: string,
+): Promise<NftResponse[]> {
+  const collected:
+    NftResponse[] =
+    [];
+
+  let pageKey:
+    | string
+    | undefined;
+
+  let pages = 0;
+
+  /*
+   * Safety cap.
+   *
+   * This is plenty for normal
+   * HoodWallet inventory while
+   * preventing an accidental
+   * endless pagination loop.
+   */
+  const MAX_PAGES =
+    10;
+
+  do {
+    const url =
+      buildAlchemyNftUrl(
+        walletAddress,
+        pageKey,
+      );
+
+    const response =
+      await fetch(
+        url,
+        {
+          headers: {
+            accept:
+              "application/json",
+          },
+
+          cache:
+            "no-store",
+        },
+      );
+
+    if (
+      !response.ok
+    ) {
+      throw new Error(
+        `Alchemy NFT request failed (${response.status}).`,
+      );
+    }
+
+    const payload =
+      (await response.json()) as AlchemyNftResponse;
+
+    const ownedNfts =
+      Array.isArray(
+        payload.ownedNfts,
+      )
+        ? payload.ownedNfts
+        : [];
+
+    for (
+      const nft of ownedNfts
+    ) {
+      const normalized =
+        normalizeAlchemyNft(
+          nft,
+        );
+
+      if (
+        normalized
+      ) {
+        collected.push(
+          normalized,
+        );
+      }
+    }
+
+    pageKey =
+      payload.pageKey;
+
+    pages += 1;
+  } while (
+    pageKey &&
+    pages <
+      MAX_PAGES
+  );
+
+  /*
+   * Freshly revealed collections can be indexed for ownership
+   * before Alchemy refreshes their image metadata. Only for NFTs
+   * with no image do we ask OpenSea for a current image.
+   */
+  const missingImages =
+    collected
+      .filter(
+        (nft) =>
+          !nft.image,
+      )
+      .slice(
+        0,
+        MAX_OPENSEA_IMAGE_FALLBACKS,
+      );
+
+  if (
+    missingImages.length >
+    0
+  ) {
+    await Promise.all(
+      missingImages.map(
+        async (nft) => {
+          const image =
+            await fetchOpenSeaNftImage(
+              nft.contract,
+              nft.tokenId,
+            );
+
+          if (image) {
+            nft.image =
+              image;
+          }
+        },
+      ),
+    );
+  }
+
+  /*
+   * Deduplicate by
+   * contract + token id.
+   */
+  return Array.from(
+    new Map(
+      collected.map(
+        (nft) => [
+          `${nft.contract.toLowerCase()}:${nft.tokenId}`,
+          nft,
+        ],
+      ),
+    ).values(),
+  ).sort(
+    (
+      left,
+      right,
+    ) => {
+      const collectionCompare =
+        left.collectionName.localeCompare(
+          right.collectionName,
+        );
+
+      if (
+        collectionCompare !==
+        0
+      ) {
+        return collectionCompare;
+      }
+
+      try {
+        const leftId =
+          BigInt(
+            left.tokenId,
+          );
+
+        const rightId =
+          BigInt(
+            right.tokenId,
+          );
+
+        return leftId <
+          rightId
+          ? -1
+          : leftId >
+              rightId
+            ? 1
+            : 0;
+      } catch {
+        return left.tokenId.localeCompare(
+          right.tokenId,
+        );
+      }
+    },
+  );
 }
 
 /*//////////////////////////////////////////////////////////////
@@ -121,173 +1037,160 @@ function isImageContentType(
 export async function GET(
   request: NextRequest,
 ) {
-  const rawUrl =
+  const rawAddress =
     request.nextUrl.searchParams
-      .get("url")
-      ?.trim() || "";
-
-  if (!rawUrl) {
-    return NextResponse.json(
-      {
-        error:
-          "An NFT image URL is required.",
-      },
-      {
-        status: 400,
-      },
-    );
-  }
-
-  const remoteUrl =
-    normalizeImageUrl(rawUrl);
-
-  if (!isAllowedRemoteUrl(remoteUrl)) {
-    return NextResponse.json(
-      {
-        error:
-          "This NFT image host is not allowed.",
-      },
-      {
-        status: 400,
-      },
-    );
-  }
-
-  try {
-    const response =
-      await fetch(
-        remoteUrl,
-        {
-          headers: {
-            accept:
-              "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-
-            "user-agent":
-              "Mozilla/5.0 HoodWallet Image Proxy",
-          },
-
-          cache:
-            "no-store",
-
-          redirect:
-            "follow",
-        },
-      );
-
-    if (!response.ok) {
-      throw new Error(
-        `Remote NFT image request failed (${response.status}).`,
-      );
-    }
-
-    const contentType =
-      response.headers
-        .get("content-type")
-        ?.split(";")[0]
-        ?.trim() ||
-      "";
-
-    if (
-      !contentType ||
-      !isImageContentType(
-        contentType,
+      .get(
+        "address",
       )
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "The remote URL did not return a renderable image.",
-        },
-        {
-          status: 415,
-        },
-      );
-    }
+      ?.trim() ||
+    "";
 
-    const declaredLength =
-      Number(
-        response.headers.get(
-          "content-length",
-        ) || "0",
-      );
-
-    if (
-      Number.isFinite(
-        declaredLength,
-      ) &&
-      declaredLength >
-        MAX_IMAGE_BYTES
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "The NFT image is too large to proxy.",
-        },
-        {
-          status: 413,
-        },
-      );
-    }
-
-    const arrayBuffer =
-      await response.arrayBuffer();
-
-    if (
-      arrayBuffer.byteLength >
-      MAX_IMAGE_BYTES
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "The NFT image is too large to proxy.",
-        },
-        {
-          status: 413,
-        },
-      );
-    }
-
-    return new NextResponse(
-      arrayBuffer,
-      {
-        status: 200,
-
-        headers: {
-          "Content-Type":
-            contentType,
-
-          "Access-Control-Allow-Origin":
-            "*",
-
-          "Cache-Control":
-            "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",
-
-          "X-Content-Type-Options":
-            "nosniff",
-        },
-      },
-    );
-  } catch (error) {
-    console.error(
-      `HoodWallet NFT image proxy failed for ${remoteUrl}:`,
-      error,
-    );
-
+  if (
+    !rawAddress ||
+    !isAddress(
+      rawAddress,
+    )
+  ) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : "Unable to load NFT image.",
+          "A valid HoodWallet address is required.",
+
+        assets:
+          [],
+
+        nfts:
+          [],
       },
       {
-        status: 502,
-
-        headers: {
-          "Cache-Control":
-            "no-store",
-        },
+        status:
+          400,
       },
     );
   }
+
+  const walletAddress =
+    getAddress(
+      rawAddress,
+    );
+
+  const [
+    tokenResult,
+    nftResult,
+  ] =
+    await Promise.allSettled(
+      [
+        fetchBlockscoutBalances(
+          walletAddress,
+        ),
+
+        fetchAlchemyNfts(
+          walletAddress,
+        ),
+      ],
+    );
+
+  const warnings:
+    string[] =
+    [];
+
+  let assets:
+    AssetResponse[] =
+    [];
+
+  let nfts:
+    NftResponse[] =
+    [];
+
+  if (
+    tokenResult.status ===
+    "fulfilled"
+  ) {
+    assets =
+      normalizeTokenBalances(
+        tokenResult.value,
+      );
+  } else {
+    console.error(
+      `HoodWallet ERC-20 discovery failed for ${walletAddress}:`,
+      tokenResult.reason,
+    );
+
+    warnings.push(
+      tokenResult.reason instanceof
+        Error
+        ? tokenResult.reason.message
+        : "ERC-20 balances are temporarily unavailable.",
+    );
+  }
+
+  if (
+    nftResult.status ===
+    "fulfilled"
+  ) {
+    nfts =
+      nftResult.value;
+  } else {
+    console.error(
+      `HoodWallet NFT discovery failed for ${walletAddress}:`,
+      nftResult.reason,
+    );
+
+    warnings.push(
+      nftResult.reason instanceof
+        Error
+        ? nftResult.reason.message
+        : "NFT inventory is temporarily unavailable.",
+    );
+  }
+
+  return NextResponse.json(
+    {
+      wallet:
+        walletAddress,
+
+      assets,
+
+      nfts,
+
+      /*
+       * Keep this temporarily while
+       * testing trusted matching.
+       *
+       * Remove it later if you do not
+       * want the registry included in
+       * the public API response.
+       */
+      trustedRegistry: {
+        erc20:
+          Array.from(
+            trustedErc20Contracts,
+          ),
+
+        nfts:
+          Array.from(
+            trustedNftContracts,
+          ),
+      },
+
+      ...(warnings.length >
+      0
+        ? {
+            warning:
+              warnings.join(
+                " ",
+              ),
+          }
+        : {}),
+    },
+    {
+      status:
+        200,
+
+      headers: {
+        "Cache-Control":
+          "no-store",
+      },
+    },
+  );
 }

@@ -482,6 +482,61 @@ function openSeaWallet(
   return `https://opensea.io/${address}`;
 }
 
+function openSeaNft(
+  contract: string,
+  tokenId: string,
+) {
+  return `https://opensea.io/item/robinhood/${contract}/${encodeURIComponent(
+    tokenId,
+  )}`;
+}
+
+function isVideoImageSource(
+  value?: string,
+) {
+  if (!value) {
+    return false;
+  }
+
+  const lower =
+    value.toLowerCase();
+
+  return (
+    lower.includes(
+      ".mp4",
+    ) ||
+    lower.includes(
+      ".webm",
+    ) ||
+    lower.includes(
+      ".mov",
+    )
+  );
+}
+
+function hoodWalletProxyImageUrl(
+  image?: string,
+) {
+  if (!image) {
+    return "";
+  }
+
+  if (
+    image
+      .trim()
+      .toLowerCase()
+      .startsWith(
+        "data:image/",
+      )
+  ) {
+    return image;
+  }
+
+  return `/api/hoodwallet/image?url=${encodeURIComponent(
+    image,
+  )}`;
+}
+
 function requireWalletAccount<T>(
   account: T | undefined,
 ): T {
@@ -576,30 +631,45 @@ function NftArtwork({
   nft:
     HoodWalletNft;
 }) {
+  const originalSource =
+    nft.image || "";
+
+  const [
+    useProxy,
+    setUseProxy,
+  ] =
+    useState(
+      isVideoImageSource(
+        originalSource,
+      ),
+    );
+
   const [
     failed,
     setFailed,
   ] =
     useState(false);
 
+  const source =
+    useProxy
+      ? hoodWalletProxyImageUrl(
+          originalSource,
+        )
+      : originalSource;
+
   if (
-    !nft.image ||
+    !source ||
     failed
   ) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-black p-3 text-center text-[#ccff00]">
 
         <p className="text-[8px] uppercase tracking-[0.14em]">
-          {
-            nft.collectionName
-          }
+          {nft.collectionName}
 
           <br />
 
-          #
-          {
-            nft.tokenId
-          }
+          #{nft.tokenId}
         </p>
 
       </div>
@@ -610,7 +680,7 @@ function NftArtwork({
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={
-        nft.image
+        source
       }
 
       alt={
@@ -621,11 +691,22 @@ function NftArtwork({
 
       referrerPolicy="no-referrer"
 
-      onError={() =>
+      onError={() => {
+        if (
+          !useProxy &&
+          originalSource
+        ) {
+          setUseProxy(
+            true,
+          );
+
+          return;
+        }
+
         setFailed(
           true,
-        )
-      }
+        );
+      }}
 
       className="h-full w-full object-cover"
     />
@@ -4186,6 +4267,35 @@ export default function HoodWalletPage() {
                             OpenSea
                           </a>
 
+                          <span className="text-[8px] opacity-30">
+                            /
+                          </span>
+
+                          <button
+                            type="button"
+
+                            onClick={() => {
+                              void navigator.clipboard
+                                .writeText(
+                                  selectedWallet.walletAddress,
+                                )
+                                .then(() => {
+                                  setError(
+                                    null,
+                                  );
+                                })
+                                .catch(() => {
+                                  setError(
+                                    "Unable to copy HoodWallet address.",
+                                  );
+                                });
+                            }}
+
+                            className="text-[8px] uppercase underline underline-offset-2"
+                          >
+                            Copy wallet
+                          </button>
+
                         </div>
 
                       </div>
@@ -5041,6 +5151,23 @@ export default function HoodWalletPage() {
                                       >
                                         Send NFT
                                       </button>
+
+                                      <a
+                                        href={
+                                          openSeaNft(
+                                            nft.contract,
+                                            nft.tokenId,
+                                          )
+                                        }
+
+                                        target="_blank"
+
+                                        rel="noreferrer"
+
+                                        className="mt-2 block w-full text-center text-[6px] uppercase underline underline-offset-2 opacity-55"
+                                      >
+                                        View on OpenSea
+                                      </a>
 
                                     </div>
 

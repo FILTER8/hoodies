@@ -1650,4 +1650,8 @@ export async function POST(
       },
     );
   }
+}src={
+  hoodWalletImageUrl(
+    nft.image,
+  )
 }

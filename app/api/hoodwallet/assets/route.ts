@@ -5,11 +5,17 @@ import { siteConfig } from "../../../../lib/config";
 import trustedAssetRegistryJson from "../../../../lib/hoodwallet-assets.json";
 
 export const dynamic = "force-dynamic";
-export const revalidate = 300;
+export const revalidate = 0;
 export const runtime = "nodejs";
 
-const HOODWALLET_ASSET_CACHE_SECONDS = 300;
-const HOODWALLET_ASSET_STALE_SECONDS = 3600;
+const OPENSEA_API =
+  "https://api.opensea.io/api/v2";
+
+const ROBINHOOD_CHAIN =
+  "robinhood";
+
+const MAX_OPENSEA_IMAGE_FALLBACKS =
+  8;
 
 
 /*//////////////////////////////////////////////////////////////
@@ -483,6 +489,85 @@ async function fetchBlockscoutBalances(
 }
 
 /*//////////////////////////////////////////////////////////////
+                     OPENSEA IMAGE FALLBACK
+//////////////////////////////////////////////////////////////*/
+
+function getOpenSeaApiKey() {
+  return process.env
+    .OPENSEA_API_KEY
+    ?.trim() ||
+    "";
+}
+
+async function fetchOpenSeaNftImage(
+  contract: string,
+  tokenId: string,
+) {
+  const apiKey =
+    getOpenSeaApiKey();
+
+  if (!apiKey) {
+    return undefined;
+  }
+
+  try {
+    const response =
+      await fetch(
+        `${OPENSEA_API}/chain/${ROBINHOOD_CHAIN}/contract/${encodeURIComponent(
+          contract,
+        )}/nfts/${encodeURIComponent(
+          tokenId,
+        )}`,
+        {
+          headers: {
+            accept:
+              "application/json",
+            "x-api-key":
+              apiKey,
+          },
+          cache:
+            "no-store",
+        },
+      );
+
+    if (!response.ok) {
+      console.warn(
+        `HoodWallet OpenSea image fallback failed (${response.status}) for ${contract}:${tokenId}.`,
+      );
+      return undefined;
+    }
+
+    const payload =
+      (await response.json()) as {
+        nft?: {
+          display_image_url?: string;
+          image_url?: string;
+          original_image_url?: string;
+          image?: string;
+        };
+      };
+
+    const nft =
+      payload.nft ||
+      {};
+
+    return (
+      nft.display_image_url?.trim() ||
+      nft.image_url?.trim() ||
+      nft.original_image_url?.trim() ||
+      nft.image?.trim() ||
+      undefined
+    );
+  } catch (error) {
+    console.warn(
+      `HoodWallet OpenSea image fallback unavailable for ${contract}:${tokenId}.`,
+      error,
+    );
+    return undefined;
+  }
+}
+
+/*//////////////////////////////////////////////////////////////
                            ALCHEMY NFT
 //////////////////////////////////////////////////////////////*/
 
@@ -578,56 +663,75 @@ function pickNftImage(
   nft: AlchemyOwnedNft,
 ) {
   /*
-   * Preserve the image sources that are already
-   * rendering correctly in HoodWallet.
+   * Prefer the NFT's original/raw artwork before
+   * Alchemy-rendered cache URLs. This matters for
+   * newly revealed and animated collections where
+   * cached thumbnails can lag behind the metadata.
    */
-  const staticCandidates = [
-    nft.image?.cachedUrl,
-    nft.image?.pngUrl,
-    nft.image?.thumbnailUrl,
+  const original =
+    nft.image?.originalUrl?.trim();
+
+  if (
+    original &&
+    !looksLikeVideo(
+      original,
+    )
+  ) {
+    return original;
+  }
+
+  const rawCandidates = [
     nft.raw?.metadata?.image,
     nft.raw?.metadata?.image_url,
     nft.raw?.metadata?.imageUrl,
   ];
 
-  /*
-   * If Alchemy tells us the original asset is a
-   * video, prefer that source through our tiny
-   * image proxy. This gives OpenSea/SeaDN media
-   * a still frame instead of trying to render MP4
-   * in an <img>.
-   */
-  const original =
-    nft.image?.originalUrl;
-
-  if (
-    original &&
-    looksLikeVideo(
-      original,
-    )
-  ) {
-    return (
-      "/api/hoodwallet/image?url=" +
-      encodeURIComponent(
-        original,
-      )
-    );
-  }
-
   for (
     const candidate of
-    staticCandidates
+    rawCandidates
   ) {
+    const value =
+      candidate?.trim();
+
     if (
-      candidate &&
+      value &&
       !looksLikeVideo(
-        candidate,
+        value,
       )
     ) {
-      return candidate;
+      return value;
     }
   }
 
+  const cachedCandidates = [
+    nft.image?.cachedUrl,
+    nft.image?.pngUrl,
+    nft.image?.thumbnailUrl,
+  ];
+
+  for (
+    const candidate of
+    cachedCandidates
+  ) {
+    const value =
+      candidate?.trim();
+
+    if (
+      value &&
+      !looksLikeVideo(
+        value,
+      )
+    ) {
+      return value;
+    }
+  }
+
+  /*
+   * Real video media is returned last. The page
+   * can try the HoodWallet image proxy for a still
+   * frame. GIFs are not treated as video and remain
+   * animated in a normal <img>.
+   */
   return original;
 }
 
@@ -765,11 +869,7 @@ async function fetchAlchemyNfts(
           },
 
           cache:
-            "force-cache",
-          next: {
-            revalidate:
-              HOODWALLET_ASSET_CACHE_SECONDS,
-          },
+            "no-store",
         },
       );
 
@@ -817,6 +917,71 @@ async function fetchAlchemyNfts(
     pages <
       MAX_PAGES
   );
+
+  /*
+   * Freshly revealed collections can be indexed for ownership
+   * before Alchemy refreshes their image metadata. Only for NFTs
+   * with no image do we ask OpenSea for a current image.
+   */
+  const missingImages =
+    collected
+      .filter(
+        (nft) =>
+          !nft.image ||
+          nft.image.trim() ===
+            "",
+      )
+      .slice(
+        0,
+        MAX_OPENSEA_IMAGE_FALLBACKS,
+      );
+
+  if (
+    missingImages.length >
+    0
+  ) {
+    console.log(
+      "HoodWallet missing NFT images:",
+      missingImages.map(
+        (nft) =>
+          `${nft.contract}:${nft.tokenId}`,
+      ),
+    );
+
+    const refreshed =
+      await Promise.all(
+        missingImages.map(
+          async (nft) => ({
+            nft,
+            image:
+              await fetchOpenSeaNftImage(
+                nft.contract,
+                nft.tokenId,
+              ),
+          }),
+        ),
+      );
+
+    for (
+      const {
+        nft,
+        image,
+      } of refreshed
+    ) {
+      console.log(
+        "HoodWallet OpenSea image:",
+        nft.contract,
+        nft.tokenId,
+        image ||
+          "NONE",
+      );
+
+      if (image) {
+        nft.image =
+          image;
+      }
+    }
+  }
 
   /*
    * Deduplicate by
@@ -1034,9 +1199,7 @@ export async function GET(
 
       headers: {
         "Cache-Control":
-          `public, max-age=60, s-maxage=${HOODWALLET_ASSET_CACHE_SECONDS}, stale-while-revalidate=${HOODWALLET_ASSET_STALE_SECONDS}`,
-        "X-HoodWallet-Cache-TTL":
-          String(HOODWALLET_ASSET_CACHE_SECONDS),
+          "no-store",
       },
     },
   );
