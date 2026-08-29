@@ -135,6 +135,32 @@ const SEAPORT_INTERFACE =
       bytes32 fulfillerConduitKey,
       address recipient
     ) payable returns (bool fulfilled)`,
+
+    `function fulfillBasicOrder_efficient_6GL6yc(
+      (
+        address considerationToken,
+        uint256 considerationIdentifier,
+        uint256 considerationAmount,
+        address offerer,
+        address zone,
+        address offerToken,
+        uint256 offerIdentifier,
+        uint256 offerAmount,
+        uint8 basicOrderType,
+        uint256 startTime,
+        uint256 endTime,
+        bytes32 zoneHash,
+        uint256 salt,
+        bytes32 offererConduitKey,
+        bytes32 fulfillerConduitKey,
+        uint256 totalOriginalAdditionalRecipients,
+        (
+          uint256 amount,
+          address recipient
+        )[] additionalRecipients,
+        bytes signature
+      ) parameters
+    ) payable returns (bool fulfilled)`,
   ]);
 
 /*//////////////////////////////////////////////////////////////
@@ -492,6 +518,153 @@ function normalizeCriteriaResolver(
   };
 }
 
+
+function normalizeAdditionalRecipient(
+  value: unknown,
+) {
+  const item =
+    asRecord(value);
+
+  return {
+    amount:
+      asString(
+        item.amount,
+        "0",
+      ),
+
+    recipient:
+      getAddress(
+        asString(
+          item.recipient,
+        ),
+      ),
+  };
+}
+
+function normalizeBasicOrderParameters(
+  value: unknown,
+) {
+  const parameters =
+    asRecord(value);
+
+  const rawAdditionalRecipients =
+    Array.isArray(
+      parameters.additionalRecipients,
+    )
+      ? parameters.additionalRecipients
+      : [];
+
+  return {
+    considerationToken:
+      getAddress(
+        asString(
+          parameters.considerationToken,
+        ),
+      ),
+
+    considerationIdentifier:
+      asString(
+        parameters.considerationIdentifier,
+        "0",
+      ),
+
+    considerationAmount:
+      asString(
+        parameters.considerationAmount,
+        "0",
+      ),
+
+    offerer:
+      getAddress(
+        asString(
+          parameters.offerer,
+        ),
+      ),
+
+    zone:
+      getAddress(
+        asString(
+          parameters.zone,
+        ),
+      ),
+
+    offerToken:
+      getAddress(
+        asString(
+          parameters.offerToken,
+        ),
+      ),
+
+    offerIdentifier:
+      asString(
+        parameters.offerIdentifier,
+        "0",
+      ),
+
+    offerAmount:
+      asString(
+        parameters.offerAmount,
+        "0",
+      ),
+
+    basicOrderType:
+      asNumber(
+        parameters.basicOrderType,
+      ),
+
+    startTime:
+      asString(
+        parameters.startTime,
+        "0",
+      ),
+
+    endTime:
+      asString(
+        parameters.endTime,
+        "0",
+      ),
+
+    zoneHash:
+      asString(
+        parameters.zoneHash,
+      ),
+
+    salt:
+      asString(
+        parameters.salt,
+        "0",
+      ),
+
+    offererConduitKey:
+      asString(
+        parameters.offererConduitKey,
+      ),
+
+    fulfillerConduitKey:
+      asString(
+        parameters.fulfillerConduitKey,
+      ),
+
+    totalOriginalAdditionalRecipients:
+      asString(
+        parameters.totalOriginalAdditionalRecipients,
+        String(
+          rawAdditionalRecipients.length,
+        ),
+      ),
+
+    additionalRecipients:
+      rawAdditionalRecipients.map(
+        normalizeAdditionalRecipient,
+      ),
+
+    signature:
+      asString(
+        parameters.signature,
+      ),
+  };
+}
+
 /*//////////////////////////////////////////////////////////////
                   ENCODE OPENSEA TRANSACTION
 //////////////////////////////////////////////////////////////*/
@@ -569,12 +742,6 @@ function encodeOpenSeaTransaction(
     );
   }
 
-  /*
-   * Some OpenSea responses may eventually provide
-   * pre-encoded calldata.
-   *
-   * Support that first.
-   */
   const directData =
     asString(
       transaction.data,
@@ -584,8 +751,7 @@ function encodeOpenSeaTransaction(
     directData.startsWith(
       "0x",
     ) &&
-    directData.length >=
-      10
+    directData.length >= 10
   ) {
     return {
       target:
@@ -600,34 +766,10 @@ function encodeOpenSeaTransaction(
           directData,
           calldataSuffix,
         ),
-    };
-  }
 
-  /*
-   * Robinhood response currently gives:
-   *
-   * function:
-   * fulfillAdvancedOrder(...)
-   *
-   * input_data:
-   * {
-   *   advancedOrder,
-   *   criteriaResolvers,
-   *   fulfillerConduitKey,
-   *   recipient
-   * }
-   */
-  if (
-    !functionSignature.startsWith(
-      "fulfillAdvancedOrder(",
-    )
-  ) {
-    throw new Error(
-      `Unsupported OpenSea fulfillment function: ${
-        functionSignature ||
-        "unknown"
-      }.`,
-    );
+      fulfillmentType:
+        "direct" as const,
+    };
   }
 
   const inputData =
@@ -635,87 +777,168 @@ function encodeOpenSeaTransaction(
       transaction.input_data,
     );
 
-  const advancedOrder =
-    normalizeAdvancedOrder(
-      inputData.advancedOrder,
-    );
-
-  const rawCriteriaResolvers =
-    Array.isArray(
-      inputData.criteriaResolvers,
-    )
-      ? inputData.criteriaResolvers
-      : [];
-
-  const criteriaResolvers =
-    rawCriteriaResolvers.map(
-      normalizeCriteriaResolver,
-    );
-
-  const fulfillerConduitKey =
-    asString(
-      inputData.fulfillerConduitKey,
-    );
-
-  const recipient =
-    asString(
-      inputData.recipient,
-    );
-
   if (
-    !fulfillerConduitKey ||
-    !fulfillerConduitKey.startsWith(
-      "0x",
+    functionSignature.startsWith(
+      "fulfillBasicOrder_efficient_6GL6yc(",
     )
   ) {
-    throw new Error(
-      "OpenSea returned an invalid fulfiller conduit key.",
-    );
-  }
+    const parametersRecord =
+      asRecord(
+        inputData.parameters,
+      );
 
-  if (
-    !recipient ||
-    !isAddress(
-      recipient,
-    )
-  ) {
-    throw new Error(
-      "OpenSea returned an invalid NFT recipient.",
-    );
-  }
+    const basicOrderParametersRecord =
+      asRecord(
+        inputData.basicOrderParameters,
+      );
 
-  const encoded =
-    SEAPORT_INTERFACE.encodeFunctionData(
-      "fulfillAdvancedOrder",
-      [
-        advancedOrder,
+    const rawParameters =
+      Object.keys(
+        parametersRecord,
+      ).length > 0
+        ? parametersRecord
+        : Object.keys(
+            basicOrderParametersRecord,
+          ).length > 0
+          ? basicOrderParametersRecord
+          : inputData;
 
-        criteriaResolvers,
+    const parameters =
+      normalizeBasicOrderParameters(
+        rawParameters,
+      );
 
-        fulfillerConduitKey,
+    const encoded =
+      SEAPORT_INTERFACE.encodeFunctionData(
+        "fulfillBasicOrder_efficient_6GL6yc",
+        [
+          parameters,
+        ],
+      );
 
+    return {
+      target:
         getAddress(
-          recipient,
+          target,
         ),
-      ],
-    );
 
-  const data =
-    appendCalldataSuffix(
-      encoded,
-      calldataSuffix,
-    );
+      value,
 
-  return {
-    target:
+      data:
+        appendCalldataSuffix(
+          encoded,
+          calldataSuffix,
+        ),
+
+      fulfillmentType:
+        "basic" as const,
+
+      offeredToken:
+        parameters.offerToken,
+
+      offeredIdentifier:
+        parameters.offerIdentifier,
+    };
+  }
+
+  if (
+    functionSignature.startsWith(
+      "fulfillAdvancedOrder(",
+    )
+  ) {
+    const advancedOrder =
+      normalizeAdvancedOrder(
+        inputData.advancedOrder,
+      );
+
+    const rawCriteriaResolvers =
+      Array.isArray(
+        inputData.criteriaResolvers,
+      )
+        ? inputData.criteriaResolvers
+        : [];
+
+    const criteriaResolvers =
+      rawCriteriaResolvers.map(
+        normalizeCriteriaResolver,
+      );
+
+    const fulfillerConduitKey =
+      asString(
+        inputData.fulfillerConduitKey,
+      );
+
+    const recipient =
+      asString(
+        inputData.recipient,
+      );
+
+    if (
+      !fulfillerConduitKey ||
+      !fulfillerConduitKey.startsWith(
+        "0x",
+      )
+    ) {
+      throw new Error(
+        "OpenSea returned an invalid fulfiller conduit key.",
+      );
+    }
+
+    if (
+      !recipient ||
+      !isAddress(
+        recipient,
+      )
+    ) {
+      throw new Error(
+        "OpenSea returned an invalid NFT recipient.",
+      );
+    }
+
+    const normalizedRecipient =
       getAddress(
-        target,
-      ),
+        recipient,
+      );
 
-    value,
+    const encoded =
+      SEAPORT_INTERFACE.encodeFunctionData(
+        "fulfillAdvancedOrder",
+        [
+          advancedOrder,
+          criteriaResolvers,
+          fulfillerConduitKey,
+          normalizedRecipient,
+        ],
+      );
 
-    data,
-  };
+    return {
+      target:
+        getAddress(
+          target,
+        ),
+
+      value,
+
+      data:
+        appendCalldataSuffix(
+          encoded,
+          calldataSuffix,
+        ),
+
+      fulfillmentType:
+        "advanced" as const,
+
+      recipient:
+        normalizedRecipient,
+    };
+  }
+
+  throw new Error(
+    `Unsupported OpenSea fulfillment function: ${
+      functionSignature ||
+      "unknown"
+    }.`,
+  );
 }
 
 /*//////////////////////////////////////////////////////////////
@@ -920,38 +1143,70 @@ export async function POST(
                      REFRESH EXACT LISTING
     ////////////////////////////////////////////////////////////*/
 
-    const bestPayload =
+    /*
+     * Refresh the exact order selected by the user.
+     *
+     * This is more reliable than asking OpenSea for the
+     * current best listing for the NFT, because the collection
+     * listing endpoint already gave BuyOS the exact order hash.
+     */
+    const orderPayload =
       await openSeaGet(
-        `/listings/collection/${encodeURIComponent(
-          slug,
-        )}/nfts/${encodeURIComponent(
-          tokenId,
-        )}/best?include_private_listings=false`,
+        `/orders/chain/${encodeURIComponent(
+          ROBINHOOD_CHAIN,
+        )}/protocol/${encodeURIComponent(
+          normalizedProtocol,
+        )}/${encodeURIComponent(
+          orderHash,
+        )}`,
       );
 
-    const best =
+    const orderRoot =
       asRecord(
-        bestPayload,
+        orderPayload,
       );
+
+    const nestedOrder =
+      asRecord(
+        orderRoot.order,
+      );
+
+    const freshOrder =
+      Object.keys(
+        nestedOrder,
+      ).length > 0
+        ? nestedOrder
+        : orderRoot;
 
     const freshHash =
       asString(
-        best.order_hash,
-      );
+        freshOrder.order_hash,
+      ) ||
+      asString(
+        freshOrder.orderHash,
+      ) ||
+      orderHash;
 
     const freshChain =
       asString(
-        best.chain,
+        freshOrder.chain,
+        ROBINHOOD_CHAIN,
       ).toLowerCase();
 
     const freshProtocol =
       asString(
-        best.protocol_address,
-      );
+        freshOrder.protocol_address,
+      ) ||
+      normalizedProtocol;
+
+    const freshStatus =
+      asString(
+        freshOrder.status,
+      ).toUpperCase();
 
     const freshAsset =
       asRecord(
-        best.asset,
+        freshOrder.asset,
       );
 
     const freshContract =
@@ -964,11 +1219,67 @@ export async function POST(
         freshAsset.identifier,
       );
 
-    if (!freshHash) {
+    /*
+     * OpenSea order responses do not always expose the asset
+     * in the same convenience shape as listing responses.
+     * Fall back to the Seaport order parameters when present.
+     */
+    const orderParameters =
+      asRecord(
+        freshOrder.parameters,
+      );
+
+    const rawOffer =
+      Array.isArray(
+        orderParameters.offer,
+      )
+        ? orderParameters.offer
+        : [];
+
+    const firstOffer =
+      rawOffer.length > 0
+        ? asRecord(
+            rawOffer[0],
+          )
+        : {};
+
+    const refreshedContract =
+      freshContract ||
+      asString(
+        firstOffer.token,
+      );
+
+    const refreshedTokenId =
+      freshTokenId ||
+      asString(
+        firstOffer.identifierOrCriteria,
+      );
+
+    if (
+      freshStatus &&
+      freshStatus !==
+        "ACTIVE"
+    ) {
       return NextResponse.json(
         {
           error:
-            "This NFT is no longer listed.",
+            "This OpenSea listing is no longer active.",
+        },
+        {
+          status:
+            409,
+        },
+      );
+    }
+
+    if (
+      freshHash.toLowerCase() !==
+      orderHash.toLowerCase()
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "OpenSea returned a different listing order.",
         },
         {
           status:
@@ -994,22 +1305,6 @@ export async function POST(
     }
 
     if (
-      freshHash.toLowerCase() !==
-      orderHash.toLowerCase()
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "The OpenSea listing changed. Reload the floor before buying.",
-        },
-        {
-          status:
-            409,
-        },
-      );
-    }
-
-    if (
       freshProtocol &&
       freshProtocol.toLowerCase() !==
         normalizedProtocol.toLowerCase()
@@ -1027,8 +1322,8 @@ export async function POST(
     }
 
     if (
-      freshContract &&
-      freshContract.toLowerCase() !==
+      refreshedContract &&
+      refreshedContract.toLowerCase() !==
         normalizedContract.toLowerCase()
     ) {
       return NextResponse.json(
@@ -1044,8 +1339,8 @@ export async function POST(
     }
 
     if (
-      freshTokenId &&
-      freshTokenId !==
+      refreshedTokenId &&
+      refreshedTokenId !==
         tokenId
     ) {
       return NextResponse.json(
@@ -1189,36 +1484,49 @@ export async function POST(
         fulfillmentData.transaction,
       );
 
-    const inputData =
-      asRecord(
-        transaction.input_data,
-      );
-
-    const returnedRecipient =
-      asString(
-        inputData.recipient,
-      );
+    if (
+      execution.fulfillmentType ===
+      "advanced"
+    ) {
+      if (
+        !execution.recipient ||
+        execution.recipient !==
+          normalizedWallet
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "OpenSea fulfillment recipient is not the selected HoodWallet.",
+          },
+          {
+            status:
+              502,
+          },
+        );
+      }
+    }
 
     if (
-      !returnedRecipient ||
-      !isAddress(
-        returnedRecipient,
-      ) ||
-      getAddress(
-        returnedRecipient,
-      ) !==
-        normalizedWallet
+      execution.fulfillmentType ===
+      "basic"
     ) {
-      return NextResponse.json(
-        {
-          error:
-            "OpenSea fulfillment recipient is not the selected HoodWallet.",
-        },
-        {
-          status:
-            502,
-        },
-      );
+      if (
+        execution.offeredToken.toLowerCase() !==
+          normalizedContract.toLowerCase() ||
+        execution.offeredIdentifier !==
+          tokenId
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "OpenSea basic-order NFT does not match the selected listing.",
+          },
+          {
+            status:
+              502,
+          },
+        );
+      }
     }
 
     /*
