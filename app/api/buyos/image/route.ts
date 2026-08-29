@@ -349,28 +349,40 @@ function dataImageResponse(
         "base64",
     );
 
-  let body:
-    Uint8Array;
+ let body:
+  ArrayBuffer;
 
-  if (isBase64) {
-    body =
-      new Uint8Array(
-        Buffer.from(
-          payload,
-          "base64",
-        ),
-      );
-  } else {
-    body =
-      new TextEncoder().encode(
-        decodeURIComponent(
-          payload,
-        ),
-      );
-  }
+if (isBase64) {
+  const bytes =
+    Buffer.from(
+      payload,
+      "base64",
+    );
 
-  return new NextResponse(
-    body,
+  body =
+    bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset +
+        bytes.byteLength,
+    );
+} else {
+  const bytes =
+    new TextEncoder().encode(
+      decodeURIComponent(
+        payload,
+      ),
+    );
+
+  body =
+    bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset +
+        bytes.byteLength,
+    );
+}
+
+return new NextResponse(
+  body,
     {
       status:
         200,
