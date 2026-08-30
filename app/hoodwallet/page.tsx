@@ -3815,44 +3815,35 @@ export default function HoodWalletPage() {
         {/* HEADER */}
 
         <div className="flex items-center justify-between border-b border-[var(--hood-fg)] pb-3">
+  <p className="text-[9px] uppercase tracking-[0.16em]">
+    HoodWallet / ERC-6551
+  </p>
 
-          <p className="text-[9px] uppercase tracking-[0.16em]">
-            HoodWallet /
-            ERC-6551
-          </p>
+  <div className="flex flex-1 justify-center px-4">
+    <div className="border border-red-500 px-4 py-1.5 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-red-500">
+      ⚠ Only sent Robinhood Chain assets
+    </div>
+  </div>
 
-          <div className="flex gap-4">
+  <div className="flex items-center gap-4">
+    <button
+      type="button"
+      onClick={() =>
+        setDarkHood((current) => !current)
+      }
+      className="text-[9px] uppercase"
+    >
+      {darkHood ? "Lights on" : "Lights off"}
+    </button>
 
-            <button
-              type="button"
-
-              onClick={() =>
-                setDarkHood(
-                  (
-                    current,
-                  ) =>
-                    !current,
-                )
-              }
-
-              className="text-[9px] uppercase"
-            >
-              {darkHood
-                ? "Lights on"
-                : "Lights off"}
-            </button>
-
-            <Link
-              href="/"
-
-              className="text-[9px] uppercase"
-            >
-              Back
-            </Link>
-
-          </div>
-
-        </div>
+    <Link
+      href="/"
+      className="text-[9px] uppercase"
+    >
+      Back
+    </Link>
+  </div>
+</div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
 
