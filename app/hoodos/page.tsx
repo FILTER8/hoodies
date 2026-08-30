@@ -57,6 +57,69 @@ type HoodOSApp = {
 const apps: HoodOSApp[] = [
   {
   id:
+    "hooney",
+
+  name:
+    "Hooney",
+
+  tagline:
+    "Swap with the Hive",
+
+  description:
+    "Community-built tokenized asset swaps where activated Hoodies can participate in the Hive fee-rebate system.",
+
+  href:
+    "https://hooney.xyz/",
+
+  icon:
+    "/hoodos/hooney.png",
+
+  fallbackIcon:
+    "H",
+
+  buildType:
+    "community",
+
+  status:
+    "live",
+
+  external:
+    true,
+},
+
+{
+  id:
+    "hoodiestudio",
+
+  name:
+    "HoodieStudio",
+
+  tagline:
+    "Create with your Hoodie",
+
+  description:
+    "Community-built creation platform for creating fully-chain artworks with your Hoodie. Currently available on testnet.",
+
+  href:
+    "https://testnet.hoodiestudio.xyz/",
+
+  icon:
+    "/hoodos/hoodiestudio.png",
+
+  fallbackIcon:
+    "HS",
+
+  buildType:
+    "community",
+
+  status:
+    "live",
+
+  external:
+    true,
+},
+  {
+  id:
     "flooros",
 
   name:
