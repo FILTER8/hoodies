@@ -690,7 +690,7 @@ export default function SayItPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [phrase, setPhrase] = useState("$OCH AUG 18th");
   const [footerText, setFooterText] = useState<FooterOption>(FOOTER_OPTIONS[0]);
-  const [avatarBottom, setAvatarBottom] = useState(AVATAR.defaultBottom);
+  const [avatarBottom, setAvatarBottom] = useState<number>(AVATAR.defaultBottom,);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
 
