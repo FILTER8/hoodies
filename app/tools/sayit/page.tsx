@@ -23,7 +23,7 @@ const PIXEL_FONT_URL = "/fonts/DepartureMono-Regular.woff";
 const AVATAR = {
   src: "/avatar.png",
   x: 78,
-  bottom: 552,
+  bottom: 610,
   targetWidth: 470,
   maxHeight: 505,
 } as const;
@@ -33,7 +33,7 @@ const AVATAR = {
 // - textThickness controls DepartureMono visual weight
 const BUBBLE = {
   x: 535,
-  bottom: 348,
+  bottom: 470,
   minWidth: 330,
   maxWidth: 585,
   minHeight: 116,
