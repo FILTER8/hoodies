@@ -12,7 +12,18 @@ import {
   type CSSProperties,
 } from "react";
 
+import {
+  Contract,
+  Interface,
+  JsonRpcProvider,
+} from "ethers";
+
 import confetti from "canvas-confetti";
+
+import type {
+  Address,
+  Hex,
+} from "viem";
 
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
@@ -26,129 +37,106 @@ import {
   collectionApiUrl,
 } from "../../lib/api";
 
+import {
+  siteConfig,
+} from "../../lib/config";
+
 /*//////////////////////////////////////////////////////////////
                             CONSTANTS
 //////////////////////////////////////////////////////////////*/
 
-const OPENSEA_COLLECTION =
-  "https://opensea.io/collection/onchainhoodies-";
-
-/*
- * Journey API is part of the public OCH API.
- */
-
 const PUBLIC_API =
   "https://api.onchainhoodies.xyz";
 
+const OPENSEA_COLLECTION =
+  "https://opensea.io/collection/onchainhoodies-";
+
+const JOURNEY_REGISTRY =
+  "0x93513A0e4d0E016ccf296C4c2888b59c06708ea7";
+
+const OPERATION_CALL =
+  0;
+
 /*
- * Keep ecosystem destinations here.
- *
- * This becomes the single place where we add
- * community / builder destinations over time.
- *
- * Adjust any route below if your current local
- * route differs.
+ * Exact production Journey milestones.
  */
 
-const ECOSYSTEM_LINKS = [
+const MILESTONE_HOODWALLET_ACTIVATED =
+  "0x239902d75dd4133b2e3c4f65fa01858d6e22407b7ed186aa42966e7f997962cf";
+
+const MILESTONE_HOOD_TALK_SPOKEN =
+  "0xae701161971ede8a03aaa7cf86b28afe5171979b2e6db2e67310b1bbfa90d37b";
+
+const MILESTONE_PING_CLAIMED =
+  "0xb08fecf851d41fdd453731545fe282b0e49a7d8efd63cc4b7a66550141a910d4";
+
+/*//////////////////////////////////////////////////////////////
+                              ABIS
+//////////////////////////////////////////////////////////////*/
+
+const HOOD_OS_READ_ABI = [
+  "function isActive(uint256 tokenId) view returns (bool)",
+] as const;
+
+const JOURNEY_INTERFACE =
+  new Interface([
+    "function verifyAndRecord(uint256 tokenId,bytes32 milestoneId)",
+  ]);
+
+const HOOD_WALLET_EXECUTE_ABI = [
   {
-    key:
-      "hoodwallet",
+    type:
+      "function",
 
-    title:
-      "HOODWALLET",
+    name:
+      "execute",
 
-    description:
-      "Activate your Hoodie's onchain wallet and manage what it owns.",
+    stateMutability:
+      "payable",
 
-    href:
-      "/hoodos",
+    inputs: [
+      {
+        name:
+          "target",
 
-    label:
-      "OPEN HOODWALLET",
+        type:
+          "address",
+      },
 
-    season2:
-      true,
-  },
+      {
+        name:
+          "value",
 
-  {
-    key:
-      "hoodtalk",
+        type:
+          "uint256",
+      },
 
-    title:
-      "HOOD TALK",
+      {
+        name:
+          "data",
 
-    description:
-      "Give your Hoodie a permanent voice onchain.",
+        type:
+          "bytes",
+      },
 
-    href:
-      "/hood-talk",
+      {
+        name:
+          "operation",
 
-    label:
-      "OPEN HOOD TALK",
+        type:
+          "uint8",
+      },
+    ],
 
-    season2:
-      true,
-  },
+    outputs: [
+      {
+        name:
+          "result",
 
-  {
-    key:
-      "hoodiestudio",
-
-    title:
-      "HOODIESTUDIO",
-
-    description:
-      "Create fully onchain artwork with your Hoodie.",
-
-    href:
-      "/hoodiestudio",
-
-    label:
-      "OPEN STUDIO",
-
-    season2:
-      true,
-  },
-
-  {
-    key:
-      "buyos",
-
-    title:
-      "BUYOS",
-
-    description:
-      "Collect Robinhood Chain assets directly through your Hoodie.",
-
-    href:
-      "/hoodos/buy",
-
-    label:
-      "OPEN BUYOS",
-
-    season2:
-      true,
-  },
-
-  {
-    key:
-      "mintos",
-
-    title:
-      "MINTOS",
-
-    description:
-      "Mint supported public drops directly through your Hoodie.",
-
-    href:
-      "/hoodos/mint",
-
-    label:
-      "OPEN MINTOS",
-
-    season2:
-      true,
+        type:
+          "bytes",
+      },
+    ],
   },
 ] as const;
 
@@ -175,6 +163,13 @@ type OwnershipResponse = {
     string;
 };
 
+type PingState =
+  | "locked"
+  | "available"
+  | "home"
+  | "away"
+  | "unavailable";
+
 type JourneyMilestone = {
   key:
     string;
@@ -196,9 +191,6 @@ type JourneyMilestone = {
 
   description:
     string;
-
-  season2:
-    boolean;
 
   href:
     string;
@@ -230,11 +222,7 @@ type JourneyMilestone = {
     number;
 
   state?:
-    "locked" |
-    "available" |
-    "home" |
-    "away" |
-    "unavailable";
+    PingState;
 };
 
 type JourneyResponse = {
@@ -243,12 +231,6 @@ type JourneyResponse = {
 
   tokenId:
     number;
-
-  image:
-    string;
-
-  token:
-    string;
 
   journeyRegistry:
     string;
@@ -319,34 +301,9 @@ type JourneyResponse = {
       boolean;
 
     state:
-      "locked" |
-      "available" |
-      "home" |
-      "away" |
-      "unavailable";
-  };
-
-  links?: {
-    token?:
-      string;
-
-    hoodTalk?:
-      string;
-
-    hoodTalkHistory?:
-      string;
-
-    journeyStats?:
-      string;
-
-    journeyMilestones?:
-      string;
+      PingState;
   };
 };
-
-type JourneyFilter =
-  | "all"
-  | "season2";
 
 /*//////////////////////////////////////////////////////////////
                             HELPERS
@@ -415,125 +372,262 @@ function tokenArtwork(
   )}`;
 }
 
-function formatDate(
-  timestamp?:
-    number | null,
-) {
+function requireWalletAccount<T>(
+  account:
+    T | undefined,
+): T {
   if (
-    !timestamp
+    !account
   ) {
-    return null;
+    throw new Error(
+      "Wallet account unavailable.",
+    );
   }
 
-  try {
-    return new Intl.DateTimeFormat(
-      "en",
-      {
-        month:
-          "short",
-
-        day:
-          "2-digit",
-
-        year:
-          "numeric",
-      },
-    )
-      .format(
-        new Date(
-          timestamp *
-            1000,
-        ),
-      )
-      .toUpperCase();
-  } catch {
-    return null;
-  }
+  return account;
 }
 
-function pingStateLabel(
-  state:
-    JourneyResponse["ping"]["state"],
-) {
-  switch (
-    state
-  ) {
-    case "home":
-      return "PING IS HOME";
-
-    case "away":
-      return "PING IS AWAY";
-
-    case "available":
-      return "PING IS WAITING";
-
-    case "locked":
-      return "ACTIVATE TO UNLOCK";
-
-    case "unavailable":
-      return "CURRENTLY UNAVAILABLE";
-
-    default:
-      return "PING";
-  }
-}
-
-function milestoneStatus(
+function journeyMilestoneId(
   milestone:
     JourneyMilestone,
 ) {
   if (
     milestone.key ===
-      "pingClaimed"
+      "hoodWalletActivated"
   ) {
-    switch (
-      milestone.state
-    ) {
-      case "home":
-        return "● HOME";
-
-      case "away":
-        return "○ AWAY";
-
-      case "available":
-        return "○ AVAILABLE";
-
-      case "locked":
-        return "○ LOCKED";
-
-      default:
-        break;
-    }
+    return MILESTONE_HOODWALLET_ACTIVATED;
   }
 
+  if (
+    milestone.key ===
+      "hoodTalkSpoken"
+  ) {
+    return MILESTONE_HOOD_TALK_SPOKEN;
+  }
+
+  if (
+    milestone.key ===
+      "pingClaimed"
+  ) {
+    return MILESTONE_PING_CLAIMED;
+  }
+
+  return milestone.milestoneId;
+}
+
+function milestoneAction(
+  milestone:
+    JourneyMilestone,
+
+  journey:
+    JourneyResponse,
+) {
   if (
     milestone.key ===
       "hoodWalletActivated"
   ) {
     if (
-      milestone.currentlyTrue
+      journey.hoodWallet.active
     ) {
-      return "● ACTIVE";
+      return {
+        status:
+          "● ACTIVE",
+
+        description:
+          "Your HoodWallet is active and ready.",
+
+        href:
+          "/hoodos",
+
+        action:
+          "OPEN HOODWALLET",
+      };
     }
 
     if (
-      milestone.completed
+      journey.hoodWallet.everActivated
     ) {
-      return "○ INACTIVE";
+      return {
+        status:
+          "○ NOT ACTIVE",
+
+        description:
+          "This HoodWallet was activated before. Activate it again to continue the Journey.",
+
+        href:
+          "/hoodos",
+
+        action:
+          "ACTIVATE YOUR HOODWALLET",
+      };
     }
+
+    return {
+      status:
+        "○ NOT ACTIVATED",
+
+      description:
+        "Activate your HoodWallet to start using your Hoodie onchain.",
+
+      href:
+        "/hoodos",
+
+      action:
+        "ACTIVATE YOUR HOODWALLET",
+    };
   }
 
   if (
-    milestone.completed
+    milestone.key ===
+      "hoodTalkSpoken"
   ) {
-    return "✓ HISTORY";
+    if (
+      milestone.completed
+    ) {
+      return {
+        status:
+          "● SPOKEN ONCHAIN",
+
+        description:
+          "Your Hoodie has already spoken onchain.",
+
+        href:
+          "/hood-talk",
+
+        action:
+          "OPEN HOOD TALK",
+      };
+    }
+
+    return {
+      status:
+        "○ NOT SPOKEN",
+
+      description:
+        "Give your Hoodie a permanent voice onchain.",
+
+      href:
+        "/hood-talk",
+
+      action:
+        "OPEN HOOD TALK",
+    };
   }
 
-  return "○ DISCOVER";
+  if (
+    milestone.key ===
+      "pingClaimed"
+  ) {
+    if (
+      journey.ping.state ===
+        "home"
+    ) {
+      return {
+        status:
+          "● PING IS HOME",
+
+        description:
+          `Ping #${journey.tokenId} lives inside this HoodWallet.`,
+
+        href:
+          "/hoodos",
+
+        action:
+          "OPEN HOODWALLET",
+      };
+    }
+
+    if (
+      journey.ping.state ===
+        "away"
+    ) {
+      return {
+        status:
+          "○ PING IS AWAY",
+
+        description:
+          `Ping #${journey.tokenId} was claimed before, but is no longer inside this HoodWallet.`,
+
+        href:
+          "/hoodos",
+
+        action:
+          "OPEN HOODWALLET",
+      };
+    }
+
+    if (
+      journey.ping.state ===
+        "available"
+    ) {
+      return {
+        status:
+          "○ READY TO CLAIM",
+
+        description:
+          `Ping #${journey.tokenId} is waiting for this Hoodie.`,
+
+        href:
+          "/hoodos",
+
+        action:
+          `CLAIM PING #${journey.tokenId}`,
+      };
+    }
+
+    if (
+      journey.ping.state ===
+        "locked"
+    ) {
+      return {
+        status:
+          "○ LOCKED",
+
+        description:
+          "Activate your HoodWallet first to unlock Ping.",
+
+        href:
+          "/hoodos",
+
+        action:
+          "ACTIVATE HOODWALLET",
+      };
+    }
+
+    return {
+      status:
+        "○ UNAVAILABLE",
+
+      description:
+        "Ping is not currently available.",
+
+      href:
+        "/hoodos",
+
+      action:
+        "OPEN HOODWALLET",
+    };
+  }
+
+  return {
+    status:
+      milestone.completed
+        ? "● COMPLETE"
+        : "○ NOT COMPLETE",
+
+    description:
+      milestone.description,
+
+    href:
+      milestone.href,
+
+    action:
+      milestone.cta,
+  };
 }
 
 /*//////////////////////////////////////////////////////////////
-                         HOODIE ARTWORK
+                          ARTWORK
 //////////////////////////////////////////////////////////////*/
 
 function HoodieArtwork({
@@ -553,9 +647,11 @@ function HoodieArtwork({
   ) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-black text-[#ccff00]">
-        <p className="text-[8px] uppercase tracking-[0.14em]">
+
+        <p className="text-[7px] uppercase tracking-[0.14em]">
           Artwork unavailable
         </p>
+
       </div>
     );
   }
@@ -575,9 +671,13 @@ function HoodieArtwork({
         `OnChainHoodie #${hoodie.tokenId}`
       }
 
-      width={640}
+      width={
+        500
+      }
 
-      height={640}
+      height={
+        500
+      }
 
       onError={() =>
         setFailed(
@@ -597,12 +697,16 @@ function HoodieArtwork({
 function HoodieTile({
   hoodie,
   selected,
+  active,
   onSelect,
 }: {
   hoodie:
     OwnedHoodie;
 
   selected:
+    boolean;
+
+  active:
     boolean;
 
   onSelect:
@@ -616,365 +720,212 @@ function HoodieTile({
         onSelect
       }
 
-      className={`group text-left transition-transform ${
-        selected
-          ? "translate-y-[-2px]"
-          : "hover:translate-y-[-2px]"
-      }`}
+      className="w-[150px] shrink-0 text-left sm:w-[165px] md:w-[180px]"
     >
       <div
-        className={`border ${
+        className={`relative border border-[var(--hood-fg)] ${
           selected
-            ? "border-[var(--hood-fg)] bg-[var(--hood-fg)]"
-            : "border-[var(--hood-fg)]"
+            ? "outline outline-2 outline-offset-2 outline-[var(--hood-fg)]"
+            : ""
         }`}
       >
+
+        {/* ACTIVE BADGE */}
+
+        {active && (
+
+          <div className="absolute right-2 top-2 z-10 bg-black px-2 py-1 text-[6px] uppercase tracking-[0.12em] text-[#ccff00]">
+            ● Active
+          </div>
+
+        )}
+
         <div className="aspect-square bg-[#ccff00]">
+
           <HoodieArtwork
             hoodie={
               hoodie
             }
           />
+
         </div>
 
         <div
           className={`border-t border-[var(--hood-fg)] px-3 py-2 ${
             selected
-              ? "text-[var(--hood-bg)]"
+              ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
               : ""
           }`}
         >
-          <p className="text-[7px] uppercase tracking-[0.12em] opacity-60">
+
+          <p className="text-[6px] uppercase tracking-[0.12em] opacity-60">
             Hoodie
           </p>
 
-          <p className="mt-1 text-[14px]">
+          <p className="mt-1 text-[13px]">
             #
             {
               hoodie.tokenId
             }
           </p>
+
         </div>
+
       </div>
     </button>
   );
 }
 
 /*//////////////////////////////////////////////////////////////
-                       JOURNEY CARD
+                       JOURNEY ROW
 //////////////////////////////////////////////////////////////*/
 
-function JourneyCard({
+function JourneyRow({
   milestone,
   journey,
+  checkingIn,
+  onCheckIn,
 }: {
   milestone:
     JourneyMilestone;
 
   journey:
     JourneyResponse;
+
+  checkingIn:
+    boolean;
+
+  onCheckIn:
+    (
+      milestone:
+        JourneyMilestone,
+    ) => void;
 }) {
-  const date =
-    formatDate(
-      milestone.completedAt,
-    );
-
-  const isPing =
-    milestone.key ===
-    "pingClaimed";
-
-  const isHoodTalk =
-    milestone.key ===
-    "hoodTalkSpoken";
-
-  const isWallet =
-    milestone.key ===
-    "hoodWalletActivated";
-
-  const complete =
-    milestone.completed;
-
-  const status =
-    milestoneStatus(
+  const task =
+    milestoneAction(
       milestone,
+      journey,
     );
+
+  const checkedIn =
+    milestone.recorded;
+
+  /*
+   * Underlying action must be true.
+   *
+   * Journey also requires an active canonical
+   * HoodWallet to execute verifyAndRecord().
+   */
+
+  const canCheckIn =
+    milestone.completed &&
+    journey.hoodWallet.active &&
+    !checkedIn;
 
   return (
-    <article className="flex h-full flex-col border border-[var(--hood-fg)]">
+    <article
+      className={`border border-[var(--hood-fg)] transition-colors ${
+        checkedIn
+          ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+          : ""
+      }`}
+    >
 
-      {/* TOP */}
+      <div className="grid gap-5 p-5 lg:grid-cols-[180px_minmax(0,1fr)_220px] lg:items-center">
 
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--hood-fg)] px-4 py-3">
+        {/* NAME */}
 
-        <p className="text-[8px] uppercase tracking-[0.16em]">
-          {
-            milestone.title
-          }
-        </p>
+        <div>
 
-        <div className="flex items-center gap-2">
-
-          {milestone.season2 && (
-            <span className="border border-[var(--hood-fg)] px-2 py-1 text-[6px] uppercase tracking-[0.12em]">
-              Season 2
-            </span>
-          )}
-
-          <span
-            className={`text-[7px] uppercase ${
-              complete
-                ? ""
-                : "opacity-60"
-            }`}
-          >
+          <p className="text-[7px] uppercase tracking-[0.16em] opacity-55">
             {
-              status
+              milestone.app
             }
-          </span>
+          </p>
+
+          <h3 className="mt-2 text-2xl tracking-[-0.035em]">
+            {
+              milestone.title
+            }
+          </h3>
 
         </div>
 
-      </div>
+        {/* STATUS */}
 
-      {/* BODY */}
+        <div>
 
-      <div className="flex flex-1 flex-col p-5">
+          <p className="text-[11px] uppercase tracking-[0.05em]">
+            {checkedIn
+              ? "✓ TASK COMPLETED"
+              : task.status}
+          </p>
 
-        <p className="text-[7px] uppercase tracking-[0.16em] opacity-50">
-          {
-            milestone.app
-          }
-          {" / "}
-          {
-            milestone.action
-          }
-        </p>
+          <p className="mt-2 max-w-2xl text-[8px] uppercase leading-relaxed opacity-60">
+            {checkedIn
+              ? `${milestone.name} is now part of Hoodie #${journey.tokenId}'s Journey.`
+              : task.description}
+          </p>
 
-        <h3 className="mt-3 text-3xl leading-none tracking-[-0.045em]">
-          {
-            milestone.name
-          }
-        </h3>
-
-        <p className="mt-4 max-w-md text-[10px] leading-relaxed opacity-65">
-          {
-            milestone.description
-          }
-        </p>
-
-        {/* HOODWALLET LIVE */}
-
-        {isWallet && (
-          <div className="mt-5 border border-[var(--hood-fg)] p-3">
-
-            <p className="text-[6px] uppercase tracking-[0.12em] opacity-50">
-              Current state
-            </p>
-
-            <p className="mt-2 text-[10px] uppercase">
-              {journey.hoodWallet.active
-                ? "● HoodWallet active"
-                : journey.hoodWallet.everActivated
-                  ? "○ Previously activated"
-                  : "○ Not activated"}
-            </p>
-
-          </div>
-        )}
-
-        {/* HOOD TALK */}
-
-        {isHoodTalk &&
-          journey.hoodTalk.latest?.quote && (
-
-          <div className="mt-5 border border-[var(--hood-fg)] p-3">
-
-            <p className="text-[6px] uppercase tracking-[0.12em] opacity-50">
-              Latest Hood Talk
-            </p>
-
-            <p className="mt-2 text-[10px] leading-relaxed">
-              “{
-                journey.hoodTalk.latest.quote
-              }”
-            </p>
-
-            {journey.hoodTalk.count >
-              0 && (
-
-              <p className="mt-3 text-[6px] uppercase opacity-50">
-                {
-                  journey.hoodTalk.count
-                }{" "}
-                talk
-                {journey.hoodTalk.count ===
-                1
-                  ? ""
-                  : "s"}{" "}
-                recorded
-              </p>
-
-            )}
-
-          </div>
-
-        )}
-
-        {/* PING */}
-
-        {isPing && (
-
-          <div className="mt-5 border border-[var(--hood-fg)] p-3">
-
-            <p className="text-[6px] uppercase tracking-[0.12em] opacity-50">
-              Current state
-            </p>
-
-            <p className="mt-2 text-[11px] uppercase">
-              {
-                pingStateLabel(
-                  journey.ping.state,
-                )
-              }
-            </p>
-
-            {journey.ping.state ===
-              "home" && (
-
-              <p className="mt-2 text-[7px] uppercase leading-relaxed opacity-55">
-                Ping #
-                {
-                  journey.tokenId
-                }{" "}
-                currently lives inside Hoodie #
-                {
-                  journey.tokenId
-                }&apos;s HoodWallet.
-              </p>
-
-            )}
-
-            {journey.ping.state ===
-              "away" && (
-
-              <p className="mt-2 text-[7px] uppercase leading-relaxed opacity-55">
-                Ping #
-                {
-                  journey.tokenId
-                }{" "}
-                was claimed before, but no longer lives inside this HoodWallet.
-              </p>
-
-            )}
-
-            {journey.ping.state ===
-              "available" && (
-
-              <p className="mt-2 text-[7px] uppercase leading-relaxed opacity-55">
-                Your HoodWallet is active. Ping #
-                {
-                  journey.tokenId
-                }{" "}
-                is ready to be claimed.
-              </p>
-
-            )}
-
-            {journey.ping.state ===
-              "locked" && (
-
-              <p className="mt-2 text-[7px] uppercase leading-relaxed opacity-55">
-                Activate the HoodWallet first to unlock the matching Ping.
-              </p>
-
-            )}
-
-          </div>
-
-        )}
-
-        {/* HISTORY */}
-
-        {complete && (
-
-          <div className="mt-5">
-
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[6px] uppercase tracking-[0.11em] opacity-55">
-
-              <span>
-                ✓ Known onchain
-              </span>
-
-              {milestone.recorded && (
-                <>
-                  <span>
-                    /
-                  </span>
-
-                  <span>
-                    Journey recorded
-                  </span>
-                </>
-              )}
-
-              {date && (
-                <>
-                  <span>
-                    /
-                  </span>
-
-                  <span>
-                    {
-                      date
-                    }
-                  </span>
-                </>
-              )}
-
-            </div>
-
-          </div>
-
-        )}
-
-        <div className="mt-auto pt-6">
-
-          {!complete ||
-          (
-            isPing &&
-            journey.ping.state !==
-              "home"
-          ) ||
-          (
-            isWallet &&
-            !journey.hoodWallet.active
-          ) ? (
+          {!checkedIn && (
 
             <Link
               href={
-                milestone.href
+                task.href
               }
 
-              className="block w-full bg-[var(--hood-fg)] px-4 py-4 text-center text-[8px] uppercase tracking-[0.14em] text-[var(--hood-bg)]"
+              className="mt-3 inline-block text-[7px] uppercase tracking-[0.12em] underline underline-offset-4"
             >
               {
-                milestone.cta
+                task.action
               } →
             </Link>
+
+          )}
+
+        </div>
+
+        {/* CHECK IN */}
+
+        <div className="lg:text-right">
+
+          {checkedIn ? (
+
+            <div className="inline-flex min-h-[52px] w-full items-center justify-center border border-[var(--hood-bg)] px-4 text-[8px] uppercase tracking-[0.15em] lg:w-[200px]">
+              ✓ Checked in
+            </div>
 
           ) : (
 
-            <Link
-              href={
-                milestone.href
+            <button
+              type="button"
+
+              disabled={
+                !canCheckIn ||
+                checkingIn
               }
 
-              className="block w-full border border-[var(--hood-fg)] px-4 py-4 text-center text-[8px] uppercase tracking-[0.14em]"
+              onClick={() =>
+                onCheckIn(
+                  milestone,
+                )
+              }
+
+              className={`min-h-[52px] w-full border px-4 text-[8px] uppercase tracking-[0.15em] lg:w-[200px] ${
+                canCheckIn
+                  ? "border-[var(--hood-fg)] bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                  : "border-[var(--hood-fg)] opacity-30"
+              } disabled:cursor-not-allowed`}
             >
-              Visit {
-                milestone.title
-              } →
-            </Link>
+              {checkingIn
+                ? "Checking in…"
+                : canCheckIn
+                  ? "Check in"
+                  : milestone.completed &&
+                      !journey.hoodWallet.active
+                    ? "Activate wallet first"
+                    : "Check in"}
+            </button>
 
           )}
 
@@ -994,21 +945,21 @@ export default function JourneyPage() {
   const {
     address,
     connect,
+    ensureRequiredNetwork,
+    getWalletClient,
   } =
     useWallet();
+
+  /*
+   * Journey starts in DARK mode.
+   */
 
   const [
     darkHood,
     setDarkHood,
   ] =
-    useState(false);
-
-  const [
-    filter,
-    setFilter,
-  ] =
-    useState<JourneyFilter>(
-      "all",
+    useState(
+      true,
     );
 
   const [
@@ -1020,10 +971,29 @@ export default function JourneyPage() {
     >([]);
 
   const [
+    activeHoodies,
+    setActiveHoodies,
+  ] =
+    useState<
+      Record<
+        string,
+        boolean
+      >
+    >({});
+
+  const [
     selectedTokenId,
     setSelectedTokenId,
   ] =
     useState("");
+
+  const [
+    journey,
+    setJourney,
+  ] =
+    useState<
+      JourneyResponse | null
+    >(null);
 
   const [
     ownershipLoading,
@@ -1038,18 +1008,18 @@ export default function JourneyPage() {
     useState(false);
 
   const [
-    journey,
-    setJourney,
-  ] =
-    useState<
-      JourneyResponse | null
-    >(null);
-
-  const [
     journeyLoading,
     setJourneyLoading,
   ] =
     useState(false);
+
+  const [
+    checkingInKey,
+    setCheckingInKey,
+  ] =
+    useState<
+      string | null
+    >(null);
 
   const [
     error,
@@ -1059,28 +1029,153 @@ export default function JourneyPage() {
       string | null
     >(null);
 
-  /*
-   * Tracks previous milestone completion state.
-   *
-   * Confetti only fires when a milestone changes
-   * false -> true while this page is open.
-   */
-
-  const previousCompletionRef =
-    useRef<
-      Record<
-        string,
-        boolean
-      >
-    >({});
-
   const [
-    celebration,
-    setCelebration,
+    success,
+    setSuccess,
   ] =
     useState<
       string | null
     >(null);
+
+  const railRef =
+    useRef<
+      HTMLDivElement | null
+    >(null);
+
+  /*//////////////////////////////////////////////////////////////
+                           PROVIDER
+  //////////////////////////////////////////////////////////////*/
+
+  const provider =
+    useMemo(
+      () => {
+        if (
+          !siteConfig.rpcUrl
+        ) {
+          return null;
+        }
+
+        return new JsonRpcProvider(
+          siteConfig.rpcUrl,
+
+          Number(
+            siteConfig.chainId,
+          ),
+
+          {
+            staticNetwork:
+              true,
+          },
+        );
+      },
+      [],
+    );
+
+  /*//////////////////////////////////////////////////////////////
+                       LOAD ACTIVE BADGES
+  //////////////////////////////////////////////////////////////*/
+
+  const loadActiveBadges =
+    useCallback(
+      async (
+        hoodies:
+          OwnedHoodie[],
+      ) => {
+        if (
+          !provider ||
+          hoodies.length ===
+            0
+        ) {
+          return;
+        }
+
+        const hoodOS =
+          new Contract(
+            siteConfig.hoodOSAddress,
+
+            HOOD_OS_READ_ABI,
+
+            provider,
+          );
+
+        const result:
+          Record<
+            string,
+            boolean
+          > =
+          {};
+
+        /*
+         * Process small groups so a collector with
+         * 50+ Hoodies doesn't fire everything at once.
+         */
+
+        const chunkSize =
+          10;
+
+        for (
+          let start = 0;
+          start <
+          hoodies.length;
+          start +=
+          chunkSize
+        ) {
+          const chunk =
+            hoodies.slice(
+              start,
+              start +
+                chunkSize,
+            );
+
+          const states =
+            await Promise.all(
+              chunk.map(
+                async (
+                  hoodie,
+                ) => {
+                  try {
+                    const active =
+                      (await hoodOS.isActive(
+                        BigInt(
+                          hoodie.tokenId,
+                        ),
+                      )) as boolean;
+
+                    return [
+                      hoodie.tokenId,
+                      active,
+                    ] as const;
+                  } catch {
+                    return [
+                      hoodie.tokenId,
+                      false,
+                    ] as const;
+                  }
+                },
+              ),
+            );
+
+          for (
+            const [
+              tokenId,
+              active,
+            ] of states
+          ) {
+            result[
+              tokenId
+            ] =
+              active;
+          }
+        }
+
+        setActiveHoodies(
+          result,
+        );
+      },
+      [
+        provider,
+      ],
+    );
 
   /*//////////////////////////////////////////////////////////////
                          OWNERSHIP
@@ -1102,6 +1197,10 @@ export default function JourneyPage() {
 
           setJourney(
             null,
+          );
+
+          setActiveHoodies(
+            {},
           );
 
           setOwnershipChecked(
@@ -1133,6 +1232,7 @@ export default function JourneyPage() {
           const response =
             await fetch(
               `/api/hoodies?${params.toString()}`,
+
               {
                 cache:
                   "no-store",
@@ -1148,7 +1248,7 @@ export default function JourneyPage() {
           ) {
             throw new Error(
               payload.error ||
-              "Unable to load Hoodie ownership.",
+                "Unable to load Hoodie ownership.",
             );
           }
 
@@ -1229,6 +1329,10 @@ export default function JourneyPage() {
               );
             },
           );
+
+          void loadActiveBadges(
+            unique,
+          );
         } catch (
           ownershipError
         ) {
@@ -1240,6 +1344,10 @@ export default function JourneyPage() {
             [],
           );
 
+          setActiveHoodies(
+            {},
+          );
+
           setJourney(
             null,
           );
@@ -1247,6 +1355,7 @@ export default function JourneyPage() {
           setError(
             errorMessage(
               ownershipError,
+
               "Unable to load Hoodie ownership.",
             ),
           );
@@ -1262,6 +1371,7 @@ export default function JourneyPage() {
       },
       [
         address,
+        loadActiveBadges,
       ],
     );
 
@@ -1286,7 +1396,7 @@ export default function JourneyPage() {
   ]);
 
   /*//////////////////////////////////////////////////////////////
-                       JOURNEY LOAD
+                          JOURNEY LOAD
   //////////////////////////////////////////////////////////////*/
 
   const loadJourney =
@@ -1319,6 +1429,7 @@ export default function JourneyPage() {
               `${PUBLIC_API}/v1/token/${encodeURIComponent(
                 tokenId,
               )}/journey`,
+
               {
                 cache:
                   "no-store",
@@ -1342,95 +1453,27 @@ export default function JourneyPage() {
           ) {
             throw new Error(
               payload.error ||
-              `Unable to load Hoodie #${tokenId} Journey.`,
+                `Unable to load Hoodie #${tokenId} Journey.`,
             );
           }
-
-          /*
-           * Detect genuinely NEW completion states.
-           *
-           * On the first load we establish the baseline
-           * and do NOT fire confetti for old history.
-           */
-
-          const previous =
-            previousCompletionRef.current;
-
-          const hasBaseline =
-            Object.keys(
-              previous,
-            ).length >
-            0;
-
-          if (
-            hasBaseline
-          ) {
-            const newlyCompleted =
-              payload.milestones.find(
-                (
-                  milestone,
-                ) =>
-                  milestone.completed &&
-                  previous[
-                    milestone.key
-                  ] ===
-                    false,
-              );
-
-            if (
-              newlyCompleted
-            ) {
-              setCelebration(
-                newlyCompleted.name,
-              );
-
-              void confetti({
-                particleCount:
-                  110,
-
-                spread:
-                  80,
-
-                origin: {
-                  y:
-                    0.68,
-                },
-
-                scalar:
-                  0.8,
-
-                ticks:
-                  170,
-
-                disableForReducedMotion:
-                  true,
-              });
-
-              window.setTimeout(
-                () => {
-                  setCelebration(
-                    null,
-                  );
-                },
-                3600,
-              );
-            }
-          }
-
-          previousCompletionRef.current =
-            Object.fromEntries(
-              payload.milestones.map(
-                (
-                  milestone,
-                ) => [
-                  milestone.key,
-                  milestone.completed,
-                ],
-              ),
-            );
 
           setJourney(
             payload,
+          );
+
+          setActiveHoodies(
+            (
+              current,
+            ) => ({
+              ...current,
+
+              [
+                tokenId
+              ]:
+                payload
+                  .hoodWallet
+                  .active,
+            }),
           );
         } catch (
           journeyError
@@ -1446,6 +1489,7 @@ export default function JourneyPage() {
           setError(
             errorMessage(
               journeyError,
+
               `Unable to load Hoodie #${tokenId} Journey.`,
             ),
           );
@@ -1466,13 +1510,6 @@ export default function JourneyPage() {
     ) {
       return;
     }
-
-    /*
-     * New Hoodie = new celebration baseline.
-     */
-
-    previousCompletionRef.current =
-      {};
 
     let cancelled =
       false;
@@ -1496,91 +1533,311 @@ export default function JourneyPage() {
     loadJourney,
   ]);
 
-  /*
-   * Refresh when user comes back to Journey after
-   * completing an action in another tab / route.
-   *
-   * That is where the completion transition and
-   * confetti can happen.
-   */
-
-  useEffect(() => {
-    const handleVisibility =
-      () => {
-        if (
-          document.visibilityState ===
-            "visible" &&
-          selectedTokenId
-        ) {
-          void loadJourney(
-            selectedTokenId,
-          );
-        }
-      };
-
-    document.addEventListener(
-      "visibilitychange",
-      handleVisibility,
-    );
-
-    return () => {
-      document.removeEventListener(
-        "visibilitychange",
-        handleVisibility,
-      );
-    };
-  }, [
-    loadJourney,
-    selectedTokenId,
-  ]);
-
   /*//////////////////////////////////////////////////////////////
-                        DERIVED STATE
+                    WAIT FOR TRANSACTION
   //////////////////////////////////////////////////////////////*/
 
-  const selectedHoodie =
-    useMemo(
-      () =>
-        ownedHoodies.find(
-          (
-            hoodie,
-          ) =>
-            hoodie.tokenId ===
-            selectedTokenId,
-        ) ||
-        null,
+  const waitForHash =
+    useCallback(
+      async (
+        hash:
+          string,
+      ) => {
+        if (
+          !provider
+        ) {
+          throw new Error(
+            "RPC provider unavailable.",
+          );
+        }
+
+        const receipt =
+          await provider.waitForTransaction(
+            hash,
+            1,
+          );
+
+        if (
+          !receipt
+        ) {
+          throw new Error(
+            "Transaction confirmation not found.",
+          );
+        }
+
+        if (
+          receipt.status !==
+            1
+        ) {
+          throw new Error(
+            "Transaction reverted.",
+          );
+        }
+
+        return receipt;
+      },
       [
-        ownedHoodies,
-        selectedTokenId,
+        provider,
       ],
     );
 
-  const visibleMilestones =
-    useMemo(
-      () => {
+  /*//////////////////////////////////////////////////////////////
+                         CHECK IN
+  //////////////////////////////////////////////////////////////*/
+
+  const checkIn =
+    useCallback(
+      async (
+        milestone:
+          JourneyMilestone,
+      ) => {
         if (
-          !journey
+          !journey ||
+          !journey.hoodWallet.address
         ) {
-          return [];
+          return;
         }
 
         if (
-          filter ===
-          "season2"
+          milestone.recorded
         ) {
-          return journey.milestones.filter(
+          return;
+        }
+
+        if (
+          !milestone.completed
+        ) {
+          setError(
+            "Complete the action first.",
+          );
+
+          return;
+        }
+
+        if (
+          !journey.hoodWallet.active
+        ) {
+          setError(
+            "Activate this HoodWallet before checking in.",
+          );
+
+          return;
+        }
+
+        try {
+          setError(
+            null,
+          );
+
+          setSuccess(
+            null,
+          );
+
+          setCheckingInKey(
+            milestone.key,
+          );
+
+          await ensureRequiredNetwork();
+
+          const walletClient =
+            await getWalletClient();
+
+          /*
+           * Journey verifyAndRecord MUST be called by
+           * the canonical HoodWallet.
+           *
+           * Therefore the connected Hoodie owner calls:
+           *
+           * HoodWallet.execute(
+           *   JourneyRegistry,
+           *   0,
+           *   verifyAndRecord(...),
+           *   CALL
+           * )
+           */
+
+          const journeyData =
+            JOURNEY_INTERFACE.encodeFunctionData(
+              "verifyAndRecord",
+
+              [
+                BigInt(
+                  journey.tokenId,
+                ),
+
+                journeyMilestoneId(
+                  milestone,
+                ),
+              ],
+            ) as Hex;
+
+          const hash =
+            await walletClient.writeContract({
+              chain:
+                null,
+
+              address:
+                journey
+                  .hoodWallet
+                  .address as Address,
+
+              abi:
+                HOOD_WALLET_EXECUTE_ABI,
+
+              functionName:
+                "execute",
+
+              args: [
+                JOURNEY_REGISTRY as Address,
+
+                BigInt(0),
+
+                journeyData,
+
+                OPERATION_CALL,
+              ],
+
+              value:
+                BigInt(0),
+
+              account:
+                requireWalletAccount(
+                  walletClient.account,
+                ),
+            });
+
+          await waitForHash(
+            hash,
+          );
+
+          /*
+           * Transaction succeeded, therefore
+           * JourneyRegistry accepted and recorded it.
+           *
+           * Update UI immediately instead of waiting
+           * for the hourly Worker event index.
+           */
+
+          setJourney(
             (
-              milestone,
-            ) =>
-              milestone.season2,
+              current,
+            ) => {
+              if (
+                !current
+              ) {
+                return current;
+              }
+
+              return {
+                ...current,
+
+                momentsRecorded:
+                  current
+                    .momentsRecorded +
+                  (
+                    current.milestones.some(
+                      (
+                        item,
+                      ) =>
+                        item.key ===
+                          milestone.key &&
+                        item.recorded,
+                    )
+                      ? 0
+                      : 1
+                  ),
+
+                milestones:
+                  current.milestones.map(
+                    (
+                      item,
+                    ) =>
+                      item.key ===
+                      milestone.key
+                        ? {
+                            ...item,
+
+                            recorded:
+                              true,
+
+                            source:
+                              "journey",
+
+                            transactionHash:
+                              hash,
+                          }
+                        : item,
+                  ),
+              };
+            },
+          );
+
+          setSuccess(
+            `${milestone.name} checked into Hoodie #${journey.tokenId}'s Journey.`,
+          );
+
+          /*
+           * Celebration belongs to the CHECK IN.
+           */
+
+          void confetti({
+            particleCount:
+              160,
+
+            spread:
+              100,
+
+            startVelocity:
+              38,
+
+            scalar:
+              0.9,
+
+            ticks:
+              190,
+
+            origin: {
+              y:
+                0.65,
+            },
+
+            disableForReducedMotion:
+              true,
+          });
+
+          window.setTimeout(
+            () => {
+              setSuccess(
+                null,
+              );
+            },
+            4500,
+          );
+        } catch (
+          checkInError
+        ) {
+          console.error(
+            checkInError,
+          );
+
+          setError(
+            errorMessage(
+              checkInError,
+
+              "Journey check-in failed.",
+            ),
+          );
+        } finally {
+          setCheckingInKey(
+            null,
           );
         }
-
-        return journey.milestones;
       },
       [
-        filter,
+        ensureRequiredNetwork,
+        getWalletClient,
         journey,
+        waitForHash,
       ],
     );
 
@@ -1608,29 +1865,9 @@ export default function JourneyPage() {
     >
       <SiteHeader />
 
-      {/* CELEBRATION */}
-
-      {celebration && (
-
-        <div className="fixed left-1/2 top-20 z-50 -translate-x-1/2 border border-[#ccff00] bg-black px-6 py-4 text-center text-[#ccff00] shadow-xl">
-
-          <p className="text-[7px] uppercase tracking-[0.2em] opacity-60">
-            Journey updated
-          </p>
-
-          <p className="mt-2 text-[12px] uppercase tracking-[0.1em]">
-            ✓ {
-              celebration
-            }
-          </p>
-
-        </div>
-
-      )}
-
       <section className="mx-auto max-w-[1400px] px-4 pb-24 pt-20 md:px-6 md:pt-24">
 
-        {/* PAGE HEADER */}
+        {/* TOP BAR */}
 
         <div className="flex items-center justify-between border-b border-[var(--hood-fg)] pb-3">
 
@@ -1671,134 +1908,90 @@ export default function JourneyPage() {
 
         </div>
 
-        {/* HERO */}
+        {/* SIMPLE HEADER */}
 
-        <div className="grid gap-8 border-b border-[var(--hood-fg)] py-10 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-end">
+        <div className="border-b border-[var(--hood-fg)] py-8">
 
-          <div>
+          <h1 className="text-5xl leading-none tracking-[-0.055em] md:text-7xl">
+            HOODIE JOURNEY
+          </h1>
 
-            <p className="text-[8px] uppercase tracking-[0.2em] opacity-55">
-              The chain remembers
-            </p>
+          <div className="mt-7 grid gap-3 md:grid-cols-3">
 
-            <h1 className="mt-4 max-w-4xl text-[clamp(4rem,10vw,9rem)] leading-[0.72] tracking-[-0.075em]">
-              YOUR
-              <br />
-              JOURNEY
-            </h1>
+            <div className="border-l border-[var(--hood-fg)] pl-4">
 
-          </div>
-
-          <div className="lg:pb-2">
-
-            <p className="max-w-md text-sm leading-relaxed opacity-70">
-              Every Hoodie builds a history.
-              Discover what yours has already done,
-              what it can do next, and where the Hood
-              is growing.
-            </p>
-
-            <p className="mt-5 text-[7px] uppercase leading-relaxed tracking-[0.12em] opacity-50">
-              No levels. No completion percentage.
-              Just onchain Hoodie history.
-            </p>
-
-          </div>
-
-        </div>
-
-        {/* NOT CONNECTED */}
-
-        {!address ? (
-
-          <div className="mt-6 grid min-h-[460px] place-items-center border border-[var(--hood-fg)] p-8 text-center">
-
-            <div className="max-w-xl">
-
-              <p className="text-[8px] uppercase tracking-[0.2em] opacity-55">
-                Start here
+              <p className="text-3xl">
+                1.
               </p>
 
-              <h2 className="mt-4 text-5xl tracking-[-0.06em] md:text-7xl">
-                YOUR HOODIE
-                <br />
-                HAS A STORY
-              </h2>
-
-              <p className="mx-auto mt-6 max-w-md text-sm leading-relaxed opacity-65">
-                Connect the wallet holding your
-                OnChainHoodies to explore their Journey.
+              <p className="mt-2 text-[9px] uppercase tracking-[0.12em]">
+                Pick your Hoodie
               </p>
 
-              <button
-                type="button"
+            </div>
 
-                onClick={() =>
-                  void connect()
-                }
+            <div className="border-l border-[var(--hood-fg)] pl-4">
 
-                className="mt-7 border border-[var(--hood-fg)] bg-[var(--hood-fg)] px-8 py-4 text-[9px] uppercase tracking-[0.16em] text-[var(--hood-bg)]"
-              >
-                Connect wallet
-              </button>
+              <p className="text-3xl">
+                2.
+              </p>
 
-              <div className="mt-8">
+              <p className="mt-2 text-[9px] uppercase tracking-[0.12em]">
+                Complete an action
+              </p>
 
-                <p className="text-[7px] uppercase opacity-50">
-                  No Hoodie yet?
-                </p>
+            </div>
 
-                <a
-                  href={
-                    OPENSEA_COLLECTION
-                  }
+            <div className="border-l border-[var(--hood-fg)] pl-4">
 
-                  target="_blank"
+              <p className="text-3xl">
+                3.
+              </p>
 
-                  rel="noreferrer"
-
-                  className="mt-2 inline-block text-[8px] uppercase underline underline-offset-4"
-                >
-                  Buy secondary on OpenSea →
-                </a>
-
-              </div>
+              <p className="mt-2 text-[9px] uppercase tracking-[0.12em]">
+                Check in onchain
+              </p>
 
             </div>
 
           </div>
 
-        ) : ownershipLoading ? (
+          <p className="mt-7 max-w-3xl text-sm leading-relaxed opacity-65">
+            Every Hoodie builds a history.
+            Discover what yours has already done,
+            what it can do next, and add it to its
+            onchain Journey.
+          </p>
+
+        </div>
+
+        {/* CONNECT */}
+
+        {!address ? (
 
           <div className="mt-6 border border-[var(--hood-fg)] p-10 text-center">
 
-            <p className="text-[9px] uppercase tracking-[0.15em]">
-              Reading Hoodie ownership…
+            <h2 className="text-4xl tracking-[-0.04em]">
+              START YOUR JOURNEY
+            </h2>
+
+            <p className="mt-4 text-[9px] uppercase opacity-60">
+              Connect the wallet holding your Hoodie.
             </p>
 
-          </div>
+            <button
+              type="button"
 
-        ) : ownershipChecked &&
-          ownedHoodies.length ===
-            0 ? (
+              onClick={() =>
+                void connect()
+              }
 
-          <div className="mt-6 grid min-h-[420px] place-items-center border border-[var(--hood-fg)] p-8 text-center">
+              className="mt-6 bg-[var(--hood-fg)] px-8 py-4 text-[9px] uppercase tracking-[0.15em] text-[var(--hood-bg)]"
+            >
+              Connect wallet
+            </button>
 
-            <div>
-
-              <p className="text-[8px] uppercase tracking-[0.2em] opacity-55">
-                Start your Journey
-              </p>
-
-              <h2 className="mt-4 text-5xl tracking-[-0.055em]">
-                NO HOODIE
-                <br />
-                FOUND
-              </h2>
-
-              <p className="mt-5 text-sm opacity-65">
-                Collect an OnChainHoodie to begin.
-              </p>
+            <div className="mt-7">
 
               <a
                 href={
@@ -1809,12 +2002,52 @@ export default function JourneyPage() {
 
                 rel="noreferrer"
 
-                className="mt-7 inline-block bg-[var(--hood-fg)] px-8 py-4 text-[9px] uppercase tracking-[0.16em] text-[var(--hood-bg)]"
+                className="text-[8px] uppercase underline underline-offset-4"
               >
-                Buy secondary →
+                Buy secondary on OpenSea →
               </a>
 
             </div>
+
+          </div>
+
+        ) : ownershipLoading ? (
+
+          <div className="mt-6 border border-[var(--hood-fg)] p-8 text-center">
+
+            <p className="text-[9px] uppercase tracking-[0.14em]">
+              Reading Hoodie ownership…
+            </p>
+
+          </div>
+
+        ) : ownershipChecked &&
+          ownedHoodies.length ===
+            0 ? (
+
+          <div className="mt-6 border border-[var(--hood-fg)] p-10 text-center">
+
+            <h2 className="text-4xl">
+              START YOUR JOURNEY
+            </h2>
+
+            <p className="mt-4 text-[9px] uppercase opacity-60">
+              No OnChainHoodie found in this wallet.
+            </p>
+
+            <a
+              href={
+                OPENSEA_COLLECTION
+              }
+
+              target="_blank"
+
+              rel="noreferrer"
+
+              className="mt-6 inline-block bg-[var(--hood-fg)] px-8 py-4 text-[9px] uppercase tracking-[0.14em] text-[var(--hood-bg)]"
+            >
+              Buy secondary →
+            </a>
 
           </div>
 
@@ -1822,15 +2055,15 @@ export default function JourneyPage() {
 
           <>
 
-            {/* HOODIE TILES */}
+            {/* ONE ROW / HORIZONTAL SCROLL */}
 
-            <section className="mt-6">
+            <section className="mt-7">
 
-              <div className="flex items-end justify-between gap-4">
+              <div className="flex items-end justify-between">
 
                 <div>
 
-                  <p className="text-[8px] uppercase tracking-[0.18em] opacity-55">
+                  <p className="text-[7px] uppercase tracking-[0.16em] opacity-50">
                     Connected collection
                   </p>
 
@@ -1849,7 +2082,13 @@ export default function JourneyPage() {
 
               </div>
 
-              <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
+              <div
+                ref={
+                  railRef
+                }
+
+                className="mt-4 flex gap-3 overflow-x-auto pb-4 [scrollbar-width:thin]"
+              >
 
                 {ownedHoodies.map(
                   (
@@ -1870,7 +2109,22 @@ export default function JourneyPage() {
                         selectedTokenId
                       }
 
+                      active={
+                        activeHoodies[
+                          hoodie.tokenId
+                        ] ===
+                        true
+                      }
+
                       onSelect={() => {
+                        setSuccess(
+                          null,
+                        );
+
+                        setError(
+                          null,
+                        );
+
                         setJourney(
                           null,
                         );
@@ -1888,346 +2142,93 @@ export default function JourneyPage() {
 
             </section>
 
-            {/* SELECTED JOURNEY */}
+            {/* JOURNEY */}
 
-            {journeyLoading &&
-            !journey ? (
+            <section className="mt-10">
 
-              <div className="mt-10 border border-[var(--hood-fg)] p-10 text-center">
+              <div className="flex items-end justify-between border-b border-[var(--hood-fg)] pb-4">
 
-                <p className="text-[9px] uppercase tracking-[0.15em]">
-                  Reading Hoodie #
-                  {
-                    selectedTokenId
-                  }
-                  &apos;s Journey…
-                </p>
+                <div>
 
-              </div>
+                  <p className="text-[7px] uppercase tracking-[0.16em] opacity-50">
+                    Start your Journey
+                  </p>
 
-            ) : journey &&
-              selectedHoodie ? (
+                  <h2 className="mt-2 text-4xl tracking-[-0.05em] md:text-5xl">
+                    HOODIE #
+                    {
+                      selectedTokenId
+                    }{" "}
+                    JOURNEY
+                  </h2>
 
-              <>
+                </div>
 
-                {/* IDENTITY */}
+                {activeHoodies[
+                  selectedTokenId
+                ] && (
 
-                <section className="mt-12 grid border border-[var(--hood-fg)] lg:grid-cols-[340px_minmax(0,1fr)]">
+                  <span className="bg-[var(--hood-fg)] px-3 py-2 text-[7px] uppercase tracking-[0.12em] text-[var(--hood-bg)]">
+                    ● HoodWallet active
+                  </span>
 
-                  <div className="border-b border-[var(--hood-fg)] bg-[#ccff00] lg:border-b-0 lg:border-r">
-
-                    <div className="aspect-square">
-
-                      <HoodieArtwork
-                        hoodie={
-                          selectedHoodie
-                        }
-                      />
-
-                    </div>
-
-                    <div className="border-t border-black bg-[#ccff00] p-4 text-black">
-
-                      <p className="text-[7px] uppercase tracking-[0.14em]">
-                        OnChainHoodie
-                      </p>
-
-                      <p className="mt-1 text-4xl">
-                        #
-                        {
-                          journey.tokenId
-                        }
-                      </p>
-
-                    </div>
-
-                  </div>
-
-                  <div className="flex min-w-0 flex-col justify-between p-6 md:p-8">
-
-                    <div>
-
-                      <p className="text-[7px] uppercase tracking-[0.18em] opacity-50">
-                        Hoodie history
-                      </p>
-
-                      <h2 className="mt-3 text-5xl tracking-[-0.06em] md:text-7xl">
-                        {
-                          journey.momentsKnown
-                        }{" "}
-                        MOMENT
-                        {journey.momentsKnown ===
-                        1
-                          ? ""
-                          : "S"}
-                      </h2>
-
-                      <p className="mt-4 max-w-xl text-sm leading-relaxed opacity-65">
-                        These are things Hoodie #
-                        {
-                          journey.tokenId
-                        }{" "}
-                        has already done or can do
-                        across the growing OCH ecosystem.
-                      </p>
-
-                    </div>
-
-                    <div className="mt-8 grid gap-2 sm:grid-cols-2">
-
-                      <div className="border border-[var(--hood-fg)] p-4">
-
-                        <p className="text-[6px] uppercase tracking-[0.14em] opacity-50">
-                          HoodWallet
-                        </p>
-
-                        <p className="mt-2 text-[10px] uppercase">
-                          {journey.hoodWallet.active
-                            ? "● Active"
-                            : journey.hoodWallet.everActivated
-                              ? "○ Inactive"
-                              : "○ Not activated"}
-                        </p>
-
-                      </div>
-
-                      <div className="border border-[var(--hood-fg)] p-4">
-
-                        <p className="text-[6px] uppercase tracking-[0.14em] opacity-50">
-                          Ping #
-                          {
-                            journey.tokenId
-                          }
-                        </p>
-
-                        <p className="mt-2 text-[10px] uppercase">
-                          {
-                            pingStateLabel(
-                              journey.ping.state,
-                            )
-                          }
-                        </p>
-
-                      </div>
-
-                    </div>
-
-                  </div>
-
-                </section>
-
-                {/* FILTER */}
-
-                <section className="mt-8">
-
-                  <div className="flex flex-col justify-between gap-4 border-b border-[var(--hood-fg)] pb-4 sm:flex-row sm:items-end">
-
-                    <div>
-
-                      <p className="text-[8px] uppercase tracking-[0.18em] opacity-50">
-                        Hoodie #
-                        {
-                          journey.tokenId
-                        }
-                      </p>
-
-                      <h2 className="mt-2 text-4xl tracking-[-0.05em]">
-                        JOURNEY
-                      </h2>
-
-                    </div>
-
-                    <div className="grid grid-cols-2 border border-[var(--hood-fg)]">
-
-                      <button
-                        type="button"
-
-                        onClick={() =>
-                          setFilter(
-                            "all",
-                          )
-                        }
-
-                        className={`px-5 py-3 text-[7px] uppercase tracking-[0.14em] ${
-                          filter ===
-                          "all"
-                            ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
-                            : ""
-                        }`}
-                      >
-                        All
-                      </button>
-
-                      <button
-                        type="button"
-
-                        onClick={() =>
-                          setFilter(
-                            "season2",
-                          )
-                        }
-
-                        className={`border-l border-[var(--hood-fg)] px-5 py-3 text-[7px] uppercase tracking-[0.14em] ${
-                          filter ===
-                          "season2"
-                            ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
-                            : ""
-                        }`}
-                      >
-                        Season 2
-                      </button>
-
-                    </div>
-
-                  </div>
-
-                  {filter ===
-                    "season2" && (
-
-                    <div className="mt-3 border border-[var(--hood-fg)] px-4 py-3">
-
-                      <p className="text-[7px] uppercase leading-relaxed tracking-[0.11em] opacity-60">
-                        Season 2 highlights ecosystem
-                        actions relevant to the upcoming
-                        OCH allocation. A badge marks
-                        participating Journey actions.
-                      </p>
-
-                    </div>
-
-                  )}
-
-                  {/* JOURNEY CARDS */}
-
-                  <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-
-                    {visibleMilestones.map(
-                      (
-                        milestone,
-                      ) => (
-
-                        <JourneyCard
-                          key={
-                            milestone.key
-                          }
-
-                          milestone={
-                            milestone
-                          }
-
-                          journey={
-                            journey
-                          }
-                        />
-
-                      ),
-                    )}
-
-                  </div>
-
-                  <button
-                    type="button"
-
-                    disabled={
-                      journeyLoading
-                    }
-
-                    onClick={() =>
-                      void loadJourney()
-                    }
-
-                    className="mt-4 border border-[var(--hood-fg)] px-4 py-3 text-[7px] uppercase tracking-[0.14em] disabled:opacity-40"
-                  >
-                    {journeyLoading
-                      ? "Refreshing Journey…"
-                      : "Refresh Journey"}
-                  </button>
-
-                </section>
-
-              </>
-
-            ) : null}
-
-            {/* EXPLORE */}
-
-            <section className="mt-16">
-
-              <div className="border-b border-[var(--hood-fg)] pb-4">
-
-                <p className="text-[8px] uppercase tracking-[0.18em] opacity-50">
-                  The Hood keeps growing
-                </p>
-
-                <h2 className="mt-2 text-4xl tracking-[-0.05em] md:text-5xl">
-                  EXPLORE
-                </h2>
-
-                <p className="mt-3 max-w-xl text-[9px] leading-relaxed opacity-60">
-                  Journey is also your way into the
-                  ecosystem. New builder apps can be
-                  added here as the Hood expands.
-                </p>
-
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-
-                {ECOSYSTEM_LINKS.map(
-                  (
-                    app,
-                  ) => (
-
-                    <Link
-                      key={
-                        app.key
-                      }
-
-                      href={
-                        app.href
-                      }
-
-                      className="group flex min-h-[170px] flex-col justify-between border border-[var(--hood-fg)] p-5 transition-transform hover:-translate-y-1"
-                    >
-
-                      <div>
-
-                        <div className="flex items-center justify-between gap-3">
-
-                          <p className="text-[8px] uppercase tracking-[0.16em]">
-                            {
-                              app.title
-                            }
-                          </p>
-
-                          {app.season2 && (
-                            <span className="border border-[var(--hood-fg)] px-2 py-1 text-[6px] uppercase tracking-[0.12em]">
-                              Season 2
-                            </span>
-                          )}
-
-                        </div>
-
-                        <p className="mt-5 max-w-sm text-[9px] leading-relaxed opacity-60">
-                          {
-                            app.description
-                          }
-                        </p>
-
-                      </div>
-
-                      <p className="mt-8 text-[7px] uppercase tracking-[0.13em] underline underline-offset-4">
-                        {
-                          app.label
-                        } →
-                      </p>
-
-                    </Link>
-
-                  ),
                 )}
 
               </div>
+
+              {journeyLoading &&
+              !journey ? (
+
+                <div className="mt-4 border border-[var(--hood-fg)] p-8 text-center">
+
+                  <p className="text-[8px] uppercase tracking-[0.13em]">
+                    Reading Journey…
+                  </p>
+
+                </div>
+
+              ) : journey ? (
+
+                <div className="mt-4 space-y-3">
+
+                  {journey.milestones.map(
+                    (
+                      milestone,
+                    ) => (
+
+                      <JourneyRow
+                        key={
+                          milestone.key
+                        }
+
+                        milestone={
+                          milestone
+                        }
+
+                        journey={
+                          journey
+                        }
+
+                        checkingIn={
+                          checkingInKey ===
+                          milestone.key
+                        }
+
+                        onCheckIn={(
+                          item,
+                        ) =>
+                          void checkIn(
+                            item,
+                          )
+                        }
+                      />
+
+                    ),
+                  )}
+
+                </div>
+
+              ) : null}
 
             </section>
 
@@ -2235,9 +2236,31 @@ export default function JourneyPage() {
 
         )}
 
+        {/* SUCCESS */}
+
+        {success && (
+
+          <div className="fixed bottom-6 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 border border-[#ccff00] bg-black p-5 text-center text-[#ccff00]">
+
+            <p className="text-[7px] uppercase tracking-[0.16em] opacity-55">
+              Journey updated
+            </p>
+
+            <p className="mt-2 text-[10px] uppercase leading-relaxed">
+              {
+                success
+              }
+            </p>
+
+          </div>
+
+        )}
+
+        {/* ERROR */}
+
         {error && (
 
-          <div className="mt-6 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-4 text-[var(--hood-bg)]">
+          <div className="mt-5 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-4 text-[var(--hood-bg)]">
 
             <p className="text-[8px] uppercase leading-relaxed">
               {
