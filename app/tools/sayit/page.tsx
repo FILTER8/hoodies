@@ -23,7 +23,9 @@ const PIXEL_FONT_URL = "/fonts/DepartureMono-Regular.woff";
 const AVATAR = {
   src: "/avatar.png",
   x: 78,
-  bottom: 610,
+  defaultBottom: 585,
+  minBottom: 520,
+  maxBottom: 620,
   targetWidth: 470,
   maxHeight: 505,
 } as const;
@@ -33,7 +35,13 @@ const AVATAR = {
 // - textThickness controls DepartureMono visual weight
 const BUBBLE = {
   x: 535,
-  bottom: 470,
+
+  // Dynamic vertical position:
+  // 1 line uses the original higher position.
+  // 5+ lines use the lowered position with enough top clearance.
+  bottomOneLine: 348,
+  bottomFiveLines: 470,
+
   minWidth: 330,
   maxWidth: 585,
   minHeight: 116,
@@ -71,6 +79,7 @@ type BubbleLayout = {
   width: number;
   height: number;
   top: number;
+  bottom: number;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -259,6 +268,17 @@ function wrapParagraph(
   return lines.length ? lines : [""];
 }
 
+function getBubbleBottom(lineCount: number): number {
+  const clampedLines = clamp(lineCount, 1, 5);
+
+  const progress = (clampedLines - 1) / 4;
+
+  return Math.round(
+    BUBBLE.bottomOneLine +
+      (BUBBLE.bottomFiveLines - BUBBLE.bottomOneLine) * progress,
+  );
+}
+
 function getBubbleLayout(
   context: CanvasRenderingContext2D,
   text: string,
@@ -293,11 +313,14 @@ function getBubbleLayout(
     ),
   );
 
+  const bottom = getBubbleBottom(safeLines.length);
+
   return {
     lines: safeLines,
     width,
     height,
-    top: BUBBLE.bottom - height,
+    top: bottom - height,
+    bottom,
   };
 }
 
@@ -305,8 +328,8 @@ function drawPixelBubble(
   context: CanvasRenderingContext2D,
   layout: BubbleLayout,
 ): void {
-  const { x, bottom, border } = BUBBLE;
-  const { width, height, top } = layout;
+  const { x, border } = BUBBLE;
+  const { width, height, top, bottom } = layout;
   const right = x + width;
   const p = border;
 
@@ -512,6 +535,7 @@ async function drawComposition(
   context: CanvasRenderingContext2D,
   phrase: string,
   footerText: string,
+  avatarBottom: number,
 ): Promise<void> {
   context.save();
   context.imageSmoothingEnabled = false;
@@ -532,7 +556,7 @@ async function drawComposition(
     avatarWidth = avatarHeight * sourceRatio;
   }
 
-  const avatarY = AVATAR.bottom - avatarHeight;
+  const avatarY = avatarBottom - avatarHeight;
 
   context.drawImage(
     avatar,
@@ -554,6 +578,7 @@ async function composeCanvas(
   canvas: HTMLCanvasElement,
   phrase: string,
   footerText: string,
+  avatarBottom: number,
 ): Promise<void> {
   await ensurePixelFont();
 
@@ -567,7 +592,7 @@ async function composeCanvas(
     throw new Error("Canvas is unavailable.");
   }
 
-  await drawComposition(frameContext, phrase, footerText);
+  await drawComposition(frameContext, phrase, footerText, avatarBottom);
 
   if (canvas.width !== CANVAS_WIDTH) {
     canvas.width = CANVAS_WIDTH;
@@ -603,6 +628,7 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 async function downloadPNG(
   phrase: string,
   footerText: string,
+  avatarBottom: number,
 ): Promise<void> {
   await ensurePixelFont();
 
@@ -616,7 +642,7 @@ async function downloadPNG(
     throw new Error("Canvas is unavailable.");
   }
 
-  await drawComposition(sourceContext, phrase, footerText);
+  await drawComposition(sourceContext, phrase, footerText, avatarBottom);
 
   const exportCanvas = document.createElement("canvas");
   exportCanvas.width = CANVAS_WIDTH * EXPORT_SCALE;
@@ -664,6 +690,7 @@ export default function SayItPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [phrase, setPhrase] = useState("$OCH AUG 18th");
   const [footerText, setFooterText] = useState<FooterOption>(FOOTER_OPTIONS[0]);
+  const [avatarBottom, setAvatarBottom] = useState(AVATAR.defaultBottom);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
 
@@ -682,12 +709,12 @@ export default function SayItPage() {
 
     try {
       setError("");
-      await composeCanvas(canvas, phrase, footerText);
+      await composeCanvas(canvas, phrase, footerText, avatarBottom);
     } catch (renderError) {
       console.error(renderError);
       setError(getReadableError(renderError));
     }
-  }, [footerText, phrase]);
+  }, [avatarBottom, footerText, phrase]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -698,7 +725,7 @@ export default function SayItPage() {
 
     let cancelled = false;
 
-    void composeCanvas(canvas, phrase, footerText).catch((renderError) => {
+    void composeCanvas(canvas, phrase, footerText, avatarBottom).catch((renderError) => {
       if (cancelled) {
         return;
       }
@@ -710,7 +737,7 @@ export default function SayItPage() {
     return () => {
       cancelled = true;
     };
-  }, [footerText, phrase]);
+  }, [avatarBottom, footerText, phrase]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -726,7 +753,7 @@ export default function SayItPage() {
     setError("");
 
     try {
-      await downloadPNG(phrase, footerText);
+      await downloadPNG(phrase, footerText, avatarBottom);
     } catch (downloadError) {
       console.error(downloadError);
       setError(getReadableError(downloadError));
@@ -802,6 +829,39 @@ export default function SayItPage() {
                 className="block h-auto w-full bg-[#ccff00]"
                 style={{ imageRendering: "pixelated" }}
               />
+            </div>
+          </section>
+
+          <section className="border-b-2 border-[#ccff00] py-8">
+            <div className="flex items-center justify-between gap-4 text-left">
+              <h2 className="text-[10px] uppercase tracking-[0.16em]">
+                Hoodie Position
+              </h2>
+
+              <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
+                {avatarBottom} PX
+              </p>
+            </div>
+
+            <div className="mt-5 border-2 border-[#ccff00] p-5">
+              <input
+                type="range"
+                min={AVATAR.minBottom}
+                max={AVATAR.maxBottom}
+                step="1"
+                value={avatarBottom}
+                onChange={(event) => {
+                  setAvatarBottom(Number(event.target.value));
+                  setError("");
+                }}
+                className="w-full accent-[#ccff00]"
+                aria-label="Hoodie vertical position"
+              />
+
+              <div className="mt-3 flex justify-between text-[7px] uppercase tracking-[0.12em] opacity-55">
+                <span>Higher</span>
+                <span>Lower</span>
+              </div>
             </div>
           </section>
 
