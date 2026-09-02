@@ -2,789 +2,1051 @@
 
 import Image from "next/image";
 import Link from "next/link";
-
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
-
-import {
-  Contract,
-  Interface,
-  JsonRpcProvider,
-} from "ethers";
-
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Contract, Interface, JsonRpcProvider } from "ethers";
 import confetti from "canvas-confetti";
-
-import type {
-  Address,
-  Hex,
-} from "viem";
+import type { Address, Hex } from "viem";
+import {
+  Wallet,
+  CommentText,
+  Flag,
+  Check,
+} from "pixelarticons/react";
 
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
+import { useWallet } from "../../components/WalletProvider";
+import { apiConfig, collectionApiUrl } from "../../lib/api";
+import { siteConfig } from "../../lib/config";
 
-import {
-  useWallet,
-} from "../../components/WalletProvider";
+const API = "https://api.onchainhoodies.xyz";
+const OPENSEA = "https://opensea.io/collection/onchainhoodies-";
+const JOURNEY = "0x93513A0e4d0E016ccf296C4c2888b59c06708ea7";
+const PING_CONTRACT = "0xc7fe67AC39a6EDD78d5B842c6f42e11Da37eb17D";
+const CALL = 0;
 
-import {
-  apiConfig,
-  collectionApiUrl,
-} from "../../lib/api";
+const IDS = {
+  hoodWalletActivated: "0x239902d75dd4133b2e3c4f65fa01858d6e22407b7ed186aa42966e7f997962cf",
+  hoodTalkSpoken: "0xae701161971ede8a03aaa7cf86b28afe5171979b2e6db2e67310b1bbfa90d37b",
+  pingClaimed: "0xb08fecf851d41fdd453731545fe282b0e49a7d8efd63cc4b7a66550141a910d4",
+} as const;
 
-import {
-  siteConfig,
-} from "../../lib/config";
+const HOOD_OS_ABI = ["function isActive(uint256 tokenId) view returns (bool)"] as const;
+const ERC721_METADATA_ABI = ["function tokenURI(uint256 tokenId) view returns (string)"] as const;
+const JOURNEY_IFACE = new Interface([
+  "function verifyAndRecord(uint256 tokenId,bytes32 milestoneId)",
+]);
+const WALLET_EXECUTE_ABI = [{
+  type: "function",
+  name: "execute",
+  stateMutability: "payable",
+  inputs: [
+    { name: "target", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "data", type: "bytes" },
+    { name: "operation", type: "uint8" },
+  ],
+  outputs: [{ name: "result", type: "bytes" }],
+}] as const;
 
-/*//////////////////////////////////////////////////////////////
-                            CONSTANTS
-//////////////////////////////////////////////////////////////*/
-
-const PUBLIC_API =
-  "https://api.onchainhoodies.xyz";
-
-const OPENSEA_COLLECTION =
-  "https://opensea.io/collection/onchainhoodies-";
-
-const JOURNEY_REGISTRY =
-  "0x93513A0e4d0E016ccf296C4c2888b59c06708ea7";
-
-const OPERATION_CALL =
-  0;
-
-/*
- * Exact production Journey milestones.
- */
-
-const MILESTONE_HOODWALLET_ACTIVATED =
-  "0x239902d75dd4133b2e3c4f65fa01858d6e22407b7ed186aa42966e7f997962cf";
-
-const MILESTONE_HOOD_TALK_SPOKEN =
-  "0xae701161971ede8a03aaa7cf86b28afe5171979b2e6db2e67310b1bbfa90d37b";
-
-const MILESTONE_PING_CLAIMED =
-  "0xb08fecf851d41fdd453731545fe282b0e49a7d8efd63cc4b7a66550141a910d4";
-
-/*//////////////////////////////////////////////////////////////
-                              ABIS
-//////////////////////////////////////////////////////////////*/
-
-const HOOD_OS_READ_ABI = [
-  "function isActive(uint256 tokenId) view returns (bool)",
-] as const;
-
-const JOURNEY_INTERFACE =
-  new Interface([
-    "function verifyAndRecord(uint256 tokenId,bytes32 milestoneId)",
-  ]);
-
-const HOOD_WALLET_EXECUTE_ABI = [
-  {
-    type:
-      "function",
-
-    name:
-      "execute",
-
-    stateMutability:
-      "payable",
-
-    inputs: [
-      {
-        name:
-          "target",
-
-        type:
-          "address",
-      },
-
-      {
-        name:
-          "value",
-
-        type:
-          "uint256",
-      },
-
-      {
-        name:
-          "data",
-
-        type:
-          "bytes",
-      },
-
-      {
-        name:
-          "operation",
-
-        type:
-          "uint8",
-      },
-    ],
-
-    outputs: [
-      {
-        name:
-          "result",
-
-        type:
-          "bytes",
-      },
-    ],
-  },
-] as const;
-
-/*//////////////////////////////////////////////////////////////
-                              TYPES
-//////////////////////////////////////////////////////////////*/
-
-type OwnedHoodie = {
-  tokenId:
-    string;
-
-  name:
-    string;
-
-  image?:
-    string;
-};
-
-type OwnershipResponse = {
-  items?:
-    OwnedHoodie[];
-
-  error?:
-    string;
-};
-
-type PingState =
-  | "locked"
-  | "available"
-  | "home"
-  | "away"
-  | "unavailable";
+type OwnedHoodie = { tokenId: string; name: string; image?: string };
+type OwnershipResponse = { items?: OwnedHoodie[]; error?: string };
+type PingState = "locked" | "available" | "home" | "away" | "unavailable";
 
 type JourneyMilestone = {
-  key:
-    string;
+  key: string;
+  milestoneId: string;
+  app: string;
+  action: string;
+  title: string;
+  name: string;
+  description: string;
+  href: string;
+  cta: string;
+  completed: boolean;
+  recorded: boolean;
+  source: "journey" | "legacy" | null;
+  currentlyTrue: boolean;
+  completedAt: number | null;
+  transactionHash: string | null;
+  talkCount?: number;
+  state?: PingState;
 
-  milestoneId:
-    string;
-
-  app:
-    string;
-
-  action:
-    string;
-
-  title:
-    string;
-
-  name:
-    string;
-
-  description:
-    string;
-
-  href:
-    string;
-
-  cta:
-    string;
-
-  completed:
-    boolean;
-
-  recorded:
-    boolean;
-
-  source:
-    "journey" |
-    "legacy" |
-    null;
-
-  currentlyTrue:
-    boolean;
-
-  completedAt:
-    number | null;
-
-  transactionHash:
-    string | null;
-
-  talkCount?:
-    number;
-
-  state?:
-    PingState;
 };
 
 type JourneyResponse = {
-  schemaVersion:
-    string;
-
-  tokenId:
-    number;
-
-  journeyRegistry:
-    string;
-
-  journeyStartBlock:
-    number;
-
-  hoodWallet: {
-    address:
-      string | null;
-
-    active:
-      boolean;
-
-    everActivated:
-      boolean;
-  };
-
-  momentsKnown:
-    number;
-
-  momentsRecorded:
-    number;
-
-  milestones:
-    JourneyMilestone[];
-
+  tokenId: number;
+  hoodWallet: { address: string | null; active: boolean; everActivated: boolean };
+  milestones: JourneyMilestone[];
   hoodTalk: {
-    spoken:
-      boolean;
-
-    count:
-      number;
-
-    latest:
-      {
-        quote?:
-          string;
-
-        author?:
-          string;
-
-        updatedAt?:
-          number;
-
-        transactionHash?:
-          string;
-      } | null;
+    spoken: boolean;
+    count: number;
+    latest?: {
+      quote?: string;
+      updatedAt?: number;
+      transactionHash?: string;
+    } | null;
   };
-
   ping: {
-    tokenId:
-      number;
-
-    claimed:
-      boolean;
-
-    canClaim:
-      boolean;
-
-    owner:
-      string | null;
-
-    hoodWallet:
-      string | null;
-
-    isHome:
-      boolean;
-
-    state:
-      PingState;
+    tokenId: number;
+    claimed: boolean;
+    canClaim: boolean;
+    owner: string | null;
+    hoodWallet: string | null;
+    isHome: boolean;
+    state: PingState;
   };
 };
 
-/*//////////////////////////////////////////////////////////////
-                            HELPERS
-//////////////////////////////////////////////////////////////*/
+type JourneyStats = {
+  totalRecordedCompletions?: number;
+  hoodWallet?: { currentlyActive?: number };
+  ping?: { claimed?: number; home?: number; away?: number };
+  milestones?: {
+    hoodWalletActivated?: { historicalCount?: number | null };
+    hoodTalkSpoken?: { historicalCount?: number | null };
+    pingClaimed?: { historicalCount?: number | null };
+  };
+};
 
-function errorMessage(
-  error:
-    unknown,
+type Tab = "journey" | "stats";
+type PendingMap = Record<string, boolean>;
 
-  fallback:
-    string,
-) {
-  if (
-    typeof error ===
-      "object" &&
-    error !==
-      null
-  ) {
-    const candidate =
-      error as {
-        shortMessage?:
-          string;
-
-        message?:
-          string;
-
-        cause?: {
-          shortMessage?:
-            string;
-
-          message?:
-            string;
-        };
-      };
-
-    return (
-      candidate.shortMessage ||
-      candidate.cause
-        ?.shortMessage ||
-      candidate.cause
-        ?.message ||
-      candidate.message ||
-      fallback
-    );
+function err(error: unknown, fallback: string) {
+  if (typeof error === "object" && error !== null) {
+    const e = error as { shortMessage?: string; message?: string; cause?: { shortMessage?: string; message?: string } };
+    return e.shortMessage || e.cause?.shortMessage || e.cause?.message || e.message || fallback;
   }
-
   return fallback;
 }
 
-function tokenArtwork(
-  tokenId:
-    string,
-) {
-  if (
-    apiConfig.isMainnet
-  ) {
-    return collectionApiUrl(
-      `/images/${encodeURIComponent(
-        tokenId,
-      )}.svg`,
-    );
-  }
-
-  return `/api/hoodies/image?tokenId=${encodeURIComponent(
-    tokenId,
-  )}`;
+function art(tokenId: string) {
+  return apiConfig.isMainnet
+    ? collectionApiUrl(`/images/${encodeURIComponent(tokenId)}.svg`)
+    : `/api/hoodies/image?tokenId=${encodeURIComponent(tokenId)}`;
 }
 
-function requireWalletAccount<T>(
-  account:
-    T | undefined,
-): T {
-  if (
-    !account
-  ) {
-    throw new Error(
-      "Wallet account unavailable.",
-    );
-  }
-
-  return account;
+function account<T>(value: T | undefined): T {
+  if (!value) throw new Error("Wallet account unavailable.");
+  return value;
 }
 
-function journeyMilestoneId(
-  milestone:
-    JourneyMilestone,
-) {
-  if (
-    milestone.key ===
-      "hoodWalletActivated"
-  ) {
-    return MILESTONE_HOODWALLET_ACTIVATED;
-  }
-
-  if (
-    milestone.key ===
-      "hoodTalkSpoken"
-  ) {
-    return MILESTONE_HOOD_TALK_SPOKEN;
-  }
-
-  if (
-    milestone.key ===
-      "pingClaimed"
-  ) {
-    return MILESTONE_PING_CLAIMED;
-  }
-
-  return milestone.milestoneId;
+function localKey(tokenId: string, milestoneKey: string) {
+  return `${tokenId}:${milestoneKey}`;
 }
 
-function milestoneAction(
-  milestone:
-    JourneyMilestone,
-
-  journey:
-    JourneyResponse,
-) {
-  if (
-    milestone.key ===
-      "hoodWalletActivated"
-  ) {
-    if (
-      journey.hoodWallet.active
-    ) {
-      return {
-        status:
-          "● ACTIVE",
-
-        description:
-          "Your HoodWallet is active and ready.",
-
-        href:
-          "/hoodos",
-
-        action:
-          "OPEN HOODWALLET",
-      };
-    }
-
-    if (
-      journey.hoodWallet.everActivated
-    ) {
-      return {
-        status:
-          "○ NOT ACTIVE",
-
-        description:
-          "This HoodWallet was activated before. Activate it again to continue the Journey.",
-
-        href:
-          "/hoodos",
-
-        action:
-          "ACTIVATE YOUR HOODWALLET",
-      };
-    }
-
-    return {
-      status:
-        "○ NOT ACTIVATED",
-
-      description:
-        "Activate your HoodWallet to start using your Hoodie onchain.",
-
-      href:
-        "/hoodos",
-
-      action:
-        "ACTIVATE YOUR HOODWALLET",
-    };
-  }
-
-  if (
-    milestone.key ===
-      "hoodTalkSpoken"
-  ) {
-    if (
-      milestone.completed
-    ) {
-      return {
-        status:
-          "● SPOKEN ONCHAIN",
-
-        description:
-          "Your Hoodie has already spoken onchain.",
-
-        href:
-          "/hood-talk",
-
-        action:
-          "OPEN HOOD TALK",
-      };
-    }
-
-    return {
-      status:
-        "○ NOT SPOKEN",
-
-      description:
-        "Give your Hoodie a permanent voice onchain.",
-
-      href:
-        "/hood-talk",
-
-      action:
-        "OPEN HOOD TALK",
-    };
-  }
-
-  if (
-    milestone.key ===
-      "pingClaimed"
-  ) {
-    if (
-      journey.ping.state ===
-        "home"
-    ) {
-      return {
-        status:
-          "● PING IS HOME",
-
-        description:
-          `Ping #${journey.tokenId} lives inside this HoodWallet.`,
-
-        href:
-          "/hoodos",
-
-        action:
-          "OPEN HOODWALLET",
-      };
-    }
-
-    if (
-      journey.ping.state ===
-        "away"
-    ) {
-      return {
-        status:
-          "○ PING IS AWAY",
-
-        description:
-          `Ping #${journey.tokenId} was claimed before, but is no longer inside this HoodWallet.`,
-
-        href:
-          "/hoodos",
-
-        action:
-          "OPEN HOODWALLET",
-      };
-    }
-
-    if (
-      journey.ping.state ===
-        "available"
-    ) {
-      return {
-        status:
-          "○ READY TO CLAIM",
-
-        description:
-          `Ping #${journey.tokenId} is waiting for this Hoodie.`,
-
-        href:
-          "/hoodos",
-
-        action:
-          `CLAIM PING #${journey.tokenId}`,
-      };
-    }
-
-    if (
-      journey.ping.state ===
-        "locked"
-    ) {
-      return {
-        status:
-          "○ LOCKED",
-
-        description:
-          "Activate your HoodWallet first to unlock Ping.",
-
-        href:
-          "/hoodos",
-
-        action:
-          "ACTIVATE HOODWALLET",
-      };
-    }
-
-    return {
-      status:
-        "○ UNAVAILABLE",
-
-      description:
-        "Ping is not currently available.",
-
-      href:
-        "/hoodos",
-
-      action:
-        "OPEN HOODWALLET",
-    };
-  }
-
-  return {
-    status:
-      milestone.completed
-        ? "● COMPLETE"
-        : "○ NOT COMPLETE",
-
-    description:
-      milestone.description,
-
-    href:
-      milestone.href,
-
-    action:
-      milestone.cta,
-  };
+function storageKey(owner: string) {
+  return `och-journey-pending-v1:${owner.toLowerCase()}`;
 }
 
-/*//////////////////////////////////////////////////////////////
-                          ARTWORK
-//////////////////////////////////////////////////////////////*/
+function readPending(owner?: string | null): PendingMap {
+  if (!owner || typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem(storageKey(owner)) || "{}") as PendingMap;
+  } catch {
+    return {};
+  }
+}
 
-function HoodieArtwork({
-  hoodie,
+function milestoneId(m: JourneyMilestone) {
+  if (m.key === "hoodWalletActivated") return IDS.hoodWalletActivated;
+  if (m.key === "hoodTalkSpoken") return IDS.hoodTalkSpoken;
+  if (m.key === "pingClaimed") return IDS.pingClaimed;
+  return m.milestoneId;
+}
+
+function task(m: JourneyMilestone, j: JourneyResponse) {
+  if (m.key === "hoodWalletActivated") {
+    return j.hoodWallet.active
+      ? { status: "● WALLET ACTIVE", text: "Your HoodWallet is active and ready.", href: "/hoodwallet", cta: "OPEN HOODWALLET" }
+      : { status: "○ NOT ACTIVATED", text: "Activate your HoodWallet to use your Hoodie onchain.", href: "/hoodwallet", cta: "ACTIVATE HOODWALLET" };
+  }
+  if (m.key === "hoodTalkSpoken") {
+    return m.completed
+      ? { status: "● SPOKEN ONCHAIN", text: "Your Hoodie has already spoken onchain.", href: "/hoodtalk", cta: "OPEN HOOD TALK" }
+      : { status: "○ NOT SPOKEN", text: "Give your Hoodie a permanent voice onchain.", href: "/hoodtalk", cta: "OPEN HOOD TALK" };
+  }
+  if (m.key === "pingClaimed") {
+    if (j.ping.state === "home") return { status: "● PING IS HOME", text: `Ping #${j.tokenId} lives inside this HoodWallet.`, href: "/hoodwallet", cta: "OPEN HOODWALLET" };
+    if (j.ping.state === "away") return { status: "○ PING IS AWAY", text: `Ping #${j.tokenId} was claimed, but no longer lives here.`, href: "/hoodwallet", cta: "OPEN HOODWALLET" };
+    if (j.ping.state === "available") return { status: "○ READY TO CLAIM", text: `Ping #${j.tokenId} is waiting for this Hoodie.`, href: "/hoodwallet", cta: `CLAIM PING #${j.tokenId}` };
+    return { status: "○ LOCKED", text: "Activate your HoodWallet first to unlock Ping.", href: "/hoodwallet", cta: "ACTIVATE HOODWALLET" };
+  }
+  return { status: m.completed ? "● READY" : "○ NOT DONE", text: m.description, href: m.href, cta: m.cta };
+}
+
+function MilestoneVisual({
+  milestone,
 }: {
-  hoodie:
-    OwnedHoodie;
+  milestone:
+    JourneyMilestone;
 }) {
-  const [
-    failed,
-    setFailed,
-  ] =
-    useState(false);
-
+  /*
+   * Page UI:
+   *
+   * HoodWallet  -> Pixelarticons Wallet
+   * Hood Talk   -> Pixelarticons CommentText
+   * Ping        -> our Ping PNG
+   * Unknown     -> Pixelarticons Flag fallback
+   */
   if (
-    failed
+    milestone.key ===
+    "hoodWalletActivated"
   ) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-black text-[#ccff00]">
+      <Wallet
+        width={56}
+        height={56}
+        aria-hidden="true"
+      />
+    );
+  }
 
-        <p className="text-[7px] uppercase tracking-[0.14em]">
-          Artwork unavailable
-        </p>
+  if (
+    milestone.key ===
+    "hoodTalkSpoken"
+  ) {
+    return (
+      <CommentText
+        width={56}
+        height={56}
+        aria-hidden="true"
+      />
+    );
+  }
 
-      </div>
+  if (
+    milestone.key ===
+    "pingClaimed"
+  ) {
+    return (
+      <Image
+        unoptimized
+        src="/journey/ping.png"
+        alt="Ping"
+        width={64}
+        height={64}
+        className="h-16 w-16 object-contain"
+      />
     );
   }
 
   return (
+    <Flag
+      width={56}
+      height={56}
+      aria-hidden="true"
+    />
+  );
+}
+
+/*
+ * Canvas cannot render React components directly.
+ *
+ * These files are the exact raw SVG equivalents from
+ * the installed pixelarticons package:
+ *
+ * public/journey/wallet.svg
+ * public/journey/comment-text.svg
+ * public/journey/check.svg
+ *
+ * Ping keeps using:
+ * public/journey/ping.png
+ */
+function shareIconSource(
+  milestone:
+    JourneyMilestone,
+) {
+  if (
+    milestone.key ===
+    "hoodWalletActivated"
+  ) {
+    return "/journey/wallet.svg";
+  }
+
+  if (
+    milestone.key ===
+    "hoodTalkSpoken"
+  ) {
+    return "/journey/comment-text.svg";
+  }
+
+  if (
+    milestone.key ===
+    "pingClaimed"
+  ) {
+    return "/journey/ping.png";
+  }
+
+  return null;
+}
+
+function HoodieArtwork({ hoodie }: { hoodie: OwnedHoodie }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <div className="flex h-full items-center justify-center bg-black text-[7px] text-[#ccff00]">ARTWORK UNAVAILABLE</div>;
+  return (
     <Image
       unoptimized
-
-      src={
-        tokenArtwork(
-          hoodie.tokenId,
-        )
-      }
-
-      alt={
-        hoodie.name ||
-        `OnChainHoodie #${hoodie.tokenId}`
-      }
-
-      width={
-        500
-      }
-
-      height={
-        500
-      }
-
-      onError={() =>
-        setFailed(
-          true,
-        )
-      }
-
+      src={art(hoodie.tokenId)}
+      alt={hoodie.name || `OnChainHoodie #${hoodie.tokenId}`}
+      width={500}
+      height={500}
+      onError={() => setFailed(true)}
       className="h-full w-full object-cover"
     />
   );
 }
 
-/*//////////////////////////////////////////////////////////////
-                         HOODIE TILE
-//////////////////////////////////////////////////////////////*/
-
-function HoodieTile({
-  hoodie,
-  selected,
-  active,
-  onSelect,
-}: {
-  hoodie:
-    OwnedHoodie;
-
-  selected:
-    boolean;
-
-  active:
-    boolean;
-
-  onSelect:
-    () => void;
+function HoodieTile({ hoodie, selected, active, onSelect }: {
+  hoodie: OwnedHoodie;
+  selected: boolean;
+  active: boolean;
+  onSelect: () => void;
 }) {
   return (
-    <button
-      type="button"
-
-      onClick={
-        onSelect
-      }
-
-      className="w-[150px] shrink-0 text-left sm:w-[165px] md:w-[180px]"
-    >
-      <div
-        className={`relative border border-[var(--hood-fg)] ${
-          selected
-            ? "outline outline-2 outline-offset-2 outline-[var(--hood-fg)]"
-            : ""
-        }`}
-      >
-
-        {/* ACTIVE BADGE */}
-
-        {active && (
-
-          <div className="absolute right-2 top-2 z-10 bg-black px-2 py-1 text-[6px] uppercase tracking-[0.12em] text-[#ccff00]">
-            ● Active
-          </div>
-
-        )}
-
-        <div className="aspect-square bg-[#ccff00]">
-
-          <HoodieArtwork
-            hoodie={
-              hoodie
-            }
-          />
-
+    <button type="button" onClick={onSelect} className="w-[160px] shrink-0 text-left md:w-[180px]">
+      <div className={`relative border border-[var(--hood-fg)] ${selected ? "outline outline-2 outline-offset-2 outline-[var(--hood-fg)]" : ""}`}>
+        {active && <div className="absolute right-2 top-2 z-10 bg-black px-2 py-1 text-[6px] uppercase tracking-[0.12em] text-[#ccff00]">● Wallet active</div>}
+        <div className="aspect-square bg-[#ccff00]"><HoodieArtwork hoodie={hoodie} /></div>
+        <div className={`border-t border-[var(--hood-fg)] px-3 py-2 ${selected ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}>
+          <p className="text-[6px] uppercase opacity-60">Hoodie</p>
+          <p className="mt-1 text-[13px]">#{hoodie.tokenId}</p>
         </div>
-
-        <div
-          className={`border-t border-[var(--hood-fg)] px-3 py-2 ${
-            selected
-              ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
-              : ""
-          }`}
-        >
-
-          <p className="text-[6px] uppercase tracking-[0.12em] opacity-60">
-            Hoodie
-          </p>
-
-          <p className="mt-1 text-[13px]">
-            #
-            {
-              hoodie.tokenId
-            }
-          </p>
-
-        </div>
-
       </div>
     </button>
   );
 }
 
-/*//////////////////////////////////////////////////////////////
-                       JOURNEY ROW
-//////////////////////////////////////////////////////////////*/
+function celebrate() {
+  /*
+   * One clean full-screen celebration.
+   * No looping cannons, no repeated bursts.
+   */
+  void confetti({
+    particleCount:
+      115,
+
+    spread:
+      135,
+
+    startVelocity:
+      58,
+
+    gravity:
+      0.8,
+
+    scalar:
+      1.05,
+
+    ticks:
+      190,
+
+    origin: {
+      x:
+        0.5,
+
+      y:
+        0.55,
+    },
+
+    colors: [
+      "#ccff00",
+      "#ff375f",
+      "#ff9f0a",
+      "#ffd60a",
+      "#30d158",
+      "#64d2ff",
+      "#0a84ff",
+      "#bf5af2",
+      "#ffffff",
+    ],
+
+    disableForReducedMotion:
+      true,
+  });
+}
+
+function decodeBase64Utf8(value: string) {
+  const binary =
+    window.atob(value);
+
+  const bytes =
+    Uint8Array.from(
+      binary,
+      character =>
+        character.charCodeAt(0),
+    );
+
+  return new TextDecoder().decode(
+    bytes,
+  );
+}
+
+function decodeJsonDataUri(uri: string) {
+  const comma =
+    uri.indexOf(",");
+
+  if (
+    comma ===
+    -1
+  ) {
+    throw new Error(
+      "Invalid tokenURI data URI.",
+    );
+  }
+
+  const header =
+    uri.slice(
+      0,
+      comma,
+    );
+
+  const body =
+    uri.slice(
+      comma + 1,
+    );
+
+  if (
+    header.includes(
+      ";base64",
+    )
+  ) {
+    return decodeBase64Utf8(
+      body,
+    );
+  }
+
+  return decodeURIComponent(
+    body,
+  );
+}
+
+async function resolveTokenImageFromChain(
+  provider:
+    JsonRpcProvider,
+
+  contractAddress:
+    string,
+
+  tokenId:
+    string,
+) {
+  const contract =
+    new Contract(
+      contractAddress,
+      ERC721_METADATA_ABI,
+      provider,
+    );
+
+  const tokenUri =
+    String(
+      await contract.tokenURI(
+        BigInt(
+          tokenId,
+        ),
+      ),
+    );
+
+  let metadata:
+    Record<string, unknown>;
+
+  if (
+    tokenUri.startsWith(
+      "data:application/json",
+    )
+  ) {
+    metadata =
+      JSON.parse(
+        decodeJsonDataUri(
+          tokenUri,
+        ),
+      ) as Record<
+        string,
+        unknown
+      >;
+  } else {
+    const response =
+      await fetch(
+        tokenUri,
+        {
+          cache:
+            "no-store",
+        },
+      );
+
+    if (
+      !response.ok
+    ) {
+      throw new Error(
+        "Unable to load token metadata.",
+      );
+    }
+
+    metadata =
+      await response.json() as Record<
+        string,
+        unknown
+      >;
+  }
+
+  /*
+   * Ping metadata uses `image_data` because the artwork
+   * itself is fully onchain SVG data.
+   *
+   * Keep `image` as a fallback for normal ERC-721 metadata.
+   */
+  const image =
+  typeof metadata.image_data === "string"
+    ? metadata.image_data
+    : typeof metadata.image === "string"
+      ? metadata.image
+      : null;
+
+if (!image) {
+  throw new Error(
+    "Token metadata has no image or image_data.",
+  );
+}
+
+return image;
+}
+
+async function loadCanvasImage(
+  source:
+    string,
+) {
+  /*
+   * Fetch first, then decode through a Blob URL.
+   *
+   * This handles all artwork types used by Journey:
+   * - /journey/wallet.svg
+   * - /journey/comment-text.svg
+   * - /journey/check.svg
+   * - /journey/ping.png
+   * - OnChainHoodies SVG URLs
+   * - data:image/svg+xml;base64,... from Ping tokenURI()
+   * - /api/nft-image?... responses
+   */
+  const response =
+    await fetch(
+      source,
+      {
+        cache:
+          "no-store",
+      },
+    );
+
+  if (
+    !response.ok
+  ) {
+    throw new Error(
+      `Unable to load artwork (${response.status}).`,
+    );
+  }
+
+  const blob =
+    await response.blob();
+
+  const objectUrl =
+    URL.createObjectURL(
+      blob,
+    );
+
+  try {
+    const image =
+      await new Promise<HTMLImageElement>(
+        (
+          resolve,
+          reject,
+        ) => {
+          const element =
+            new window.Image();
+
+          element.onload =
+            () => {
+              resolve(
+                element,
+              );
+            };
+
+          element.onerror =
+            () => {
+              reject(
+                new Error(
+                  "Unable to decode artwork.",
+                ),
+              );
+            };
+
+          element.src =
+            objectUrl;
+        },
+      );
+
+    return image;
+  } finally {
+    /*
+     * Keep the Blob URL alive long enough for drawImage().
+     */
+    window.setTimeout(
+      () => {
+        URL.revokeObjectURL(
+          objectUrl,
+        );
+      },
+      5000,
+    );
+  }
+}
+
+function wrapCanvasText(
+  ctx:
+    CanvasRenderingContext2D,
+
+  text:
+    string,
+
+  x:
+    number,
+
+  y:
+    number,
+
+  maxWidth:
+    number,
+
+  lineHeight:
+    number,
+
+  maxLines:
+    number,
+) {
+  const words =
+    text.trim().split(
+      /\s+/,
+    );
+
+  const lines:
+    string[] =
+    [];
+
+  let line =
+    "";
+
+  for (
+    const word of words
+  ) {
+    const test =
+      line
+        ? `${line} ${word}`
+        : word;
+
+    if (
+      ctx.measureText(
+        test,
+      ).width >
+        maxWidth &&
+      line
+    ) {
+      lines.push(
+        line,
+      );
+
+      line =
+        word;
+
+      if (
+        lines.length ===
+        maxLines - 1
+      ) {
+        break;
+      }
+    } else {
+      line =
+        test;
+    }
+  }
+
+  if (
+    line &&
+    lines.length <
+      maxLines
+  ) {
+    lines.push(
+      line,
+    );
+  }
+
+  lines.forEach(
+    (
+      current,
+      index,
+    ) => {
+      ctx.fillText(
+        current,
+        x,
+        y +
+          index *
+            lineHeight,
+      );
+    },
+  );
+}
+
+async function makeShareCard({
+  tokenId,
+  milestone,
+  journey,
+  provider,
+}: {
+  tokenId:
+    string;
+
+  milestone:
+    JourneyMilestone;
+
+  journey:
+    JourneyResponse;
+
+  provider:
+    JsonRpcProvider;
+}) {
+  await document.fonts.ready;
+
+  const canvas =
+    document.createElement(
+      "canvas",
+    );
+
+  canvas.width =
+    1200;
+
+  canvas.height =
+    1200;
+
+  const ctx =
+    canvas.getContext(
+      "2d",
+    );
+
+  if (
+    !ctx
+  ) {
+    throw new Error(
+      "Canvas unavailable.",
+    );
+  }
+
+  const ink =
+    "#ccff00";
+
+  const background =
+    "#000000";
+
+  const font =
+    getComputedStyle(
+      document.body,
+    ).fontFamily ||
+    "monospace";
+
+  const shareTitle =
+    (
+      milestone.title?.trim() ||
+      milestone.name?.trim() ||
+      milestone.app?.replaceAll(
+        "_",
+        " ",
+      ).trim() ||
+      "JOURNEY"
+    ).toUpperCase();
+
+  ctx.fillStyle =
+    background;
+
+  ctx.fillRect(
+    0,
+    0,
+    1200,
+    1200,
+  );
+
+  ctx.strokeStyle =
+    ink;
+
+  ctx.lineWidth =
+    8;
+
+  ctx.strokeRect(
+    36,
+    36,
+    1128,
+    1128,
+  );
+
+  /*
+   * HOOD IT is the brand statement.
+   *
+   * We intentionally removed the duplicate
+   * ONCHAINHOODIES label from the top.
+   */
+  ctx.fillStyle =
+    ink;
+
+  ctx.font =
+    `700 142px ${font}`;
+
+  ctx.fillText(
+    "HOOD IT",
+    70,
+    215,
+  );
+
+  /*
+   * Use the exact same icon language as the page.
+   *
+   * The page uses React Pixelarticons.
+   * The generated PNG uses the matching raw SVG files.
+   */
+  const milestoneIconSource =
+    shareIconSource(
+      milestone,
+    );
+
+  if (
+    milestoneIconSource
+  ) {
+    const milestoneIcon =
+      await loadCanvasImage(
+        milestoneIconSource,
+      );
+
+    ctx.drawImage(
+      milestoneIcon,
+      910,
+      82,
+      180,
+      180,
+    );
+  }
+
+  ctx.font =
+    `700 38px ${font}`;
+
+  ctx.fillText(
+    shareTitle,
+    74,
+    320,
+  );
+
+  /*
+   * Main artwork.
+   *
+   * HoodWallet + Hood Talk:
+   *   Hoodie artwork.
+   *
+   * Ping:
+   *   the ACTUAL matching Ping NFT artwork from
+   *   Ping.tokenURI(tokenId) over RPC.
+   */
+  let mainArtworkSource =
+    art(
+      tokenId,
+    );
+
+  if (
+    milestone.key ===
+    "pingClaimed"
+  ) {
+    const onchainImage =
+      await resolveTokenImageFromChain(
+        provider,
+        PING_CONTRACT,
+        String(
+          journey.ping.tokenId ||
+          tokenId,
+        ),
+      );
+
+    /*
+     * Ping is fully onchain and normally returns:
+     *
+     * data:image/svg+xml;base64,...
+     *
+     * Load that directly through loadCanvasImage().
+     * For a normal remote URL, use the existing image proxy.
+     */
+    mainArtworkSource =
+      onchainImage.startsWith(
+        "data:image/",
+      )
+        ? onchainImage
+        : `/api/nft-image?url=${encodeURIComponent(
+            onchainImage,
+          )}`;
+  }
+
+  const mainArtwork =
+    await loadCanvasImage(
+      mainArtworkSource,
+    );
+
+  ctx.fillStyle =
+    ink;
+
+  ctx.fillRect(
+    72,
+    390,
+    590,
+    590,
+  );
+
+  ctx.drawImage(
+    mainArtwork,
+    72,
+    390,
+    590,
+    590,
+  );
+
+  /*
+   * Identity belongs directly under the artwork.
+   */
+  ctx.font =
+    `700 28px ${font}`;
+
+  ctx.fillText(
+    `ONCHAINHOODIES #${tokenId}`,
+    72,
+    1035,
+  );
+
+  /*
+   * Exact Pixelarticons checkmark.
+   * Same icon family as the Journey page.
+   */
+  const checkIcon =
+    await loadCanvasImage(
+      "/journey/check.svg",
+    );
+
+  ctx.drawImage(
+    checkIcon,
+    720,
+    430,
+    52,
+    52,
+  );
+
+  ctx.font =
+    `700 28px ${font}`;
+
+  ctx.fillText(
+    "IN JOURNEY",
+    790,
+    468,
+  );
+
+  /*
+   * Personal copy is milestone-specific.
+   */
+  let personalCopy =
+    "A NEW CHAPTER ONCHAIN.";
+
+  if (
+    milestone.key ===
+    "hoodWalletActivated"
+  ) {
+    personalCopy =
+      "MY HOODIE HAS ITS OWN WALLET.";
+  }
+
+  if (
+    milestone.key ===
+    "pingClaimed"
+  ) {
+    personalCopy =
+      journey.ping.state ===
+        "home"
+        ? "PING IS HOME."
+        : "PING JOINED MY HOODIE'S JOURNEY.";
+  }
+
+  if (
+    milestone.key ===
+    "hoodTalkSpoken"
+  ) {
+    const quote =
+      journey.hoodTalk.latest?.quote?.trim();
+
+    personalCopy =
+      quote
+        ? `“${quote}”`
+        : "MY HOODIE SPOKE ONCHAIN.";
+  }
+
+  ctx.font =
+    `700 38px ${font}`;
+
+  wrapCanvasText(
+    ctx,
+    personalCopy,
+    720,
+    585,
+    410,
+    52,
+    7,
+  );
+
+  ctx.font =
+    `400 20px ${font}`;
+
+  ctx.fillText(
+    "ROBINHOOD CHAIN",
+    720,
+    1018,
+  );
+
+  const blob =
+    await new Promise<Blob>(
+      (
+        resolve,
+        reject,
+      ) => {
+        canvas.toBlob(
+          result =>
+            result
+              ? resolve(
+                  result,
+                )
+              : reject(
+                  new Error(
+                    "PNG render failed.",
+                  ),
+                ),
+          "image/png",
+        );
+      },
+    );
+
+  return {
+    url:
+      URL.createObjectURL(
+        blob,
+      ),
+
+    filename:
+      `hood-it-${tokenId}-${milestone.key}.png`,
+  };
+}
 
 function JourneyRow({
   milestone,
   journey,
+  checkedIn,
   checkingIn,
-  onCheckIn,
+  sharing,
+  onHoodIt,
+  onShare,
 }: {
   milestone:
     JourneyMilestone;
@@ -792,835 +1054,415 @@ function JourneyRow({
   journey:
     JourneyResponse;
 
+  checkedIn:
+    boolean;
+
   checkingIn:
     boolean;
 
-  onCheckIn:
+  sharing:
+    boolean;
+
+  onHoodIt:
     (
-      milestone:
+      m:
+        JourneyMilestone,
+    ) => void;
+
+  onShare:
+    (
+      m:
         JourneyMilestone,
     ) => void;
 }) {
-  const task =
-    milestoneAction(
-      milestone,
-      journey,
-    );
-
-  const checkedIn =
-    milestone.recorded;
-
-  /*
-   * Underlying action must be true.
-   *
-   * Journey also requires an active canonical
-   * HoodWallet to execute verifyAndRecord().
-   */
-
-  const canCheckIn =
-    milestone.completed &&
-    journey.hoodWallet.active &&
-    !checkedIn;
+  const t = task(milestone, journey);
+  const canHoodIt = milestone.completed && journey.hoodWallet.active && !checkedIn;
 
   return (
-    <article
-      className={`border border-[var(--hood-fg)] transition-colors ${
-        checkedIn
-          ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
-          : ""
-      }`}
-    >
-
-      <div className="grid gap-5 p-5 lg:grid-cols-[180px_minmax(0,1fr)_220px] lg:items-center">
-
-        {/* NAME */}
+    <article className={`border border-[var(--hood-fg)] transition-colors ${checkedIn ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}>
+      <div className="grid gap-5 p-5 md:grid-cols-[84px_220px_minmax(0,1fr)_185px] md:items-center">
+        <div
+          className={`flex h-[80px] w-[80px] items-center justify-center border ${
+            checkedIn
+              ? "border-[var(--hood-bg)]"
+              : "border-[var(--hood-fg)]"
+          }`}
+        >
+         <MilestoneVisual
+  milestone={
+    milestone
+  }
+/>
+        </div>
 
         <div>
-
           <p className="text-[7px] uppercase tracking-[0.16em] opacity-55">
-            {
-              milestone.app
-            }
+            {milestone.app?.replaceAll("_", " ") || "OCH"}
           </p>
 
-          <h3 className="mt-2 text-2xl tracking-[-0.035em]">
-            {
-              milestone.title
-            }
+          <h3 className="mt-2 text-[24px] uppercase leading-none tracking-[-0.035em]">
+            {milestone.title || milestone.name || milestone.app || "Journey"}
           </h3>
-
         </div>
-
-        {/* STATUS */}
 
         <div>
+          <div className="flex items-center gap-2 text-[14px] uppercase tracking-[0.035em]">
+            {checkedIn ? (
+              <>
+                <Check
+                  width={24}
+                  height={24}
+                  aria-hidden="true"
+                  className="shrink-0"
+                />
+                <span>ALREADY PART OF THE STORY</span>
+              </>
+            ) : (
+              <span>{t.status}</span>
+            )}
+          </div>
 
-          <p className="text-[11px] uppercase tracking-[0.05em]">
-            {checkedIn
-              ? "✓ TASK COMPLETED"
-              : task.status}
+          <p className="mt-2 text-[8px] uppercase leading-relaxed opacity-65">
+            {checkedIn ? `${milestone.name} is in Hoodie #${journey.tokenId}'s Journey.` : t.text}
           </p>
-
-          <p className="mt-2 max-w-2xl text-[8px] uppercase leading-relaxed opacity-60">
-            {checkedIn
-              ? `${milestone.name} is now part of Hoodie #${journey.tokenId}'s Journey.`
-              : task.description}
-          </p>
-
-          {!checkedIn && (
-
-            <Link
-              href={
-                task.href
-              }
-
-              className="mt-3 inline-block text-[7px] uppercase tracking-[0.12em] underline underline-offset-4"
-            >
-              {
-                task.action
-              } →
-            </Link>
-
-          )}
-
+          {!checkedIn && <Link href={t.href} className="mt-2 inline-block text-[7px] uppercase underline underline-offset-4">{t.cta} →</Link>}
         </div>
-
-        {/* CHECK IN */}
-
-        <div className="lg:text-right">
-
+        <div className="md:text-right">
           {checkedIn ? (
-
-            <div className="inline-flex min-h-[52px] w-full items-center justify-center border border-[var(--hood-bg)] px-4 text-[8px] uppercase tracking-[0.15em] lg:w-[200px]">
-              ✓ Checked in
-            </div>
-
-          ) : (
-
             <button
               type="button"
 
               disabled={
-                !canCheckIn ||
-                checkingIn
+                sharing
               }
 
               onClick={() =>
-                onCheckIn(
+                onShare(
                   milestone,
                 )
               }
 
-              className={`min-h-[52px] w-full border px-4 text-[8px] uppercase tracking-[0.15em] lg:w-[200px] ${
-                canCheckIn
-                  ? "border-[var(--hood-fg)] bg-[var(--hood-fg)] text-[var(--hood-bg)]"
-                  : "border-[var(--hood-fg)] opacity-30"
-              } disabled:cursor-not-allowed`}
+              className="min-h-[48px] w-full border border-[var(--hood-bg)] px-4 text-[9px] uppercase tracking-[0.18em] transition-opacity hover:opacity-70 disabled:cursor-wait disabled:opacity-50 md:w-[165px]"
             >
-              {checkingIn
-                ? "Checking in…"
-                : canCheckIn
-                  ? "Check in"
-                  : milestone.completed &&
-                      !journey.hoodWallet.active
-                    ? "Activate wallet first"
-                    : "Check in"}
+              {sharing
+                ? "Generating…"
+                : "Save PNG"}
             </button>
-
+          ) : (
+            <button
+              type="button"
+              disabled={!canHoodIt || checkingIn}
+              onClick={() => onHoodIt(milestone)}
+              className={`min-h-[48px] w-full border px-4 text-[9px] uppercase tracking-[0.18em] md:w-[165px] ${canHoodIt ? "border-[var(--hood-fg)] bg-[var(--hood-fg)] text-[var(--hood-bg)]" : "border-[var(--hood-fg)] opacity-25"} disabled:cursor-not-allowed`}
+            >
+              {checkingIn ? "Hooding it…" : canHoodIt ? "Hood it" : milestone.completed && !journey.hoodWallet.active ? "Activate first" : "Hood it"}
+            </button>
           )}
-
         </div>
-
       </div>
-
     </article>
   );
 }
 
-/*//////////////////////////////////////////////////////////////
-                              PAGE
-//////////////////////////////////////////////////////////////*/
+
+function StatsPanel({ stats, loading }: { stats: JourneyStats | null; loading: boolean }) {
+  if (loading) return <div className="border border-[var(--hood-fg)] p-8 text-center text-[8px] uppercase">Reading Journey stats…</div>;
+  if (!stats) return <div className="border border-[var(--hood-fg)] p-8 text-center text-[8px] uppercase">Stats unavailable.</div>;
+
+  const cards = [
+    ["Wallets active", stats.hoodWallet?.currentlyActive ?? stats.milestones?.hoodWalletActivated?.historicalCount ?? 0],
+    ["Hoodies spoken", stats.milestones?.hoodTalkSpoken?.historicalCount ?? 0],
+    ["Ping claimed", stats.ping?.claimed ?? stats.milestones?.pingClaimed?.historicalCount ?? 0],
+    ["Ping home", stats.ping?.home ?? 0],
+    ["Ping away", stats.ping?.away ?? 0],
+    ["Journey check-ins", stats.totalRecordedCompletions ?? 0],
+  ];
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {cards.map(([label, value]) => (
+        <div key={String(label)} className="border border-[var(--hood-fg)] p-5">
+          <p className="text-[7px] uppercase tracking-[0.15em] opacity-55">{label}</p>
+          <p className="mt-3 text-5xl tracking-[-0.05em]">{Number(value).toLocaleString()}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function JourneyPage() {
-  const {
-    address,
-    connect,
-    ensureRequiredNetwork,
-    getWalletClient,
-  } =
-    useWallet();
+  const { address, connect, ensureRequiredNetwork, getWalletClient } = useWallet();
 
-  /*
-   * Journey starts in DARK mode.
-   */
+  const [darkHood, setDarkHood] = useState(true);
+  const [tab, setTab] = useState<Tab>("journey");
+  const [ownedHoodies, setOwnedHoodies] = useState<OwnedHoodie[]>([]);
+  const [activeHoodies, setActiveHoodies] = useState<Record<string, boolean>>({});
+  const [selectedTokenId, setSelectedTokenId] = useState("");
+  const [journey, setJourney] = useState<JourneyResponse | null>(null);
+  const [stats, setStats] = useState<JourneyStats | null>(null);
+  const [pending, setPending] = useState<PendingMap>({});
+  const [ownershipLoading, setOwnershipLoading] = useState(false);
+  const [ownershipChecked, setOwnershipChecked] = useState(false);
+  const [journeyLoading, setJourneyLoading] = useState(false);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [checkingInKey, setCheckingInKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [sharingKey, setSharingKey] = useState<string | null>(null);
 
-  const [
-    darkHood,
-    setDarkHood,
-  ] =
-    useState(
-      true,
-    );
-
-  const [
-    ownedHoodies,
-    setOwnedHoodies,
-  ] =
-    useState<
-      OwnedHoodie[]
-    >([]);
-
-  const [
-    activeHoodies,
-    setActiveHoodies,
-  ] =
-    useState<
-      Record<
-        string,
-        boolean
-      >
-    >({});
-
-  const [
-    selectedTokenId,
-    setSelectedTokenId,
-  ] =
-    useState("");
-
-  const [
-    journey,
-    setJourney,
-  ] =
-    useState<
-      JourneyResponse | null
-    >(null);
-
-  const [
-    ownershipLoading,
-    setOwnershipLoading,
-  ] =
-    useState(false);
-
-  const [
-    ownershipChecked,
-    setOwnershipChecked,
-  ] =
-    useState(false);
-
-  const [
-    journeyLoading,
-    setJourneyLoading,
-  ] =
-    useState(false);
-
-  const [
-    checkingInKey,
-    setCheckingInKey,
-  ] =
-    useState<
-      string | null
-    >(null);
-
-  const [
-    error,
-    setError,
-  ] =
-    useState<
-      string | null
-    >(null);
-
-  const [
-    success,
-    setSuccess,
-  ] =
-    useState<
-      string | null
-    >(null);
-
-  const railRef =
-    useRef<
-      HTMLDivElement | null
-    >(null);
-
-  /*//////////////////////////////////////////////////////////////
-                           PROVIDER
-  //////////////////////////////////////////////////////////////*/
-
-  const provider =
-    useMemo(
-      () => {
-        if (
-          !siteConfig.rpcUrl
-        ) {
-          return null;
-        }
-
-        return new JsonRpcProvider(
-          siteConfig.rpcUrl,
-
-          Number(
-            siteConfig.chainId,
-          ),
-
-          {
-            staticNetwork:
-              true,
-          },
-        );
-      },
-      [],
-    );
-
-  /*//////////////////////////////////////////////////////////////
-                       LOAD ACTIVE BADGES
-  //////////////////////////////////////////////////////////////*/
-
-  const loadActiveBadges =
-    useCallback(
-      async (
-        hoodies:
-          OwnedHoodie[],
-      ) => {
-        if (
-          !provider ||
-          hoodies.length ===
-            0
-        ) {
-          return;
-        }
-
-        const hoodOS =
-          new Contract(
-            siteConfig.hoodOSAddress,
-
-            HOOD_OS_READ_ABI,
-
-            provider,
-          );
-
-        const result:
-          Record<
-            string,
-            boolean
-          > =
-          {};
-
-        /*
-         * Process small groups so a collector with
-         * 50+ Hoodies doesn't fire everything at once.
-         */
-
-        const chunkSize =
-          10;
-
-        for (
-          let start = 0;
-          start <
-          hoodies.length;
-          start +=
-          chunkSize
-        ) {
-          const chunk =
-            hoodies.slice(
-              start,
-              start +
-                chunkSize,
-            );
-
-          const states =
-            await Promise.all(
-              chunk.map(
-                async (
-                  hoodie,
-                ) => {
-                  try {
-                    const active =
-                      (await hoodOS.isActive(
-                        BigInt(
-                          hoodie.tokenId,
-                        ),
-                      )) as boolean;
-
-                    return [
-                      hoodie.tokenId,
-                      active,
-                    ] as const;
-                  } catch {
-                    return [
-                      hoodie.tokenId,
-                      false,
-                    ] as const;
-                  }
-                },
-              ),
-            );
-
-          for (
-            const [
-              tokenId,
-              active,
-            ] of states
-          ) {
-            result[
-              tokenId
-            ] =
-              active;
-          }
-        }
-
-        setActiveHoodies(
-          result,
-        );
-      },
-      [
-        provider,
-      ],
-    );
-
-  /*//////////////////////////////////////////////////////////////
-                         OWNERSHIP
-  //////////////////////////////////////////////////////////////*/
-
-  const loadOwnership =
-    useCallback(
-      async () => {
-        if (
-          !address
-        ) {
-          setOwnedHoodies(
-            [],
-          );
-
-          setSelectedTokenId(
-            "",
-          );
-
-          setJourney(
-            null,
-          );
-
-          setActiveHoodies(
-            {},
-          );
-
-          setOwnershipChecked(
-            false,
-          );
-
-          return;
-        }
-
-        setOwnershipLoading(
-          true,
-        );
-
-        setOwnershipChecked(
-          false,
-        );
-
-        setError(
-          null,
-        );
-
-        try {
-          const params =
-            new URLSearchParams({
-              owner:
-                address,
-            });
-
-          const response =
-            await fetch(
-              `/api/hoodies?${params.toString()}`,
-
-              {
-                cache:
-                  "no-store",
-              },
-            );
-
-          const payload =
-            (await response.json()) as
-              OwnershipResponse;
-
-          if (
-            !response.ok
-          ) {
-            throw new Error(
-              payload.error ||
-                "Unable to load Hoodie ownership.",
-            );
-          }
-
-          const unique =
-            Array.from(
-              new Map(
-                (
-                  payload.items ||
-                  []
-                ).map(
-                  (
-                    hoodie,
-                  ) => [
-                    String(
-                      hoodie.tokenId,
-                    ),
-
-                    {
-                      ...hoodie,
-
-                      tokenId:
-                        String(
-                          hoodie.tokenId,
-                        ),
-                    },
-                  ],
-                ),
-              ).values(),
-            )
-              .sort(
-                (
-                  left,
-                  right,
-                ) => {
-                  const a =
-                    BigInt(
-                      left.tokenId,
-                    );
-
-                  const b =
-                    BigInt(
-                      right.tokenId,
-                    );
-
-                  return a < b
-                    ? -1
-                    : a > b
-                      ? 1
-                      : 0;
-                },
-              );
-
-          setOwnedHoodies(
-            unique,
-          );
-
-          setSelectedTokenId(
-            (
-              current,
-            ) => {
-              if (
-                current &&
-                unique.some(
-                  (
-                    hoodie,
-                  ) =>
-                    hoodie.tokenId ===
-                    current,
-                )
-              ) {
-                return current;
-              }
-
-              return (
-                unique[0]
-                  ?.tokenId ||
-                ""
-              );
-            },
-          );
-
-          void loadActiveBadges(
-            unique,
-          );
-        } catch (
-          ownershipError
-        ) {
-          console.error(
-            ownershipError,
-          );
-
-          setOwnedHoodies(
-            [],
-          );
-
-          setActiveHoodies(
-            {},
-          );
-
-          setJourney(
-            null,
-          );
-
-          setError(
-            errorMessage(
-              ownershipError,
-
-              "Unable to load Hoodie ownership.",
-            ),
-          );
-        } finally {
-          setOwnershipLoading(
-            false,
-          );
-
-          setOwnershipChecked(
-            true,
-          );
-        }
-      },
-      [
-        address,
-        loadActiveBadges,
-      ],
-    );
+  const provider = useMemo(() => {
+    if (!siteConfig.rpcUrl) return null;
+    return new JsonRpcProvider(siteConfig.rpcUrl, Number(siteConfig.chainId), { staticNetwork: true });
+  }, []);
 
   useEffect(() => {
     let cancelled =
       false;
 
-    queueMicrotask(() => {
-      if (
-        !cancelled
-      ) {
-        void loadOwnership();
-      }
-    });
+    queueMicrotask(
+      () => {
+        if (
+          !cancelled
+        ) {
+          setPending(
+            readPending(
+              address,
+            ),
+          );
+        }
+      },
+    );
 
     return () => {
       cancelled =
         true;
     };
-  }, [
-    loadOwnership,
-  ]);
+  }, [address]);
 
-  /*//////////////////////////////////////////////////////////////
-                          JOURNEY LOAD
-  //////////////////////////////////////////////////////////////*/
-
-  const loadJourney =
-    useCallback(
-      async (
-        tokenIdInput?:
-          string,
-      ) => {
-        const tokenId =
-          tokenIdInput ||
-          selectedTokenId;
-
-        if (
-          !tokenId
-        ) {
-          return;
-        }
-
-        setJourneyLoading(
-          true,
-        );
-
-        setError(
-          null,
-        );
-
+  const updatePending = useCallback((fn: (current: PendingMap) => PendingMap) => {
+    setPending(current => {
+      const next = fn(current);
+      if (address && typeof window !== "undefined") {
         try {
-          const response =
-            await fetch(
-              `${PUBLIC_API}/v1/token/${encodeURIComponent(
-                tokenId,
-              )}/journey`,
+          const key = storageKey(address);
+          if (Object.keys(next).length) localStorage.setItem(key, JSON.stringify(next));
+          else localStorage.removeItem(key);
+        } catch {}
+      }
+      return next;
+    });
+  }, [address]);
 
-              {
-                cache:
-                  "no-store",
+  const loadActiveBadges = useCallback(async (hoodies: OwnedHoodie[]) => {
+    if (!provider || !hoodies.length) return;
+    const hoodOS = new Contract(siteConfig.hoodOSAddress, HOOD_OS_ABI, provider);
+    const result: Record<string, boolean> = {};
 
-                headers: {
-                  accept:
-                    "application/json",
-                },
-              },
-            );
-
-          const payload =
-            (await response.json()) as
-              JourneyResponse & {
-                error?:
-                  string;
-              };
-
-          if (
-            !response.ok
-          ) {
-            throw new Error(
-              payload.error ||
-                `Unable to load Hoodie #${tokenId} Journey.`,
-            );
-          }
-
-          setJourney(
-            payload,
-          );
-
-          setActiveHoodies(
-            (
-              current,
-            ) => ({
-              ...current,
-
-              [
-                tokenId
-              ]:
-                payload
-                  .hoodWallet
-                  .active,
-            }),
-          );
-        } catch (
-          journeyError
-        ) {
-          console.error(
-            journeyError,
-          );
-
-          setJourney(
-            null,
-          );
-
-          setError(
-            errorMessage(
-              journeyError,
-
-              `Unable to load Hoodie #${tokenId} Journey.`,
-            ),
-          );
-        } finally {
-          setJourneyLoading(
-            false,
-          );
+    for (let start = 0; start < hoodies.length; start += 10) {
+      const chunk = hoodies.slice(start, start + 10);
+      const states = await Promise.all(chunk.map(async hoodie => {
+        try {
+          return [hoodie.tokenId, Boolean(await hoodOS.isActive(BigInt(hoodie.tokenId)))] as const;
+        } catch {
+          return [hoodie.tokenId, false] as const;
         }
-      },
-      [
-        selectedTokenId,
-      ],
-    );
+      }));
+      states.forEach(([id, active]) => { result[id] = active; });
+    }
 
-  useEffect(() => {
-    if (
-      !selectedTokenId
-    ) {
+    setActiveHoodies(result);
+  }, [provider]);
+
+  const loadOwnership = useCallback(async () => {
+    if (!address) {
+      setOwnedHoodies([]);
+      setSelectedTokenId("");
+      setJourney(null);
+      setActiveHoodies({});
+      setOwnershipChecked(false);
       return;
     }
 
-    let cancelled =
-      false;
+    setOwnershipLoading(true);
+    setOwnershipChecked(false);
+    setError(null);
 
-    queueMicrotask(() => {
-      if (
-        !cancelled
-      ) {
-        void loadJourney(
-          selectedTokenId,
-        );
-      }
-    });
+    try {
+      const response = await fetch(`/api/hoodies?${new URLSearchParams({ owner: address })}`, { cache: "no-store" });
+      const payload = await response.json() as OwnershipResponse;
+      if (!response.ok) throw new Error(payload.error || "Unable to load Hoodie ownership.");
 
-    return () => {
-      cancelled =
-        true;
-    };
-  }, [
-    selectedTokenId,
-    loadJourney,
-  ]);
+      const unique = Array.from(new Map((payload.items || []).map(hoodie => [
+        String(hoodie.tokenId),
+        { ...hoodie, tokenId: String(hoodie.tokenId) },
+      ])).values()).sort((a, b) => BigInt(a.tokenId) < BigInt(b.tokenId) ? -1 : 1);
 
-  /*//////////////////////////////////////////////////////////////
-                    WAIT FOR TRANSACTION
-  //////////////////////////////////////////////////////////////*/
+      setOwnedHoodies(unique);
+      setSelectedTokenId(current => current && unique.some(h => h.tokenId === current) ? current : unique[0]?.tokenId || "");
+      void loadActiveBadges(unique);
+    } catch (e) {
+      setOwnedHoodies([]);
+      setJourney(null);
+      setError(err(e, "Unable to load Hoodie ownership."));
+    } finally {
+      setOwnershipLoading(false);
+      setOwnershipChecked(true);
+    }
+  }, [address, loadActiveBadges]);
 
-  const waitForHash =
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled) void loadOwnership(); });
+    return () => { cancelled = true; };
+  }, [loadOwnership]);
+
+  const loadJourney = useCallback(async (tokenIdInput?: string) => {
+    const tokenId = tokenIdInput || selectedTokenId;
+    if (!tokenId) return;
+
+    setJourneyLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${API}/v1/token/${encodeURIComponent(tokenId)}/journey`, {
+        cache: "no-store",
+        headers: { accept: "application/json" },
+      });
+      const payload = await response.json() as JourneyResponse & { error?: string };
+      if (!response.ok) throw new Error(payload.error || `Unable to load Hoodie #${tokenId} Journey.`);
+
+      updatePending(current => {
+        const next = { ...current };
+        let changed = false;
+        payload.milestones.forEach(m => {
+          if (m.recorded) {
+            const key = localKey(tokenId, m.key);
+            if (next[key]) {
+              delete next[key];
+              changed = true;
+            }
+          }
+        });
+        return changed ? next : current;
+      });
+
+      setJourney(payload);
+      setActiveHoodies(current => ({ ...current, [tokenId]: payload.hoodWallet.active }));
+    } catch (e) {
+      setJourney(null);
+      setError(err(e, `Unable to load Hoodie #${tokenId} Journey.`));
+    } finally {
+      setJourneyLoading(false);
+    }
+  }, [selectedTokenId, updatePending]);
+
+  useEffect(() => {
+    if (!selectedTokenId) return;
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled) void loadJourney(selectedTokenId); });
+    return () => { cancelled = true; };
+  }, [selectedTokenId, loadJourney]);
+
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true);
+    try {
+      const response = await fetch(`${API}/v1/journey/stats`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Unable to load Journey stats.");
+      setStats(await response.json() as JourneyStats);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
+
+  const openStats =
     useCallback(
-      async (
-        hash:
-          string,
-      ) => {
-        if (
-          !provider
-        ) {
-          throw new Error(
-            "RPC provider unavailable.",
-          );
-        }
-
-        const receipt =
-          await provider.waitForTransaction(
-            hash,
-            1,
-          );
+      () => {
+        setTab(
+          "stats",
+        );
 
         if (
-          !receipt
+          !stats &&
+          !statsLoading
         ) {
-          throw new Error(
-            "Transaction confirmation not found.",
-          );
+          void loadStats();
         }
-
-        if (
-          receipt.status !==
-            1
-        ) {
-          throw new Error(
-            "Transaction reverted.",
-          );
-        }
-
-        return receipt;
       },
       [
-        provider,
+        loadStats,
+        stats,
+        statsLoading,
       ],
     );
 
-  /*//////////////////////////////////////////////////////////////
-                         CHECK IN
-  //////////////////////////////////////////////////////////////*/
+  const waitForHash = useCallback(async (hash: string) => {
+    if (!provider) throw new Error("RPC provider unavailable.");
+    const receipt = await provider.waitForTransaction(hash, 1);
+    if (!receipt || receipt.status !== 1) throw new Error("Transaction reverted.");
+  }, [provider]);
 
-  const checkIn =
+  const hoodIt = useCallback(async (milestone: JourneyMilestone) => {
+    if (!journey?.hoodWallet.address) return;
+
+    const key = localKey(String(journey.tokenId), milestone.key);
+    if (milestone.recorded || pending[key]) return;
+    if (!milestone.completed) return setError("Complete the action first.");
+    if (!journey.hoodWallet.active) return setError("Activate this HoodWallet before you Hood It.");
+
+    try {
+      setError(null);
+      setCheckingInKey(milestone.key);
+
+      await ensureRequiredNetwork();
+      const walletClient = await getWalletClient();
+      const data = JOURNEY_IFACE.encodeFunctionData("verifyAndRecord", [
+        BigInt(journey.tokenId),
+        milestoneId(milestone),
+      ]) as Hex;
+
+      const hash = await walletClient.writeContract({
+        chain: null,
+        address: journey.hoodWallet.address as Address,
+        abi: WALLET_EXECUTE_ABI,
+        functionName: "execute",
+        args: [JOURNEY as Address, BigInt(0), data, CALL],
+        value: BigInt(0),
+        account: account(walletClient.account),
+      });
+
+      await waitForHash(hash);
+
+      // Instant state: no waiting for the hourly indexer.
+      updatePending(current => ({ ...current, [key]: true }));
+      celebrate();
+
+      // Reconcile with the API; pending state remains until recorded=true.
+      window.setTimeout(() => void loadJourney(String(journey.tokenId)), 3000);
+    } catch (e) {
+      setError(err(e, "HOOD IT transaction failed."));
+    } finally {
+      setCheckingInKey(null);
+    }
+  }, [
+    ensureRequiredNetwork,
+    getWalletClient,
+    journey,
+    loadJourney,
+    pending,
+    updatePending,
+    waitForHash,
+  ]);
+
+  const shareMilestone =
     useCallback(
       async (
         milestone:
           JourneyMilestone,
       ) => {
         if (
-          !journey ||
-          !journey.hoodWallet.address
+          !selectedTokenId
         ) {
-          return;
-        }
-
-        if (
-          milestone.recorded
-        ) {
-          return;
-        }
-
-        if (
-          !milestone.completed
-        ) {
-          setError(
-            "Complete the action first.",
-          );
-
-          return;
-        }
-
-        if (
-          !journey.hoodWallet.active
-        ) {
-          setError(
-            "Activate this HoodWallet before checking in.",
-          );
-
           return;
         }
 
@@ -1629,653 +1471,322 @@ export default function JourneyPage() {
             null,
           );
 
-          setSuccess(
-            null,
-          );
-
-          setCheckingInKey(
+          setSharingKey(
             milestone.key,
           );
 
-          await ensureRequiredNetwork();
-
-          const walletClient =
-            await getWalletClient();
-
           /*
-           * Journey verifyAndRecord MUST be called by
-           * the canonical HoodWallet.
-           *
-           * Therefore the connected Hoodie owner calls:
-           *
-           * HoodWallet.execute(
-           *   JourneyRegistry,
-           *   0,
-           *   verifyAndRecord(...),
-           *   CALL
-           * )
+           * Generate the card only when SHARE is pressed.
+           * No modal and no persistent object URL.
            */
+          if (
+            !journey ||
+            !provider
+          ) {
+            throw new Error(
+              "Journey data is not ready yet.",
+            );
+          }
 
-          const journeyData =
-            JOURNEY_INTERFACE.encodeFunctionData(
-              "verifyAndRecord",
+          const card =
+            await makeShareCard({
+              tokenId:
+                selectedTokenId,
 
-              [
-                BigInt(
-                  journey.tokenId,
-                ),
+              milestone,
 
-                journeyMilestoneId(
-                  milestone,
-                ),
-              ],
-            ) as Hex;
+              journey,
 
-          const hash =
-            await walletClient.writeContract({
-              chain:
-                null,
-
-              address:
-                journey
-                  .hoodWallet
-                  .address as Address,
-
-              abi:
-                HOOD_WALLET_EXECUTE_ABI,
-
-              functionName:
-                "execute",
-
-              args: [
-                JOURNEY_REGISTRY as Address,
-
-                BigInt(0),
-
-                journeyData,
-
-                OPERATION_CALL,
-              ],
-
-              value:
-                BigInt(0),
-
-              account:
-                requireWalletAccount(
-                  walletClient.account,
-                ),
+              provider,
             });
 
-          await waitForHash(
-            hash,
-          );
-
           /*
-           * Transaction succeeded, therefore
-           * JourneyRegistry accepted and recorded it.
-           *
-           * Update UI immediately instead of waiting
-           * for the hourly Worker event index.
+           * Direct PNG save.
+           * No macOS / iOS share sheet.
            */
+          const anchor =
+            document.createElement(
+              "a",
+            );
 
-          setJourney(
-            (
-              current,
-            ) => {
-              if (
-                !current
-              ) {
-                return current;
-              }
+          anchor.href =
+            card.url;
 
-              return {
-                ...current,
+          anchor.download =
+            card.filename;
 
-                momentsRecorded:
-                  current
-                    .momentsRecorded +
-                  (
-                    current.milestones.some(
-                      (
-                        item,
-                      ) =>
-                        item.key ===
-                          milestone.key &&
-                        item.recorded,
-                    )
-                      ? 0
-                      : 1
-                  ),
+          anchor.style.display =
+            "none";
 
-                milestones:
-                  current.milestones.map(
-                    (
-                      item,
-                    ) =>
-                      item.key ===
-                      milestone.key
-                        ? {
-                            ...item,
-
-                            recorded:
-                              true,
-
-                            source:
-                              "journey",
-
-                            transactionHash:
-                              hash,
-                          }
-                        : item,
-                  ),
-              };
-            },
+          document.body.appendChild(
+            anchor,
           );
 
-          setSuccess(
-            `${milestone.name} checked into Hoodie #${journey.tokenId}'s Journey.`,
-          );
+          anchor.click();
 
-          /*
-           * Celebration belongs to the CHECK IN.
-           */
-
-          void confetti({
-            particleCount:
-              160,
-
-            spread:
-              100,
-
-            startVelocity:
-              38,
-
-            scalar:
-              0.9,
-
-            ticks:
-              190,
-
-            origin: {
-              y:
-                0.65,
-            },
-
-            disableForReducedMotion:
-              true,
-          });
+          anchor.remove();
 
           window.setTimeout(
             () => {
-              setSuccess(
-                null,
+              URL.revokeObjectURL(
+                card.url,
               );
             },
-            4500,
+            1500,
           );
         } catch (
-          checkInError
+          shareError
         ) {
           console.error(
-            checkInError,
+            shareError,
           );
 
           setError(
-            errorMessage(
-              checkInError,
-
-              "Journey check-in failed.",
+            err(
+              shareError,
+              "Unable to create the HOOD IT card.",
             ),
           );
         } finally {
-          setCheckingInKey(
+          setSharingKey(
             null,
           );
         }
       },
       [
-        ensureRequiredNetwork,
-        getWalletClient,
         journey,
-        waitForHash,
+        provider,
+        selectedTokenId,
       ],
     );
-
-  /*//////////////////////////////////////////////////////////////
-                              UI
-  //////////////////////////////////////////////////////////////*/
 
   return (
     <main
       className="min-h-screen bg-[var(--hood-bg)] text-[var(--hood-fg)]"
-
-      style={
-        {
-          "--hood-bg":
-            darkHood
-              ? "#000000"
-              : "#ccff00",
-
-          "--hood-fg":
-            darkHood
-              ? "#ccff00"
-              : "#000000",
-        } as CSSProperties
-      }
+      style={{
+        "--hood-bg": darkHood ? "#000000" : "#ccff00",
+        "--hood-fg": darkHood ? "#ccff00" : "#000000",
+      } as CSSProperties}
     >
       <SiteHeader />
 
       <section className="mx-auto max-w-[1400px] px-4 pb-24 pt-20 md:px-6 md:pt-24">
-
-        {/* TOP BAR */}
-
         <div className="flex items-center justify-between border-b border-[var(--hood-fg)] pb-3">
-
-          <p className="text-[9px] uppercase tracking-[0.16em]">
-            OnChainHoodies / Journey
-          </p>
-
+          <p className="text-[9px] uppercase tracking-[0.16em]">OnChainHoodies / Hoodie Journey</p>
           <div className="flex items-center gap-4">
-
-            <button
-              type="button"
-
-              onClick={() =>
-                setDarkHood(
-                  (
-                    current,
-                  ) =>
-                    !current,
-                )
-              }
-
-              className="text-[9px] uppercase"
-            >
-              {darkHood
-                ? "Lights on"
-                : "Lights off"}
+            <button type="button" onClick={() => setDarkHood(v => !v)} className="text-[9px] uppercase">
+              {darkHood ? "Lights on" : "Lights off"}
             </button>
-
-            <Link
-              href="/"
-
-              className="text-[9px] uppercase"
-            >
-              Back
-            </Link>
-
+            <Link href="/" className="text-[9px] uppercase">Back</Link>
           </div>
-
         </div>
 
-        {/* SIMPLE HEADER */}
-
-        <div className="border-b border-[var(--hood-fg)] py-8">
-
-          <h1 className="text-5xl leading-none tracking-[-0.055em] md:text-7xl">
-            HOODIE JOURNEY
-          </h1>
-
-          <div className="mt-7 grid gap-3 md:grid-cols-3">
-
-            <div className="border-l border-[var(--hood-fg)] pl-4">
-
-              <p className="text-3xl">
-                1.
+        <div className="border-b border-[var(--hood-fg)] py-7">
+          <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_760px] lg:items-end">
+            <div>
+              <h1 className="text-5xl leading-none tracking-[-0.055em] md:text-7xl">HOODIE JOURNEY</h1>
+              <p className="mt-4 max-w-xl text-sm leading-relaxed opacity-70">
+                Every Hoodie builds a history. See where yours has been — and choose where it goes next.
               </p>
-
-              <p className="mt-2 text-[9px] uppercase tracking-[0.12em]">
-                Pick your Hoodie
-              </p>
-
             </div>
 
-            <div className="border-l border-[var(--hood-fg)] pl-4">
+            <div className="grid gap-6 sm:grid-cols-3">
+              {[
+                [
+                  "1",
+                  "Pick your Hoodie",
+                  "Choose who you want to explore.",
+                ],
 
-              <p className="text-3xl">
-                2.
-              </p>
+                [
+                  "2",
+                  "See its history",
+                  "Discover what it has already done.",
+                ],
 
-              <p className="mt-2 text-[9px] uppercase tracking-[0.12em]">
-                Complete an action
-              </p>
+                [
+                  "3",
+                  "Hood it onchain",
+                  "Add it to the Hoodie’s Journey.",
+                ],
+              ].map(
+                (
+                  [
+                    n,
+                    title,
+                    copy,
+                  ],
+                ) => (
+                  <div
+                    key={
+                      n
+                    }
+                    className="grid grid-cols-[68px_minmax(0,1fr)] items-center gap-4"
+                  >
+                    <div className="flex h-[68px] w-[68px] items-center justify-center bg-[var(--hood-fg)] text-[24px] leading-none text-[var(--hood-bg)]">
+                      {
+                        n
+                      }
+                    </div>
 
+                    <div>
+                      <p className="text-[15px] uppercase leading-none tracking-[0.025em] md:text-[17px]">
+                        {
+                          title
+                        }
+                      </p>
+
+                      <p className="mt-3 max-w-[220px] text-[8px] uppercase leading-relaxed opacity-55">
+                        {
+                          copy
+                        }
+                      </p>
+                    </div>
+                  </div>
+                ),
+              )}
             </div>
-
-            <div className="border-l border-[var(--hood-fg)] pl-4">
-
-              <p className="text-3xl">
-                3.
-              </p>
-
-              <p className="mt-2 text-[9px] uppercase tracking-[0.12em]">
-                Check in onchain
-              </p>
-
-            </div>
-
           </div>
-
-          <p className="mt-7 max-w-3xl text-sm leading-relaxed opacity-65">
-            Every Hoodie builds a history.
-            Discover what yours has already done,
-            what it can do next, and add it to its
-            onchain Journey.
-          </p>
-
         </div>
-
-        {/* CONNECT */}
 
         {!address ? (
-
           <div className="mt-6 border border-[var(--hood-fg)] p-10 text-center">
-
-            <h2 className="text-4xl tracking-[-0.04em]">
-              START YOUR JOURNEY
-            </h2>
-
-            <p className="mt-4 text-[9px] uppercase opacity-60">
-              Connect the wallet holding your Hoodie.
-            </p>
-
-            <button
-              type="button"
-
-              onClick={() =>
-                void connect()
-              }
-
-              className="mt-6 bg-[var(--hood-fg)] px-8 py-4 text-[9px] uppercase tracking-[0.15em] text-[var(--hood-bg)]"
-            >
-              Connect wallet
-            </button>
-
+            <h2 className="text-4xl tracking-[-0.04em]">START YOUR JOURNEY</h2>
+            <p className="mt-4 text-[9px] uppercase opacity-60">Connect the wallet holding your Hoodie.</p>
+            <button type="button" onClick={() => void connect()} className="mt-6 bg-[var(--hood-fg)] px-8 py-4 text-[9px] uppercase tracking-[0.15em] text-[var(--hood-bg)]">Connect wallet</button>
             <div className="mt-7">
-
-              <a
-                href={
-                  OPENSEA_COLLECTION
-                }
-
-                target="_blank"
-
-                rel="noreferrer"
-
-                className="text-[8px] uppercase underline underline-offset-4"
-              >
-                Buy secondary on OpenSea →
-              </a>
-
+              <a href={OPENSEA} target="_blank" rel="noreferrer" className="text-[8px] uppercase underline underline-offset-4">Buy secondary on OpenSea →</a>
             </div>
-
           </div>
-
         ) : ownershipLoading ? (
-
-          <div className="mt-6 border border-[var(--hood-fg)] p-8 text-center">
-
-            <p className="text-[9px] uppercase tracking-[0.14em]">
-              Reading Hoodie ownership…
-            </p>
-
-          </div>
-
-        ) : ownershipChecked &&
-          ownedHoodies.length ===
-            0 ? (
-
+          <div className="mt-6 border border-[var(--hood-fg)] p-8 text-center text-[9px] uppercase">Reading Hoodie ownership…</div>
+        ) : ownershipChecked && ownedHoodies.length === 0 ? (
           <div className="mt-6 border border-[var(--hood-fg)] p-10 text-center">
-
-            <h2 className="text-4xl">
-              START YOUR JOURNEY
-            </h2>
-
-            <p className="mt-4 text-[9px] uppercase opacity-60">
-              No OnChainHoodie found in this wallet.
-            </p>
-
-            <a
-              href={
-                OPENSEA_COLLECTION
-              }
-
-              target="_blank"
-
-              rel="noreferrer"
-
-              className="mt-6 inline-block bg-[var(--hood-fg)] px-8 py-4 text-[9px] uppercase tracking-[0.14em] text-[var(--hood-bg)]"
-            >
-              Buy secondary →
-            </a>
-
+            <h2 className="text-4xl">START YOUR JOURNEY</h2>
+            <p className="mt-4 text-[9px] uppercase opacity-60">No OnChainHoodie found in this wallet.</p>
           </div>
-
         ) : (
-
           <>
-
-            {/* ONE ROW / HORIZONTAL SCROLL */}
-
             <section className="mt-7">
-
               <div className="flex items-end justify-between">
-
-                <div>
-
-                  <p className="text-[7px] uppercase tracking-[0.16em] opacity-50">
-                    Connected collection
-                  </p>
-
-                  <h2 className="mt-2 text-3xl tracking-[-0.04em]">
-                    YOUR HOODIES
-                  </h2>
-
-                </div>
-
-                <p className="text-[7px] uppercase opacity-50">
-                  {
-                    ownedHoodies.length
-                  }{" "}
-                  owned
-                </p>
-
+                <h2 className="text-3xl tracking-[-0.04em]">YOUR HOODIES</h2>
+                <p className="text-[7px] uppercase opacity-50">{ownedHoodies.length} owned</p>
               </div>
 
-              <div
-                ref={
-                  railRef
-                }
-
-                className="mt-4 flex gap-3 overflow-x-auto pb-4 [scrollbar-width:thin]"
-              >
-
-                {ownedHoodies.map(
-                  (
-                    hoodie,
-                  ) => (
-
-                    <HoodieTile
-                      key={
-                        hoodie.tokenId
-                      }
-
-                      hoodie={
-                        hoodie
-                      }
-
-                      selected={
-                        hoodie.tokenId ===
-                        selectedTokenId
-                      }
-
-                      active={
-                        activeHoodies[
-                          hoodie.tokenId
-                        ] ===
-                        true
-                      }
-
-                      onSelect={() => {
-                        setSuccess(
-                          null,
-                        );
-
-                        setError(
-                          null,
-                        );
-
-                        setJourney(
-                          null,
-                        );
-
-                        setSelectedTokenId(
-                          hoodie.tokenId,
-                        );
-                      }}
-                    />
-
-                  ),
-                )}
-
+              <div className="mt-4 flex gap-3 overflow-x-auto pb-4 [scrollbar-width:thin]">
+                {ownedHoodies.map(hoodie => (
+                  <HoodieTile
+                    key={hoodie.tokenId}
+                    hoodie={hoodie}
+                    selected={hoodie.tokenId === selectedTokenId}
+                    active={activeHoodies[hoodie.tokenId] === true}
+                    onSelect={() => {
+                      setError(null);
+                      setJourney(null);
+                      setSelectedTokenId(hoodie.tokenId);
+                    }}
+                  />
+                ))}
               </div>
-
             </section>
-
-            {/* JOURNEY */}
 
             <section className="mt-10">
-
-              <div className="flex items-end justify-between border-b border-[var(--hood-fg)] pb-4">
-
+              <div className="flex flex-col gap-4 border-b border-[var(--hood-fg)] pb-4 md:flex-row md:items-end md:justify-between">
                 <div>
-
-                  <p className="text-[7px] uppercase tracking-[0.16em] opacity-50">
-                    Start your Journey
-                  </p>
-
-                  <h2 className="mt-2 text-4xl tracking-[-0.05em] md:text-5xl">
-                    HOODIE #
-                    {
-                      selectedTokenId
-                    }{" "}
-                    JOURNEY
-                  </h2>
-
+                  <p className="text-[7px] uppercase tracking-[0.16em] opacity-50">Hoodie #{selectedTokenId}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <h2 className="text-4xl tracking-[-0.05em] md:text-5xl">JOURNEY</h2>
+                    {activeHoodies[selectedTokenId] && (
+                      <span className="bg-[var(--hood-fg)] px-3 py-2 text-[6px] uppercase tracking-[0.12em] text-[var(--hood-bg)]">● Wallet active</span>
+                    )}
+                  </div>
                 </div>
 
-                {activeHoodies[
-                  selectedTokenId
-                ] && (
-
-                  <span className="bg-[var(--hood-fg)] px-3 py-2 text-[7px] uppercase tracking-[0.12em] text-[var(--hood-bg)]">
-                    ● HoodWallet active
-                  </span>
-
-                )}
-
+                <div className="grid grid-cols-2 border border-[var(--hood-fg)]">
+                  <button type="button" onClick={() => setTab("journey")} className={`px-6 py-3 text-[7px] uppercase tracking-[0.14em] ${tab === "journey" ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}>Journey</button>
+                  <button type="button" onClick={openStats} className={`border-l border-[var(--hood-fg)] px-6 py-3 text-[7px] uppercase tracking-[0.14em] ${tab === "stats" ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}>Stats</button>
+                </div>
               </div>
 
-              {journeyLoading &&
-              !journey ? (
+              {tab === "journey" ? (
+                journeyLoading && !journey ? (
+                  <div className="mt-4 border border-[var(--hood-fg)] p-8 text-center text-[8px] uppercase">Reading Journey…</div>
+                ) : journey ? (
+                  <div className="mt-4">
+                    <p className="mb-3 text-[8px] uppercase tracking-[0.16em] opacity-60">Already part of the story</p>
+                    <div className="space-y-3">
+                      {journey.milestones
+                        .filter(m => m.recorded || pending[localKey(selectedTokenId, m.key)])
+                        .map(m => (
+                          <JourneyRow
+                            key={m.key}
+                            milestone={m}
+                            journey={journey}
+                            checkedIn
+                            checkingIn={
+                              false
+                            }
+                            sharing={
+                              sharingKey ===
+                              m.key
+                            }
+                            onHoodIt={() => {}}
+                            onShare={item =>
+                              void shareMilestone(
+                                item,
+                              )
+                            }
+                          />
+                        ))}
+                    </div>
 
-                <div className="mt-4 border border-[var(--hood-fg)] p-8 text-center">
-
-                  <p className="text-[8px] uppercase tracking-[0.13em]">
-                    Reading Journey…
-                  </p>
-
+                    <p className="mb-3 mt-8 text-[8px] uppercase tracking-[0.16em] opacity-60">What&apos;s next?</p>
+                    <div className="space-y-3">
+                      {journey.milestones
+                        .filter(m => !m.recorded && !pending[localKey(selectedTokenId, m.key)])
+                        .map(m => (
+                          <JourneyRow
+                            key={m.key}
+                            milestone={m}
+                            journey={journey}
+                            checkedIn={
+                              false
+                            }
+                            checkingIn={
+                              checkingInKey ===
+                              m.key
+                            }
+                            sharing={
+                              false
+                            }
+                            onHoodIt={item =>
+                              void hoodIt(
+                                item,
+                              )
+                            }
+                            onShare={() => {}}
+                          />
+                        ))}
+                    </div>
+                  </div>
+                ) : null
+              ) : (
+                <div className="mt-4">
+                  <StatsPanel stats={stats} loading={statsLoading} />
                 </div>
-
-              ) : journey ? (
-
-                <div className="mt-4 space-y-3">
-
-                  {journey.milestones.map(
-                    (
-                      milestone,
-                    ) => (
-
-                      <JourneyRow
-                        key={
-                          milestone.key
-                        }
-
-                        milestone={
-                          milestone
-                        }
-
-                        journey={
-                          journey
-                        }
-
-                        checkingIn={
-                          checkingInKey ===
-                          milestone.key
-                        }
-
-                        onCheckIn={(
-                          item,
-                        ) =>
-                          void checkIn(
-                            item,
-                          )
-                        }
-                      />
-
-                    ),
-                  )}
-
-                </div>
-
-              ) : null}
-
+              )}
             </section>
-
           </>
-
         )}
-
-        {/* SUCCESS */}
-
-        {success && (
-
-          <div className="fixed bottom-6 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 border border-[#ccff00] bg-black p-5 text-center text-[#ccff00]">
-
-            <p className="text-[7px] uppercase tracking-[0.16em] opacity-55">
-              Journey updated
-            </p>
-
-            <p className="mt-2 text-[10px] uppercase leading-relaxed">
-              {
-                success
-              }
-            </p>
-
-          </div>
-
-        )}
-
-        {/* ERROR */}
 
         {error && (
-
           <div className="mt-5 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-4 text-[var(--hood-bg)]">
-
-            <p className="text-[8px] uppercase leading-relaxed">
-              {
-                error
-              }
-            </p>
-
+            <p className="text-[8px] uppercase leading-relaxed">{error}</p>
           </div>
-
         )}
-
       </section>
 
       <SiteFooter />
-
     </main>
   );
 }
