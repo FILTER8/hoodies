@@ -2,22 +2,81 @@ import {
   NextRequest,
   NextResponse,
 } from "next/server";
+import {
+  Contract,
+  JsonRpcProvider,
+  getAddress,
+  isAddress,
+} from "ethers";
+
+import { siteConfig } from "../../../../lib/config";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 export const runtime = "nodejs";
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+const FETCH_TIMEOUT_MS = 6500;
+
+const ERC721_METADATA_ABI = [
+  "function tokenURI(uint256 tokenId) view returns (string)",
+] as const;
+
+type MetadataLike = {
+  image?: unknown;
+  image_url?: unknown;
+  imageUrl?: unknown;
+  image_data?: unknown;
+  imageData?: unknown;
+  animation_url?: unknown;
+};
+
+type AlchemyMetadataResponse = {
+  image?: {
+    cachedUrl?: string;
+    pngUrl?: string;
+    thumbnailUrl?: string;
+    originalUrl?: string;
+  };
+  raw?: {
+    metadata?: MetadataLike;
+  };
+};
+
+function getAlchemyNftBaseUrl() {
+  const value =
+    process.env.ALCHEMY_NFT_API_BASE_URL?.trim();
+
+  if (!value) {
+    throw new Error(
+      "ALCHEMY_NFT_API_BASE_URL is not configured.",
+    );
+  }
+
+  return value.replace(/\/$/, "");
+}
+
+function getAlchemyApiKey() {
+  const value =
+    process.env.ALCHEMY_API_KEY?.trim();
+
+  if (!value) {
+    throw new Error(
+      "ALCHEMY_API_KEY is not configured.",
+    );
+  }
+
+  return value;
+}
 
 function normalizeDecentralizedUrl(value: string) {
   const trimmed = value.trim();
 
   if (trimmed.startsWith("ipfs://")) {
     let path = trimmed.slice("ipfs://".length);
-
     if (path.startsWith("ipfs/")) {
       path = path.slice("ipfs/".length);
     }
-
     return `https://ipfs.io/ipfs/${path}`;
   }
 
@@ -28,97 +87,82 @@ function normalizeDecentralizedUrl(value: string) {
   return trimmed;
 }
 
-function isBlockedHostname(hostname: string) {
-  const host = hostname.trim().toLowerCase();
+function uniqueStrings(values: unknown[]) {
+  return Array.from(
+    new Set(
+      values
+        .filter(
+          (value): value is string =>
+            typeof value === "string",
+        )
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
+}
 
-  if (
-    !host ||
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host === "0.0.0.0" ||
-    host === "::" ||
-    host === "::1" ||
-    host === "169.254.169.254"
-  ) {
-    return true;
+function decodeBase64Utf8(value: string) {
+  return Buffer.from(value, "base64").toString("utf8");
+}
+
+function decodeJsonDataUri(uri: string) {
+  const comma = uri.indexOf(",");
+  if (comma < 0) {
+    throw new Error("Invalid metadata data URI.");
   }
 
-  const ipv4Match = host.match(
-    /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/,
+  const header = uri.slice(0, comma);
+  const body = uri.slice(comma + 1);
+
+  return header.includes(";base64")
+    ? decodeBase64Utf8(body)
+    : decodeURIComponent(body);
+}
+
+function dataImageResponse(raw: string) {
+  const comma = raw.indexOf(",");
+  if (comma <= 0) {
+    throw new Error("Invalid data image.");
+  }
+
+  const header = raw.slice(5, comma);
+  const payload = raw.slice(comma + 1);
+  const parts = header.split(";");
+  const contentType = parts[0]?.trim() || "image/svg+xml";
+  const base64 = parts.some(
+    (part) => part.toLowerCase() === "base64",
   );
 
-  if (!ipv4Match) {
-    return false;
+  if (!contentType.toLowerCase().startsWith("image/")) {
+    throw new Error("Data URI is not an image.");
   }
 
-  const parts = ipv4Match.slice(1).map(Number);
+  const body = base64
+    ? Buffer.from(payload, "base64")
+    : Buffer.from(decodeURIComponent(payload), "utf8");
 
-  if (
-    parts.some(
-      (part) =>
-        !Number.isInteger(part) ||
-        part < 0 ||
-        part > 255,
-    )
-  ) {
-    return true;
+  if (body.byteLength > MAX_IMAGE_BYTES) {
+    throw new Error("NFT image is too large.");
   }
 
-  const [a, b] = parts;
-
-  if (a === 0 || a === 10 || a === 127 || a >= 224) {
-    return true;
-  }
-
-  if (a === 169 && b === 254) {
-    return true;
-  }
-
-  if (a === 172 && b >= 16 && b <= 31) {
-    return true;
-  }
-
-  if (a === 192 && b === 168) {
-    return true;
-  }
-
-  return false;
+  return new NextResponse(body, {
+    status: 200,
+    headers: {
+      "Content-Type": contentType,
+      "Cache-Control":
+        "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
 
-function normalizeSeaDn(input: URL) {
-  const source = new URL(input.toString());
-  const hostname = source.hostname.toLowerCase();
-
-  if (hostname === "raw2.seadn.io") {
-    source.hostname = "i2.seadn.io";
-  } else if (hostname === "raw.seadn.io") {
-    source.hostname = "i.seadn.io";
-  }
-
-  const finalHost = source.hostname.toLowerCase();
-
-  if (finalHost === "i.seadn.io" || finalHost === "i2.seadn.io") {
-    source.searchParams.set("frame-time", "1");
-    source.searchParams.set("w", "800");
-    source.searchParams.set("h", "800");
-    source.searchParams.set("fit", "contain");
-  }
-
-  return source;
-}
-
-function isImageContentType(contentType: string) {
-  return contentType.toLowerCase().startsWith("image/");
-}
-
-function looksLikeSvg(body: ArrayBuffer) {
+function looksLikeSvg(buffer: ArrayBuffer) {
   try {
     const sample = new Uint8Array(
-      body,
+      buffer,
       0,
-      Math.min(body.byteLength, 2048),
+      Math.min(buffer.byteLength, 2048),
     );
-
     const text = new TextDecoder("utf-8", {
       fatal: false,
     })
@@ -135,167 +179,15 @@ function looksLikeSvg(body: ArrayBuffer) {
   }
 }
 
-function inferImageTypeFromUrl(source: URL) {
-  const pathname = source.pathname.toLowerCase();
-
-  if (pathname.endsWith(".svg")) return "image/svg+xml";
-  if (pathname.endsWith(".png")) return "image/png";
-  if (pathname.endsWith(".jpg") || pathname.endsWith(".jpeg")) {
-    return "image/jpeg";
-  }
-  if (pathname.endsWith(".webp")) return "image/webp";
-  if (pathname.endsWith(".gif")) return "image/gif";
-  if (pathname.endsWith(".avif")) return "image/avif";
-
-  return "";
-}
-
-function dataImageResponse(raw: string) {
-  const commaIndex = raw.indexOf(",");
-
-  if (commaIndex <= 0) {
-    throw new Error("Invalid data image.");
-  }
-
-  const header = raw.slice(5, commaIndex);
-  const payload = raw.slice(commaIndex + 1);
-  const headerParts = header.split(";");
-  const contentType = headerParts[0]?.trim() || "image/svg+xml";
-
-  if (!isImageContentType(contentType)) {
-    throw new Error("Data URL is not an image.");
-  }
-
-  const isBase64 = headerParts.some(
-    (part) => part.trim().toLowerCase() === "base64",
+async function fetchWithTimeout(url: string) {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    FETCH_TIMEOUT_MS,
   );
 
-  let body: ArrayBuffer;
-
-  if (isBase64) {
-    const bytes = Buffer.from(payload, "base64");
-    body = bytes.buffer.slice(
-      bytes.byteOffset,
-      bytes.byteOffset + bytes.byteLength,
-    ) as ArrayBuffer;
-  } else {
-    const bytes = new TextEncoder().encode(
-      decodeURIComponent(payload),
-    );
-    body = bytes.buffer.slice(
-      bytes.byteOffset,
-      bytes.byteOffset + bytes.byteLength,
-    ) as ArrayBuffer;
-  }
-
-  if (body.byteLength > MAX_IMAGE_BYTES) {
-    throw new Error("The NFT image is too large to proxy.");
-  }
-
-  return new NextResponse(body, {
-    status: 200,
-    headers: {
-      "Content-Type": contentType,
-      "Access-Control-Allow-Origin": "*",
-      "Cache-Control":
-        "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
-}
-
-export async function GET(request: NextRequest) {
-  const rawUrl =
-    request.nextUrl.searchParams.get("url")?.trim() || "";
-
-  if (!rawUrl) {
-    return NextResponse.json(
-      {
-        error: "An NFT image URL is required.",
-      },
-      {
-        status: 400,
-      },
-    );
-  }
-
-  if (rawUrl.toLowerCase().startsWith("data:image/")) {
-    try {
-      return dataImageResponse(rawUrl);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to decode NFT image.";
-
-      return NextResponse.json(
-        {
-          error: message,
-        },
-        {
-          status: message.includes("too large") ? 413 : 400,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        },
-      );
-    }
-  }
-
-  const normalized = normalizeDecentralizedUrl(rawUrl);
-  let source: URL;
-
   try {
-    source = new URL(normalized);
-  } catch {
-    return NextResponse.json(
-      {
-        error: "Invalid NFT image URL.",
-      },
-      {
-        status: 400,
-      },
-    );
-  }
-
-  if (source.protocol !== "https:") {
-    return NextResponse.json(
-      {
-        error: "Only HTTPS NFT image URLs are supported.",
-      },
-      {
-        status: 400,
-      },
-    );
-  }
-
-  if (source.username || source.password) {
-    return NextResponse.json(
-      {
-        error: "NFT image URLs containing credentials are not supported.",
-      },
-      {
-        status: 400,
-      },
-    );
-  }
-
-  if (isBlockedHostname(source.hostname)) {
-    return NextResponse.json(
-      {
-        error: "Private NFT image hosts are not supported.",
-      },
-      {
-        status: 400,
-      },
-    );
-  }
-
-  source = normalizeSeaDn(source);
-  const remoteUrl = source.toString();
-
-  try {
-    const response = await fetch(remoteUrl, {
+    return await fetch(url, {
       headers: {
         accept:
           "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
@@ -304,124 +196,238 @@ export async function GET(request: NextRequest) {
       },
       cache: "no-store",
       redirect: "follow",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function remoteImageResponse(rawUrl: string) {
+  const normalized = normalizeDecentralizedUrl(rawUrl);
+
+  if (normalized.toLowerCase().startsWith("data:image/")) {
+    return dataImageResponse(normalized);
+  }
+
+  const source = new URL(normalized);
+  if (source.protocol !== "https:") {
+    throw new Error("Only HTTPS NFT images are supported.");
+  }
+
+  const response = await fetchWithTimeout(source.toString());
+  if (!response.ok) {
+    throw new Error(`NFT image request failed (${response.status}).`);
+  }
+
+  const declared = Number(
+    response.headers.get("content-length") || "0",
+  );
+  if (
+    Number.isFinite(declared) &&
+    declared > MAX_IMAGE_BYTES
+  ) {
+    throw new Error("NFT image is too large.");
+  }
+
+  const body = await response.arrayBuffer();
+  if (body.byteLength > MAX_IMAGE_BYTES) {
+    throw new Error("NFT image is too large.");
+  }
+
+  let contentType =
+    response.headers
+      .get("content-type")
+      ?.split(";")[0]
+      ?.trim()
+      .toLowerCase() || "";
+
+  if (
+    !contentType.startsWith("image/") &&
+    looksLikeSvg(body)
+  ) {
+    contentType = "image/svg+xml";
+  }
+
+  if (!contentType.startsWith("image/")) {
+    throw new Error(
+      `NFT media is not an image (${contentType || "unknown"}).`,
+    );
+  }
+
+  return new NextResponse(body, {
+    status: 200,
+    headers: {
+      "Content-Type": contentType,
+      "Cache-Control":
+        "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+async function fetchAlchemyMetadata(
+  contract: string,
+  tokenId: string,
+) {
+  const base = getAlchemyNftBaseUrl();
+  const key = getAlchemyApiKey();
+  const params = new URLSearchParams({
+    contractAddress: contract,
+    tokenId,
+    refreshCache: "false",
+  });
+
+  const response = await fetch(
+    `${base}/${key}/getNFTMetadata?${params.toString()}`,
+    {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Alchemy NFT metadata request failed (${response.status}).`,
+    );
+  }
+
+  return (await response.json()) as AlchemyMetadataResponse;
+}
+
+function metadataImageCandidates(metadata: MetadataLike | undefined) {
+  if (!metadata) return [];
+
+  return uniqueStrings([
+    metadata.image_data,
+    metadata.imageData,
+    metadata.image,
+    metadata.image_url,
+    metadata.imageUrl,
+  ]);
+}
+
+async function readTokenUriImageCandidates(
+  contractAddress: string,
+  tokenId: string,
+) {
+  if (!siteConfig.rpcUrl) return [];
+
+  const provider = new JsonRpcProvider(
+    siteConfig.rpcUrl,
+    Number(siteConfig.chainId),
+    { staticNetwork: true },
+  );
+
+  const contract = new Contract(
+    contractAddress,
+    ERC721_METADATA_ABI,
+    provider,
+  );
+
+  const tokenUri = String(
+    await contract.tokenURI(BigInt(tokenId)),
+  ).trim();
+
+  let metadata: MetadataLike;
+
+  if (tokenUri.startsWith("data:application/json")) {
+    metadata = JSON.parse(
+      decodeJsonDataUri(tokenUri),
+    ) as MetadataLike;
+  } else {
+    const normalized = normalizeDecentralizedUrl(tokenUri);
+    const response = await fetch(normalized, {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
 
     if (!response.ok) {
-      return NextResponse.json(
-        {
-          error: `Remote NFT image request failed (${response.status}).`,
-        },
-        {
-          status: response.status === 404 ? 404 : 502,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        },
+      throw new Error(
+        `Token metadata request failed (${response.status}).`,
       );
     }
 
-    const declaredLength = Number(
-      response.headers.get("content-length") || "0",
-    );
+    metadata = (await response.json()) as MetadataLike;
+  }
 
-    if (
-      Number.isFinite(declaredLength) &&
-      declaredLength > MAX_IMAGE_BYTES
-    ) {
-      return NextResponse.json(
-        {
-          error: "The NFT image is too large to proxy.",
-        },
-        {
-          status: 413,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        },
-      );
-    }
+  return metadataImageCandidates(metadata);
+}
 
-    const arrayBuffer = await response.arrayBuffer();
+export async function GET(request: NextRequest) {
+  const rawContract =
+    request.nextUrl.searchParams.get("contract")?.trim() || "";
+  const tokenId =
+    request.nextUrl.searchParams.get("tokenId")?.trim() || "";
 
-    if (arrayBuffer.byteLength > MAX_IMAGE_BYTES) {
-      return NextResponse.json(
-        {
-          error: "The NFT image is too large to proxy.",
-        },
-        {
-          status: 413,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        },
-      );
-    }
-
-    let contentType =
-      response.headers
-        .get("content-type")
-        ?.split(";")[0]
-        ?.trim()
-        .toLowerCase() || "";
-
-    if (!isImageContentType(contentType) && looksLikeSvg(arrayBuffer)) {
-      contentType = "image/svg+xml";
-    }
-
-    if (!isImageContentType(contentType)) {
-      const inferred = inferImageTypeFromUrl(source);
-
-      if (inferred) {
-        contentType = inferred;
-      }
-    }
-
-    if (!contentType || !isImageContentType(contentType)) {
-      return NextResponse.json(
-        {
-          error: `Remote media returned ${
-            contentType || "unknown content type"
-          }, not a renderable image.`,
-        },
-        {
-          status: 415,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        },
-      );
-    }
-
-    return new NextResponse(arrayBuffer, {
-      status: 200,
-      headers: {
-        "Content-Type": contentType,
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control":
-          "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",
-        "X-Content-Type-Options": "nosniff",
-        "X-HoodWallet-Image-Source": source.hostname,
-      },
-    });
-  } catch (error) {
-    console.error(
-      `HoodWallet NFT image proxy failed for ${remoteUrl}:`,
-      error,
-    );
-
+  if (!isAddress(rawContract) || !tokenId) {
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to load NFT image.",
-      },
-      {
-        status: 502,
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      },
+      { error: "Valid contract and tokenId are required." },
+      { status: 400 },
     );
   }
+
+  const contract = getAddress(rawContract);
+  const candidates: string[] = [];
+
+  try {
+    const metadata = await fetchAlchemyMetadata(
+      contract,
+      tokenId,
+    );
+
+    candidates.push(
+      ...uniqueStrings([
+        metadata.image?.cachedUrl,
+        metadata.image?.pngUrl,
+        metadata.image?.thumbnailUrl,
+        metadata.image?.originalUrl,
+        ...metadataImageCandidates(metadata.raw?.metadata),
+      ]),
+    );
+  } catch (error) {
+    console.debug(
+      `HoodWallet export Alchemy metadata unavailable for ${contract}:${tokenId}.`,
+      error,
+    );
+  }
+
+  try {
+    candidates.push(
+      ...(await readTokenUriImageCandidates(
+        contract,
+        tokenId,
+      )),
+    );
+  } catch (error) {
+    console.debug(
+      `HoodWallet export tokenURI fallback unavailable for ${contract}:${tokenId}.`,
+      error,
+    );
+  }
+
+  const uniqueCandidates = uniqueStrings(candidates);
+  let lastError: unknown = null;
+
+  for (const candidate of uniqueCandidates) {
+    try {
+      return await remoteImageResponse(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  console.warn(
+    `HoodWallet export image unavailable for ${contract}:${tokenId}.`,
+    lastError,
+  );
+
+  return NextResponse.json(
+    { error: "NFT artwork unavailable." },
+    {
+      status: 404,
+      headers: { "Cache-Control": "no-store" },
+    },
+  );
 }

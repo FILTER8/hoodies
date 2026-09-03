@@ -165,6 +165,8 @@ type HoodWalletNft = {
 
   image?: string;
 
+  imageCandidates?: string[];
+
   balance: string;
 
   kind:
@@ -251,6 +253,8 @@ type InventoryResponse = {
     symbol?: string;
 
     image?: string;
+
+    imageCandidates?: string[];
 
     balance: string;
 
@@ -467,14 +471,6 @@ function explorerAddress(
   )}/address/${address}`;
 }
 
-function explorerToken(
-  address: string,
-) {
-  return `${siteConfig.explorerUrl.replace(
-    /\/$/,
-    "",
-  )}/token/${address}`;
-}
 
 function openSeaWallet(
   address: string,
@@ -567,6 +563,166 @@ function assetKey(
   );
 }
 
+function downloadBlob(
+  blob: Blob,
+  filename: string,
+) {
+  const url =
+    URL.createObjectURL(
+      blob,
+    );
+
+  const anchor =
+    document.createElement(
+      "a",
+    );
+
+  anchor.href =
+    url;
+
+  anchor.download =
+    filename;
+
+  document.body.appendChild(
+    anchor,
+  );
+
+  anchor.click();
+  anchor.remove();
+
+  window.setTimeout(
+    () =>
+      URL.revokeObjectURL(
+        url,
+      ),
+    1000,
+  );
+}
+
+async function loadCanvasImage(
+  source: string,
+) {
+  const response =
+    await fetch(
+      source,
+      {
+        cache:
+          "no-store",
+      },
+    );
+
+  if (
+    !response.ok
+  ) {
+    throw new Error(
+      `Unable to load artwork (${response.status}).`,
+    );
+  }
+
+  const blob =
+    await response.blob();
+
+  const objectUrl =
+    URL.createObjectURL(
+      blob,
+    );
+
+  try {
+    const image =
+      await new Promise<HTMLImageElement>(
+        (
+          resolve,
+          reject,
+        ) => {
+          const element =
+            new window.Image();
+
+          element.decoding =
+            "async";
+
+          element.onload =
+            () =>
+              resolve(
+                element,
+              );
+
+          element.onerror =
+            () =>
+              reject(
+                new Error(
+                  "Unable to decode artwork for export.",
+                ),
+              );
+
+          element.src =
+            objectUrl;
+        },
+      );
+
+    return image;
+  } finally {
+    window.setTimeout(
+      () =>
+        URL.revokeObjectURL(
+          objectUrl,
+        ),
+      5000,
+    );
+  }
+}
+
+function drawCanvasImageContain(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  const sourceWidth =
+    image.naturalWidth || image.width;
+
+  const sourceHeight =
+    image.naturalHeight || image.height;
+
+  if (!sourceWidth || !sourceHeight) {
+    context.drawImage(
+      image,
+      x,
+      y,
+      width,
+      height,
+    );
+    return;
+  }
+
+  const scale =
+    Math.min(
+      width / sourceWidth,
+      height / sourceHeight,
+    );
+
+  const drawWidth =
+    sourceWidth * scale;
+
+  const drawHeight =
+    sourceHeight * scale;
+
+  const drawX =
+    x + (width - drawWidth) / 2;
+
+  const drawY =
+    y + (height - drawHeight) / 2;
+
+  context.drawImage(
+    image,
+    drawX,
+    drawY,
+    drawWidth,
+    drawHeight,
+  );
+}
+
 /*//////////////////////////////////////////////////////////////
                             ARTWORK
 //////////////////////////////////////////////////////////////*/
@@ -631,47 +787,64 @@ function NftArtwork({
   nft:
     HoodWalletNft;
 }) {
-  const originalSource =
-    nft.image || "";
-
-  const [
-    useProxy,
-    setUseProxy,
-  ] =
-    useState(
-      isVideoImageSource(
-        originalSource,
-      ),
+  /*
+   * Alchemy can return more than one usable media URL for the same NFT.
+   * A cachedUrl may occasionally be stale/404 while pngUrl, thumbnailUrl,
+   * originalUrl or the raw metadata image still works. Keep the complete
+   * candidate list and move to the next source when one fails.
+   */
+  const candidates =
+    useMemo(
+      () =>
+        Array.from(
+          new Set(
+            [
+              ...(nft.imageCandidates || []),
+              nft.image || "",
+            ]
+              .map((value) => value.trim())
+              .filter(Boolean),
+          ),
+        ),
+      [
+        nft.image,
+        nft.imageCandidates,
+      ],
     );
 
   const [
-    failed,
-    setFailed,
-  ] =
-    useState(false);
+    candidateIndex,
+    setCandidateIndex,
+  ] = useState(0);
+
+  const [
+    proxyAttempt,
+    setProxyAttempt,
+  ] = useState(false);
+
+  const originalSource =
+    candidates[candidateIndex] || "";
 
   const source =
-    useProxy
-      ? hoodWalletProxyImageUrl(
-          originalSource,
-        )
-      : originalSource;
+    !originalSource
+      ? ""
+      : proxyAttempt ||
+          isVideoImageSource(
+            originalSource,
+          )
+        ? hoodWalletProxyImageUrl(
+            originalSource,
+          )
+        : originalSource;
 
-  if (
-    !source ||
-    failed
-  ) {
+  if (!source) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-black p-3 text-center text-[#ccff00]">
-
-        <p className="text-[8px] uppercase tracking-[0.14em]">
+        <p className="text-[12px] uppercase tracking-[0.14em]">
           {nft.collectionName}
-
           <br />
-
           #{nft.tokenId}
         </p>
-
       </div>
     );
   }
@@ -679,35 +852,38 @@ function NftArtwork({
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={
-        source
-      }
-
-      alt={
-        nft.name
-      }
-
+      src={source}
+      alt={nft.name}
       loading="lazy"
-
       referrerPolicy="no-referrer"
-
       onError={() => {
+        /*
+         * First try the same source through our server proxy. If that also
+         * fails, advance to the next Alchemy/raw media candidate.
+         */
         if (
-          !useProxy &&
-          originalSource
+          !proxyAttempt &&
+          !originalSource
+            .toLowerCase()
+            .startsWith(
+              "data:image/",
+            )
         ) {
-          setUseProxy(
-            true,
-          );
-
+          setProxyAttempt(true);
           return;
         }
 
-        setFailed(
-          true,
-        );
+        if (
+          candidateIndex + 1 <
+          candidates.length
+        ) {
+          setCandidateIndex(
+            (current) =>
+              current + 1,
+          );
+          setProxyAttempt(false);
+        }
       }}
-
       className="h-full w-full object-cover"
     />
   );
@@ -782,7 +958,7 @@ export default function HoodWalletPage() {
     darkHood,
     setDarkHood,
   ] =
-    useState(false);
+    useState(true);
 
   /*//////////////////////////////////////////////////////////////
                         OWNER ECONOMY
@@ -851,10 +1027,48 @@ export default function HoodWalletPage() {
     useState(false);
 
   const [
-    trustedOnly,
-    setTrustedOnly,
+    inventoryView,
+    setInventoryView,
+  ] =
+    useState<"verified" | "all">(
+      "verified",
+    );
+
+
+  /*//////////////////////////////////////////////////////////////
+                       SHARE CARD STATE
+  //////////////////////////////////////////////////////////////*/
+
+  const [
+    exportModalOpen,
+    setExportModalOpen,
+  ] =
+    useState(false);
+
+  const [
+    exportShowBalances,
+    setExportShowBalances,
   ] =
     useState(true);
+
+  const [
+    exportShowNfts,
+    setExportShowNfts,
+  ] =
+    useState(true);
+
+  const [
+    exportShowAddress,
+    setExportShowAddress,
+  ] =
+    useState(false);
+
+  const [
+    exportBusy,
+    setExportBusy,
+  ] =
+    useState(false);
+
 
   /*//////////////////////////////////////////////////////////////
                          TOKEN SEND STATE
@@ -1612,6 +1826,12 @@ export default function HoodWalletPage() {
                 image:
                   rawNft.image,
 
+                imageCandidates:
+                  rawNft.imageCandidates ||
+                  (rawNft.image
+                    ? [rawNft.image]
+                    : []),
+
                 balance:
                   rawNft.balance ||
                   "1",
@@ -1702,6 +1922,9 @@ export default function HoodWalletPage() {
                   symbol:
                     "PING",
 
+                  imageCandidates:
+                    [],
+
                   balance:
                     "1",
 
@@ -1774,6 +1997,39 @@ export default function HoodWalletPage() {
         selectedWallet,
       ],
     );
+
+  /*//////////////////////////////////////////////////////////////
+                    AUTO-LOAD INVENTORY
+  //////////////////////////////////////////////////////////////*/
+
+  useEffect(() => {
+    if (
+      !selectedWallet ||
+      inventoryLoaded ||
+      inventoryLoading
+    ) {
+      return;
+    }
+
+    let cancelled =
+      false;
+
+    queueMicrotask(() => {
+      if (!cancelled) {
+        void loadInventory();
+      }
+    });
+
+    return () => {
+      cancelled =
+        true;
+    };
+  }, [
+    inventoryLoaded,
+    inventoryLoading,
+    loadInventory,
+    selectedWallet,
+  ]);
 
   /*//////////////////////////////////////////////////////////////
                       WAIT FOR TRANSACTION
@@ -2948,14 +3204,7 @@ export default function HoodWalletPage() {
     useMemo(
       () => [
         ...coreAssets,
-
-        ...inventoryAssets.filter(
-          (
-            asset,
-          ) =>
-            asset.trusted ===
-            true,
-        ),
+        ...inventoryAssets,
       ],
       [
         coreAssets,
@@ -2994,25 +3243,6 @@ export default function HoodWalletPage() {
           !selectedSendAsset ||
           !address
         ) {
-          return;
-        }
-
-        /*
-         * SECURITY BACKSTOP.
-         *
-         * Never transact with an
-         * untrusted arbitrary ERC20.
-         */
-
-        if (
-          selectedSendAsset.kind ===
-            "erc20" &&
-          !selectedSendAsset.trusted
-        ) {
-          setError(
-            "Untrusted tokens cannot be sent through the HoodWallet interface.",
-          );
-
           return;
         }
 
@@ -3745,13 +3975,10 @@ export default function HoodWalletPage() {
 
   const selectedHoodie =
     ownedHoodies.find(
-      (
-        hoodie,
-      ) =>
+      (hoodie) =>
         hoodie.tokenId ===
         selectedTokenId,
-    ) ||
-    null;
+    ) || null;
 
   const ownerHasEnough =
     ownerOCHBalance >=
@@ -3768,22 +3995,650 @@ export default function HoodWalletPage() {
     txState.action !==
     null;
 
-  const visibleInventoryAssets =
-    inventoryAssets.filter(
-      (
-        asset,
-      ) =>
-        !trustedOnly ||
-        asset.trusted,
+  /*
+   * Verification controls the default view, never withdrawal rights.
+   * VERIFIED shows curated assets. ALL shows every discovered asset.
+   */
+  const allInventoryAssets =
+    useMemo(() => {
+      const merged =
+        new Map<string, HoodWalletAsset>();
+
+      for (
+        const asset of
+        coreAssets
+      ) {
+        merged.set(
+          assetKey(asset),
+          asset,
+        );
+      }
+
+      for (
+        const asset of
+        inventoryAssets
+      ) {
+        merged.set(
+          assetKey(asset),
+          asset,
+        );
+      }
+
+      return Array.from(
+        merged.values(),
+      );
+    }, [
+      coreAssets,
+      inventoryAssets,
+    ]);
+
+  const displayedAssets =
+    useMemo(
+      () =>
+        inventoryView ===
+        "all"
+          ? allInventoryAssets
+          : allInventoryAssets.filter(
+              (
+                asset,
+              ) =>
+                asset.trusted,
+            ),
+      [
+        allInventoryAssets,
+        inventoryView,
+      ],
     );
 
-  const visibleInventoryNfts =
-    inventoryNfts.filter(
+  const displayedNfts =
+    useMemo(
+      () =>
+        inventoryView ===
+        "all"
+          ? inventoryNfts
+          : inventoryNfts.filter(
+              (
+                nft,
+              ) =>
+                nft.trusted,
+            ),
+      [
+        inventoryNfts,
+        inventoryView,
+      ],
+    );
+
+  const unverifiedAssetCount =
+    useMemo(
+      () =>
+        allInventoryAssets.filter(
+          (
+            asset,
+          ) =>
+            !asset.trusted,
+        ).length +
+        inventoryNfts.filter(
+          (
+            nft,
+          ) =>
+            !nft.trusted,
+        ).length,
+      [
+        allInventoryAssets,
+        inventoryNfts,
+      ],
+    );
+
+  const canSendAsset =
+    useCallback(
       (
-        nft,
+        asset: HoodWalletAsset,
       ) =>
-        !trustedOnly ||
-        nft.trusted,
+        asset.balanceRaw >
+        BigInt(0),
+      [],
+    );
+
+  const chooseAssetToSend =
+    useCallback(
+      (
+        asset: HoodWalletAsset,
+      ) => {
+        setError(null);
+        setSendAssetKey(
+          assetKey(asset),
+        );
+        setSendAmount("");
+        setSendRecipient("");
+        setSendPanelOpen(true);
+      },
+      [],
+    );
+
+  /*
+   * The export follows the CURRENT inventory view.
+   * VERIFIED exports only curated assets; ALL exports every discovered asset.
+   */
+  const exportAssets =
+    useMemo(
+      () =>
+        displayedAssets.filter(
+          (asset) =>
+            asset.balanceRaw >
+            BigInt(0),
+        ),
+      [displayedAssets],
+    );
+
+  const exportNfts =
+    useMemo(
+      () =>
+        displayedNfts.filter(
+          (nft) =>
+            !nft.spam,
+        ),
+      [displayedNfts],
+    );
+
+  async function loadNftForCanvas(
+    nft: HoodWalletNft,
+  ) {
+    /*
+     * First use the exact media candidates already returned to the wallet UI.
+     * This keeps the exported artwork consistent with what the holder sees
+     * on-screen instead of allowing the dedicated metadata route to choose a
+     * different Alchemy rendition. Every remote candidate is passed through
+     * our same-origin image proxy before touching Canvas.
+     */
+    const candidates =
+      Array.from(
+        new Set(
+          [
+            ...(nft.imageCandidates || []),
+            nft.image || "",
+          ]
+            .map((value) => value.trim())
+            .filter(Boolean),
+        ),
+      );
+
+    let lastError:
+      unknown = null;
+
+    for (
+      const candidate of
+      candidates
+    ) {
+      try {
+        return await loadCanvasImage(
+          hoodWalletProxyImageUrl(
+            candidate,
+          ),
+        );
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    /*
+     * Fully-onchain NFTs such as Ping may not expose a conventional remote
+     * image. The dedicated route can resolve tokenURI/image_data and remains
+     * the final fallback.
+     */
+    try {
+      const params =
+        new URLSearchParams({
+          contract: nft.contract,
+          tokenId: nft.tokenId,
+        });
+
+      return await loadCanvasImage(
+        `/api/hoodwallet/nft-image?${params.toString()}`,
+      );
+    } catch (error) {
+      lastError = error;
+    }
+
+    throw (
+      lastError ||
+      new Error(
+        "NFT artwork unavailable.",
+      )
+    );
+  }
+
+  const exportHoodWalletCard =
+    useCallback(
+      async () => {
+        if (
+          !selectedWallet ||
+          !selectedHoodie
+        ) {
+          return;
+        }
+
+        try {
+          setError(null);
+          setExportBusy(true);
+
+          if (
+            document.fonts?.ready
+          ) {
+            await document.fonts.ready;
+          }
+
+          /*
+           * 2:1 LANDSCAPE wallet card.
+           * The visual language is closer to a physical wallet/pass/card,
+           * rather than a receipt or portrait story graphic.
+           */
+          const WIDTH = 1600;
+          const HEIGHT = 800;
+          const GREEN = "#ccff00";
+          const BLACK = "#000000";
+          const PAD = 52;
+
+          const canvas =
+            document.createElement(
+              "canvas",
+            );
+
+          canvas.width = WIDTH;
+          canvas.height = HEIGHT;
+
+          const context =
+            canvas.getContext(
+              "2d",
+            );
+
+          if (!context) {
+            throw new Error(
+              "Canvas is unavailable in this browser.",
+            );
+          }
+
+          context.imageSmoothingEnabled =
+            false;
+          context.fillStyle = BLACK;
+          context.fillRect(
+            0,
+            0,
+            WIDTH,
+            HEIGHT,
+          );
+          context.strokeStyle = GREEN;
+          context.lineWidth = 4;
+          context.strokeRect(
+            24,
+            24,
+            WIDTH - 48,
+            HEIGHT - 48,
+          );
+
+          const font =
+            "DepartureMono, monospace";
+
+          context.fillStyle = GREEN;
+          context.textBaseline = "top";
+          context.textAlign = "left";
+
+          /* Header + HoodWallet icon */
+          try {
+            const walletIcon =
+              await loadCanvasImage(
+                "/journey/wallet.svg",
+              );
+
+            context.drawImage(
+              walletIcon,
+              PAD,
+              50,
+              48,
+              48,
+            );
+          } catch (iconError) {
+            console.debug(
+              "HoodWallet export icon unavailable.",
+              iconError,
+            );
+          }
+
+          const headerTextX =
+            PAD + 66;
+
+          context.font =
+            `36px ${font}`;
+          context.fillText(
+            "HOODWALLET",
+            headerTextX,
+            48,
+          );
+
+          context.font =
+            `16px ${font}`;
+          context.fillText(
+            `VIEW / ${inventoryView.toUpperCase()}`,
+            headerTextX,
+            96,
+          );
+
+          context.textAlign = "right";
+          context.font =
+            `18px ${font}`;
+          context.fillText(
+            selectedWallet.active
+              ? "● ACTIVE"
+              : "○ INACTIVE",
+            WIDTH - PAD,
+            61,
+          );
+          context.textAlign = "left";
+
+          /* Hoodie block */
+          const artX = PAD;
+          const artY = 152;
+          const artSize = 410;
+
+          context.fillStyle = GREEN;
+          context.fillRect(
+            artX,
+            artY,
+            artSize,
+            artSize,
+          );
+
+          const artwork =
+            await loadCanvasImage(
+              tokenArtwork(
+                selectedWallet.tokenId,
+              ),
+            );
+          context.drawImage(
+            artwork,
+            artX,
+            artY,
+            artSize,
+            artSize,
+          );
+
+          context.fillStyle = GREEN;
+          context.font =
+            `30px ${font}`;
+          context.fillText(
+            `#${selectedWallet.tokenId}`,
+            artX,
+            artY + artSize + 24,
+          );
+          context.font =
+            `14px ${font}`;
+          context.fillText(
+            "ONCHAINHOODIE",
+            artX,
+            artY + artSize + 66,
+          );
+
+          /* Wallet identity */
+          const infoX = 520;
+          const infoW =
+            WIDTH - infoX - PAD;
+
+          context.font =
+            `14px ${font}`;
+          context.fillText(
+            "WALLET",
+            infoX,
+            155,
+          );
+          context.font =
+            `27px ${font}`;
+          context.fillText(
+            exportShowAddress
+              ? selectedWallet.walletAddress
+              : shortAddress(
+                  selectedWallet.walletAddress,
+                ),
+            infoX,
+            188,
+          );
+
+          let rightY = 252;
+
+          if (
+            exportShowBalances
+          ) {
+            const tokenLines =
+              exportAssets.slice(
+                0,
+                5,
+              );
+
+            context.strokeStyle = GREEN;
+            context.strokeRect(
+              infoX,
+              rightY,
+              infoW,
+              132,
+            );
+            context.font =
+              `14px ${font}`;
+            context.fillText(
+              `ASSETS / ${exportAssets.length}`,
+              infoX + 20,
+              rightY + 18,
+            );
+
+            const colWidth =
+              Math.floor(
+                (infoW - 40) /
+                  Math.max(
+                    1,
+                    Math.min(
+                      tokenLines.length,
+                      5,
+                    ),
+                  ),
+              );
+
+            tokenLines.forEach(
+              (asset, index) => {
+                const x =
+                  infoX +
+                  20 +
+                  index * colWidth;
+                context.font =
+                  `13px ${font}`;
+                context.fillText(
+                  asset.symbol,
+                  x,
+                  rightY + 52,
+                );
+                context.font =
+                  `22px ${font}`;
+                const balance =
+                  asset.balanceFormatted.length >
+                  12
+                    ? `${asset.balanceFormatted.slice(0, 12)}…`
+                    : asset.balanceFormatted;
+                context.fillText(
+                  balance,
+                  x,
+                  rightY + 79,
+                );
+              },
+            );
+
+            rightY += 158;
+          }
+
+          if (
+            exportShowNfts
+          ) {
+            const nfts =
+              exportNfts.slice(
+                0,
+                6,
+              );
+
+            context.font =
+              `14px ${font}`;
+            context.fillText(
+              `NFTS / ${exportNfts.length}`,
+              infoX,
+              rightY,
+            );
+
+            const nftY =
+              rightY + 32;
+            const gap = 12;
+            const cell =
+              Math.floor(
+                (infoW -
+                  gap * 5) /
+                  6,
+              );
+
+            for (
+              let index = 0;
+              index < nfts.length;
+              index += 1
+            ) {
+              const nft = nfts[index];
+              const x =
+                infoX +
+                index *
+                  (cell + gap);
+
+              context.strokeStyle = GREEN;
+              context.strokeRect(
+                x,
+                nftY,
+                cell,
+                cell + 38,
+              );
+
+              try {
+                const image =
+                  await loadNftForCanvas(
+                    nft,
+                  );
+                /*
+                 * Preserve the complete NFT artwork. Using contain instead
+                 * of filling the square prevents the top/bottom of portrait
+                 * or unusually-sized NFT media from being clipped. The small
+                 * inset also keeps the pixel border visible in the PNG.
+                 */
+                context.fillStyle = BLACK;
+                context.fillRect(
+                  x + 4,
+                  nftY + 4,
+                  cell - 8,
+                  cell - 8,
+                );
+
+                drawCanvasImageContain(
+                  context,
+                  image,
+                  x + 6,
+                  nftY + 6,
+                  cell - 12,
+                  cell - 12,
+                );
+              } catch {
+                context.fillStyle = BLACK;
+                context.fillRect(
+                  x,
+                  nftY,
+                  cell,
+                  cell,
+                );
+                context.fillStyle = GREEN;
+                context.font =
+                  `12px ${font}`;
+                context.textAlign = "center";
+                context.fillText(
+                  `#${nft.tokenId}`,
+                  x + cell / 2,
+                  nftY + cell / 2 - 7,
+                );
+                context.textAlign = "left";
+              }
+
+              context.fillStyle = GREEN;
+              context.font =
+                `11px ${font}`;
+              const label =
+                nft.name.length > 15
+                  ? `${nft.name.slice(0, 14)}…`
+                  : nft.name;
+              context.fillText(
+                label,
+                x + 8,
+                nftY + cell + 12,
+              );
+            }
+          }
+
+          /* Footer */
+          context.fillStyle = GREEN;
+          context.font =
+            `14px ${font}`;
+          context.fillText(
+            "ONCHAINHOODIES / ROBINHOOD CHAIN",
+            PAD,
+            HEIGHT - 70,
+          );
+          context.textAlign = "right";
+          context.fillText(
+            "ONE HOODIE. ONE ON-CHAIN WALLET.",
+            WIDTH - PAD,
+            HEIGHT - 70,
+          );
+
+          const blob =
+            await new Promise<Blob>(
+              (resolve, reject) => {
+                canvas.toBlob(
+                  (result) =>
+                    result
+                      ? resolve(result)
+                      : reject(
+                          new Error(
+                            "PNG render failed.",
+                          ),
+                        ),
+                  "image/png",
+                );
+              },
+            );
+
+          downloadBlob(
+            blob,
+            `hoodwallet-${selectedWallet.tokenId}-${inventoryView}.png`,
+          );
+
+          setExportModalOpen(false);
+        } catch (exportError) {
+          console.error(exportError);
+          setError(
+            errorMessage(
+              exportError,
+              "Unable to export HoodWallet card.",
+            ),
+          );
+        } finally {
+          setExportBusy(false);
+        }
+      },
+      [
+        exportAssets,
+        exportNfts,
+        exportShowAddress,
+        exportShowBalances,
+        exportShowNfts,
+        inventoryView,
+        selectedHoodie,
+        selectedWallet,
+      ],
     );
 
   /*//////////////////////////////////////////////////////////////
@@ -3793,7 +4648,6 @@ export default function HoodWalletPage() {
   return (
     <main
       className="min-h-screen bg-[var(--hood-bg)] text-[var(--hood-fg)]"
-
       style={
         {
           "--hood-bg":
@@ -3810,196 +4664,266 @@ export default function HoodWalletPage() {
     >
       <SiteHeader />
 
-      <section className="mx-auto max-w-[1400px] px-4 pb-24 pt-20 md:px-6 md:pt-24">
+      <section className="mx-auto max-w-[1400px] px-4 pb-20 pt-20 md:px-6 md:pt-24">
 
-        {/* HEADER */}
+        {/* TOP BAR */}
 
-        <div className="flex items-center justify-between border-b border-[var(--hood-fg)] pb-3">
-  <p className="text-[9px] uppercase tracking-[0.16em]">
-    HoodWallet / ERC-6551
-  </p>
+        <div className="flex flex-wrap items-center justify-end gap-5 border-b border-[var(--hood-fg)] pb-3">
+          <p className="text-[9px] uppercase tracking-[0.12em] text-red-500">
+            Robinhood Chain assets only
+          </p>
 
-  <div className="flex flex-1 justify-center px-4">
-    <div className="border border-red-500 px-4 py-1.5 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-red-500">
-      ⚠ Only sent Robinhood Chain assets
-    </div>
-  </div>
+          <button
+            type="button"
+            onClick={() =>
+              setDarkHood(
+                (current) =>
+                  !current,
+              )
+            }
+            className="text-[11px] uppercase underline underline-offset-4"
+          >
+            {darkHood
+              ? "Lights on"
+              : "Lights off"}
+          </button>
 
-  <div className="flex items-center gap-4">
-    <button
-      type="button"
-      onClick={() =>
-        setDarkHood((current) => !current)
-      }
-      className="text-[9px] uppercase"
-    >
-      {darkHood ? "Lights on" : "Lights off"}
-    </button>
+          <Link
+            href="/"
+            className="text-[11px] uppercase underline underline-offset-4"
+          >
+            Back
+          </Link>
+        </div>
 
-    <Link
-      href="/"
-      className="text-[9px] uppercase"
-    >
-      Back
-    </Link>
-  </div>
-</div>
-
-        <div className="mt-6 grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="mt-5 grid gap-5 lg:grid-cols-[250px_minmax(0,1fr)]">
 
           {/* SIDEBAR */}
 
-          <aside className="lg:sticky lg:top-20 lg:self-start">
+          <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
 
-            <p className="text-[8px] uppercase tracking-[0.18em] opacity-60">
-              Hoodie infrastructure
-            </p>
+            <div className="flex items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/journey/wallet.svg"
+                alt="HoodWallet"
+                className="h-12 w-12 shrink-0 object-contain"
+              />
 
-            <h1 className="mt-3 text-5xl leading-[0.85] tracking-[-0.06em]">
-              HOOD
-              <br />
-              WALLET
-            </h1>
+              <div>
+                <h1 className="text-2xl uppercase tracking-[0.07em]">
+                  HoodWallet
+                </h1>
 
-            <p className="mt-5 text-sm leading-relaxed opacity-70">
-              One Hoodie.
-              One deterministic
-              on-chain wallet.
-            </p>
+                <p className="mt-1 text-[9px] uppercase leading-relaxed opacity-60">
+                  One Hoodie. One on-chain wallet.
+                </p>
+              </div>
+            </div>
 
             {!address ? (
-
               <button
                 type="button"
-
                 onClick={() =>
                   void connect()
                 }
-
-                className="mt-6 w-full border border-[var(--hood-fg)] px-4 py-4 text-[9px] uppercase tracking-[0.15em]"
+                className="mt-5 w-full bg-[var(--hood-fg)] px-4 py-4 text-[var(--hood-bg)] text-[9px] uppercase tracking-[0.14em]"
               >
                 Connect wallet
               </button>
-
             ) : (
-
               <>
-
-                {/* EVM OWNER */}
-
-                <div className="mt-6 border border-[var(--hood-fg)]">
-
+                <div className="mt-5 border border-[var(--hood-fg)]">
                   <div className="border-b border-[var(--hood-fg)] px-3 py-2">
-
-                    <p className="text-[7px] uppercase tracking-[0.14em] opacity-60">
+                    <p className="text-[7px] uppercase tracking-[0.12em] opacity-55">
                       Connected EVM wallet
                     </p>
-
                   </div>
 
                   <div className="p-3">
-
-                    <p className="break-all text-[9px]">
-                      {
-                        address
-                      }
+                    <p className="text-[10px]">
+                      {shortAddress(
+                        address,
+                      )}
                     </p>
 
-                  </div>
-
-                  <div className="border-t border-[var(--hood-fg)] p-3">
-
-                    <p className="text-[7px] uppercase tracking-[0.14em] opacity-60">
-                      EVM wallet OCH
+                    <p className="mt-3 text-[7px] uppercase opacity-55">
+                      OCH balance
                     </p>
 
-                    <p className="mt-2 text-3xl tracking-[-0.05em]">
+                    <p className="mt-1 text-xl">
                       {formatBalance(
                         ownerOCHBalance,
                       )}
                     </p>
-
-                    <p className="mt-1 text-[8px] uppercase">
-                      OCH
-                    </p>
-
                   </div>
-
                 </div>
 
-                {/* HOODIE SELECT */}
+                <div className="mt-3 border border-[var(--hood-fg)] p-3">
+                  <p className="text-[7px] uppercase tracking-[0.12em] opacity-55">
+                    Hoodie
+                  </p>
 
-                <div className="mt-3 border border-[var(--hood-fg)]">
+                  <select
+                    value={
+                      selectedTokenId
+                    }
+                    onChange={(
+                      event,
+                    ) => {
+                      setSelectedWallet(
+                        null,
+                      );
 
-                  <div className="border-b border-[var(--hood-fg)] px-3 py-2">
+                      setSelectedNftToSend(
+                        null,
+                      );
 
-                    <p className="text-[7px] uppercase tracking-[0.14em] opacity-60">
-                      Select Hoodie
-                    </p>
+                      setSendPanelOpen(
+                        false,
+                      );
 
+                      setSelectedTokenId(
+                        event.target.value,
+                      );
+                    }}
+                    className="mt-2 w-full border border-[var(--hood-fg)] bg-[var(--hood-bg)] px-3 py-3 text-[9px] uppercase text-[var(--hood-fg)] outline-none"
+                  >
+                    {ownedHoodies.map(
+                      (hoodie) => (
+                        <option
+                          key={
+                            hoodie.tokenId
+                          }
+                          value={
+                            hoodie.tokenId
+                          }
+                        >
+                          Hoodie #{hoodie.tokenId}
+                        </option>
+                      ),
+                    )}
+                  </select>
+
+                  {selectedWallet && (
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <span className="text-[7px] uppercase opacity-55">
+                        {selectedWallet.active
+                          ? "● Active"
+                          : "○ Inactive"}
+                      </span>
+
+                      <button
+                        type="button"
+                        disabled={
+                          stateLoading
+                        }
+                        onClick={() =>
+                          void loadSelectedWallet()
+                        }
+                        className="text-[11px] uppercase underline underline-offset-4 disabled:opacity-30"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {error && (
+              <div className="mt-3 border border-[var(--hood-fg)] p-3">
+                <p className="text-[8px] leading-relaxed">
+                  {error}
+                </p>
+              </div>
+            )}
+          </aside>
+
+          {/* MAIN CONTENT */}
+
+          <section className="min-w-0">
+            {!address ? (
+              <div className="grid min-h-[460px] place-items-center border border-[var(--hood-fg)] p-8 text-center">
+                <div>
+                  <h2 className="text-4xl uppercase">
+                    Connect your wallet
+                  </h2>
+
+                  <p className="mt-4 text-[9px] uppercase leading-relaxed opacity-55">
+                    Connect the wallet holding your OnChainHoodie.
+                  </p>
+                </div>
+              </div>
+            ) : ownershipLoading ? (
+              <div className="border border-[var(--hood-fg)] p-8 text-center">
+                <p className="text-[9px] uppercase tracking-[0.14em]">
+                  Reading Hoodie ownership…
+                </p>
+              </div>
+            ) : ownershipChecked &&
+              ownedHoodies.length ===
+                0 ? (
+              <div className="border border-[var(--hood-fg)] p-8 text-center">
+                <h2 className="text-3xl uppercase">
+                  No Hoodies
+                </h2>
+
+                <p className="mt-3 text-[9px] uppercase opacity-55">
+                  This wallet does not currently own an OnChainHoodie.
+                </p>
+              </div>
+            ) : stateLoading &&
+              !selectedWallet ? (
+              <div className="border border-[var(--hood-fg)] p-8 text-center">
+                <p className="text-[9px] uppercase tracking-[0.14em]">
+                  Loading Hoodie #{selectedTokenId}
+                </p>
+              </div>
+            ) : selectedWallet &&
+              selectedHoodie ? (
+              <>
+
+                {/* IDENTITY */}
+
+                <div className="grid overflow-hidden border border-[var(--hood-fg)] md:grid-cols-[220px_minmax(0,1fr)]">
+                  <div className="border-b border-[var(--hood-fg)] bg-[#ccff00] md:border-b-0 md:border-r">
+                    <div className="aspect-square">
+                      <HoodieArtwork
+                        hoodie={
+                          selectedHoodie
+                        }
+                      />
+                    </div>
+
+                    <div className="border-t border-black bg-[#ccff00] px-4 py-3 text-black">
+                      <p className="text-[7px] uppercase tracking-[0.12em]">
+                        OnChainHoodie
+                      </p>
+
+                      <p className="mt-1 text-2xl">
+                        #{selectedWallet.tokenId}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="p-3">
+                  <div className="flex min-w-0 flex-col justify-between p-5">
+                    <div>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[7px] uppercase tracking-[0.12em] opacity-55">
+                            HoodWallet
+                          </p>
 
-                    <div className="flex items-stretch gap-2">
-
-                      <select
-                        value={
-                          selectedTokenId
-                        }
-
-                        onChange={(
-                          event,
-                        ) => {
-                          setSelectedWallet(
-                            null,
-                          );
-
-                          setSelectedNftToSend(
-                            null,
-                          );
-
-                          setSendPanelOpen(
-                            false,
-                          );
-
-                          setSelectedTokenId(
-                            event
-                              .target
-                              .value,
-                          );
-                        }}
-
-                        className="min-w-0 flex-1 border border-[var(--hood-fg)] bg-[var(--hood-bg)] px-3 py-3 text-[10px] uppercase text-[var(--hood-fg)] outline-none"
-                      >
-                        {ownedHoodies.map(
-                          (
-                            hoodie,
-                          ) => (
-
-                            <option
-                              key={
-                                hoodie.tokenId
-                              }
-
-                              value={
-                                hoodie.tokenId
-                              }
-                            >
-                              Hoodie #
-                              {
-                                hoodie.tokenId
-                              }
-                            </option>
-
-                          ),
-                        )}
-                      </select>
-
-                      {selectedWallet && (
+                          <p className="mt-2 text-2xl">
+                            {shortAddress(
+                              selectedWallet.walletAddress,
+                            )}
+                          </p>
+                        </div>
 
                         <span
-                          className={`flex shrink-0 items-center border border-[var(--hood-fg)] px-3 text-[7px] uppercase tracking-[0.1em] ${
+                          className={`border border-[var(--hood-fg)] px-3 py-2 text-[7px] uppercase tracking-[0.1em] ${
                             selectedWallet.active
                               ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
                               : ""
@@ -4009,1381 +4933,910 @@ export default function HoodWalletPage() {
                             ? "● Active"
                             : "○ Inactive"}
                         </span>
-
-                      )}
-
-                    </div>
-
-                  </div>
-
-                </div>
-
-                {selectedWallet && (
-
-                  <button
-                    type="button"
-
-                    disabled={
-                      stateLoading
-                    }
-
-                    onClick={() =>
-                      void loadSelectedWallet()
-                    }
-
-                    className="mt-3 w-full border border-[var(--hood-fg)] px-4 py-3 text-[8px] uppercase tracking-[0.14em] disabled:opacity-40"
-                  >
-                    {stateLoading
-                      ? "Refreshing state…"
-                      : "Refresh selected HoodWallet"}
-                  </button>
-
-                )}
-
-              </>
-
-            )}
-
-            {error && (
-
-              <div className="mt-3 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-3 text-[var(--hood-bg)]">
-
-                <p className="text-[8px] leading-relaxed">
-                  {
-                    error
-                  }
-                </p>
-
-              </div>
-
-            )}
-
-          </aside>
-
-          {/* MAIN */}
-
-          <section className="min-w-0">
-
-            {!address ? (
-
-              <div className="grid min-h-[600px] place-items-center border border-[var(--hood-fg)] p-8 text-center">
-
-                <div>
-
-                  <h2 className="text-5xl tracking-[-0.06em]">
-                    CONNECT
-                    <br />
-                    YOUR WALLET
-                  </h2>
-
-                  <p className="mt-5 text-sm opacity-65">
-                    Connect the EVM
-                    wallet holding
-                    your Hoodie.
-                  </p>
-
-                </div>
-
-              </div>
-
-            ) : ownershipLoading ? (
-
-              <div className="border border-[var(--hood-fg)] p-8 text-center">
-
-                <p className="text-[9px] uppercase tracking-[0.15em]">
-                  Reading Hoodie ownership…
-                </p>
-
-              </div>
-
-            ) : ownershipChecked &&
-              ownedHoodies.length ===
-                0 ? (
-
-              <div className="border border-[var(--hood-fg)] p-8 text-center">
-
-                <h2 className="text-4xl">
-                  NO HOODIES
-                </h2>
-
-                <p className="mt-4 text-sm opacity-65">
-                  This wallet does
-                  not currently own
-                  an OnChainHoodie.
-                </p>
-
-              </div>
-
-            ) : stateLoading &&
-              !selectedWallet ? (
-
-              <div className="border border-[var(--hood-fg)] p-8 text-center">
-
-                <p className="text-[9px] uppercase tracking-[0.15em]">
-                  Loading Hoodie #
-                  {
-                    selectedTokenId
-                  }
-                </p>
-
-                <p className="mt-2 text-[7px] uppercase opacity-50">
-                  Lightweight protocol state only
-                </p>
-
-              </div>
-
-            ) : selectedWallet &&
-              selectedHoodie ? (
-
-              <>
-
-                {/* HOODIE / WALLET */}
-
-                <div className="grid border border-[var(--hood-fg)] md:grid-cols-[260px_minmax(0,1fr)]">
-
-                  <div className="border-b border-[var(--hood-fg)] bg-[#ccff00] md:border-b-0 md:border-r">
-
-                    <div className="aspect-square">
-
-                      <HoodieArtwork
-                        hoodie={
-                          selectedHoodie
-                        }
-                      />
-
-                    </div>
-
-                    <div className="border-t border-black bg-[#ccff00] p-4 text-black">
-
-                      <p className="text-[8px] uppercase tracking-[0.14em]">
-                        OnChainHoodie
-                      </p>
-
-                      <p className="mt-1 text-3xl">
-                        #
-                        {
-                          selectedWallet.tokenId
-                        }
-                      </p>
-
-                    </div>
-
-                  </div>
-
-                  <div className="min-w-0 p-5">
-
-                    <div className="flex items-start justify-between gap-4">
-
-                      <div>
-
-                        <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
-                          HoodWallet
-                        </p>
-
-                        <p className="mt-2 text-2xl">
-                          {shortAddress(
-                            selectedWallet.walletAddress,
-                          )}
-                        </p>
-
                       </div>
 
-                      <div
-                        className={`border border-[var(--hood-fg)] px-3 py-2 text-[8px] uppercase ${
-                          selectedWallet.active
-                            ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
-                            : ""
-                        }`}
-                      >
-                        {selectedWallet.active
-                          ? "● Active"
-                          : "○ Inactive"}
-                      </div>
-
-                    </div>
-
-                    <div className="mt-5 border border-[var(--hood-fg)]">
-
-                      <div className="border-b border-[var(--hood-fg)] px-3 py-2">
-
-                        <p className="text-[7px] uppercase tracking-[0.14em] opacity-60">
-                          Deterministic address
-                        </p>
-
-                      </div>
-
-                      <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
-
-                        <code className="break-all text-[9px]">
-                          {
-                            selectedWallet.walletAddress
-                          }
+                      <div className="mt-5 border border-[var(--hood-fg)] p-3">
+                        <code className="block break-all text-[8px] leading-relaxed">
+                          {selectedWallet.walletAddress}
                         </code>
-
-                        <div className="flex shrink-0 items-center gap-3">
-
-                          <a
-                            href={
-                              explorerAddress(
-                                selectedWallet.walletAddress,
-                              )
-                            }
-
-                            target="_blank"
-
-                            rel="noreferrer"
-
-                            className="text-[8px] uppercase underline underline-offset-2"
-                          >
-                            Explorer
-                          </a>
-
-                          <span className="text-[8px] opacity-30">
-                            /
-                          </span>
-
-                          <a
-                            href={
-                              openSeaWallet(
-                                selectedWallet.walletAddress,
-                              )
-                            }
-
-                            target="_blank"
-
-                            rel="noreferrer"
-
-                            className="text-[8px] uppercase underline underline-offset-2"
-                          >
-                            OpenSea
-                          </a>
-
-                          <span className="text-[8px] opacity-30">
-                            /
-                          </span>
-
-                          <button
-                            type="button"
-
-                            onClick={() => {
-                              void navigator.clipboard
-                                .writeText(
-                                  selectedWallet.walletAddress,
-                                )
-                                .then(() => {
-                                  setError(
-                                    null,
-                                  );
-                                })
-                                .catch(() => {
-                                  setError(
-                                    "Unable to copy HoodWallet address.",
-                                  );
-                                });
-                            }}
-
-                            className="text-[8px] uppercase underline underline-offset-2"
-                          >
-                            Copy wallet
-                          </button>
-
-                        </div>
-
                       </div>
-
                     </div>
 
-                    {/* BALANCES */}
+                    <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 text-[11px] uppercase">
+                      <a
+                        href={
+                          explorerAddress(
+                            selectedWallet.walletAddress,
+                          )
+                        }
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline underline-offset-4"
+                      >
+                        Explorer ↗
+                      </a>
 
-                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                      <a
+                        href={
+                          openSeaWallet(
+                            selectedWallet.walletAddress,
+                          )
+                        }
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline underline-offset-4"
+                      >
+                        OpenSea ↗
+                      </a>
 
-                      <div className="border border-[var(--hood-fg)] p-4">
-
-                        <p className="text-[7px] uppercase opacity-55">
-                          HoodWallet OCH
-                        </p>
-
-                        <p className="mt-2 text-3xl">
-                          {formatBalance(
-                            selectedWallet.ochBalance,
-                          )}
-                        </p>
-
-                        <p className="mt-1 text-[8px] uppercase">
-                          OCH
-                        </p>
-
-                      </div>
-
-                      <div className="border border-[var(--hood-fg)] p-4">
-
-                        <p className="text-[7px] uppercase opacity-55">
-                          HoodWallet ETH
-                        </p>
-
-                        <p className="mt-2 text-3xl">
-                          {formatBalance(
-                            selectedWallet.nativeBalance,
-                          )}
-                        </p>
-
-                        <p className="mt-1 text-[8px] uppercase">
-                          ETH
-                        </p>
-
-                      </div>
-
-                      <div className="border border-[var(--hood-fg)] p-4">
-
-                        <p className="text-[7px] uppercase opacity-55">
-                          Contract
-                        </p>
-
-                        <p className="mt-3 text-[9px] uppercase">
-                          {selectedWallet.walletDeployed
-                            ? "Deployed"
-                            : "Counterfactual"}
-                        </p>
-
-                      </div>
-
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard
+                            .writeText(
+                              selectedWallet.walletAddress,
+                            )
+                            .catch(() =>
+                              setError(
+                                "Unable to copy HoodWallet address.",
+                              ),
+                            );
+                        }}
+                        className="underline underline-offset-4"
+                      >
+                        Copy wallet
+                      </button>
                     </div>
-
                   </div>
-
                 </div>
 
                 {/* ACTIVATION */}
 
-                <div className="mt-4 border border-[var(--hood-fg)]">
-
-                  <div className="flex items-center justify-between border-b border-[var(--hood-fg)] px-4 py-3">
-
-                    <p className="text-[9px] uppercase tracking-[0.15em]">
-                      HoodWallet Activation
+                <div className="mt-3 border border-[var(--hood-fg)]">
+                  <div className="flex items-center justify-between gap-3 border-b border-[var(--hood-fg)] px-4 py-3">
+                    <p className="text-[12px] uppercase tracking-[0.14em]">
+                      HoodWallet activation
                     </p>
 
-                    <p className="text-[8px] uppercase opacity-60">
-                      {formatBalance(
-                        activationCost,
-                      )}{" "}
-                      OCH
-                    </p>
-
+                    {selectedWallet.active && (
+                      <span className="text-[7px] uppercase opacity-60">
+                        ● Active
+                      </span>
+                    )}
                   </div>
 
-                  <div className="p-4">
-
-                    {selectedWallet.active ? (
-
-                      <div className="bg-[var(--hood-fg)] p-5 text-[var(--hood-bg)]">
-
-                        <p className="text-[11px] uppercase">
+                  {selectedWallet.active ? (
+                    <div className="p-4">
+                      <div className="bg-[var(--hood-fg)] px-4 py-4 text-[var(--hood-bg)]">
+                        <p className="text-[9px] uppercase tracking-[0.13em]">
                           ✓ HoodWallet active
                         </p>
-
                       </div>
-
-                    ) : !activationEnabled ? (
-
+                    </div>
+                  ) : !activationEnabled ? (
+                    <div className="p-4">
                       <p className="text-[9px] uppercase">
                         Activation currently disabled.
                       </p>
+                    </div>
+                  ) : ownerHasEnough ? (
+                    <button
+                      type="button"
+                      disabled={
+                        processing
+                      }
+                      onClick={() =>
+                        void activateHoodWallet()
+                      }
+                      className="w-full bg-[var(--hood-fg)] px-5 py-7 text-center text-[var(--hood-bg)] disabled:opacity-35"
+                    >
+                      <span className="block text-[16px] uppercase tracking-[0.14em]">
+                        {txState.action ===
+                        "activate"
+                          ? "Activating…"
+                          : "Activate HoodWallet"}
+                      </span>
 
-                    ) : (
+                      <span className="mt-2 block text-xl">
+                        {formatBalance(
+                          activationCost,
+                        )} OCH
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={
+                        processing
+                      }
+                      onClick={() =>
+                        void swapMissingOchAndActivate()
+                      }
+                      className="w-full bg-[var(--hood-fg)] px-5 py-7 text-center text-[var(--hood-bg)] disabled:opacity-35"
+                    >
+                      <span className="block text-[16px] uppercase tracking-[0.14em]">
+                        {txState.action ===
+                        "swap-activate"
+                          ? "Getting OCH + activating…"
+                          : "Get OCH + activate"}
+                      </span>
 
-                      <>
-
-                        <div className="grid gap-2 sm:grid-cols-2">
-
-                          <div className="border border-[var(--hood-fg)] p-4">
-
-                            <p className="text-[7px] uppercase opacity-55">
-                              Your EVM wallet
-                            </p>
-
-                            <p className="mt-2 text-2xl">
-                              {formatBalance(
-                                ownerOCHBalance,
-                              )}
-                            </p>
-
-                            <p className="mt-1 text-[8px] uppercase">
-                              OCH available
-                            </p>
-
-                          </div>
-
-                          <div className="border border-[var(--hood-fg)] p-4">
-
-                            <p className="text-[7px] uppercase opacity-55">
-                              Activation cost
-                            </p>
-
-                            <p className="mt-2 text-2xl">
-                              {formatBalance(
-                                activationCost,
-                              )}
-                            </p>
-
-                            <p className="mt-1 text-[8px] uppercase">
-                              OCH
-                            </p>
-
-                          </div>
-
-                        </div>
-
-                        {!ownerHasEnough ? (
-
-                          <div className="mt-3">
-
-                            <div className="border border-[var(--hood-fg)] p-4">
-
-                              <p className="text-[7px] uppercase tracking-[0.14em] opacity-55">
-                                Missing for activation
-                              </p>
-
-                              <p className="mt-2 text-2xl">
-                                {formatBalance(
-                                  missingActivationOCH,
-                                )}{" "}
-                                OCH
-                              </p>
-
-                              <p className="mt-2 text-[7px] uppercase leading-relaxed opacity-55">
-                                Swap ETH for exactly the missing OCH, then continue directly into HoodWallet activation.
-                              </p>
-
-                            </div>
-
-                            <button
-                              type="button"
-
-                              disabled={
-                                processing
-                              }
-
-                              onClick={() =>
-                                void swapMissingOchAndActivate()
-                              }
-
-                              className="mt-3 w-full bg-[var(--hood-fg)] px-4 py-5 text-[var(--hood-bg)] disabled:opacity-35"
-                            >
-
-                              <span className="block text-[11px] uppercase tracking-[0.16em]">
-                                {txState.action ===
-                                "swap-activate"
-                                  ? "Getting OCH + Activating…"
-                                  : `Get ${formatBalance(
-                                      missingActivationOCH,
-                                    )} OCH + Activate`}
-                              </span>
-
-                              <span className="mx-auto mt-3 block max-w-xl text-[7px] uppercase leading-relaxed opacity-65">
-                                Uses the live OCH / ETH pool on Robinhood Chain. Your connected EVM wallet pays ETH and network gas. Only the missing OCH is purchased.
-                              </span>
-
-                            </button>
-
-                          </div>
-
-                        ) : (
-
-                          <button
-                            type="button"
-
-                            disabled={
-                              processing
-                            }
-
-                            onClick={() =>
-                              void activateHoodWallet()
-                            }
-
-                            className="mt-3 w-full bg-[var(--hood-fg)] px-4 py-5 text-[var(--hood-bg)] disabled:opacity-35"
-                          >
-
-                            <span className="block text-[11px] uppercase tracking-[0.16em]">
-                              {txState.action ===
-                              "activate"
-                                ? "Activating HoodWallet…"
-                                : "Activate HoodWallet"}
-                            </span>
-
-                            <span className="mt-2 block text-[18px]">
-                              {formatBalance(
-                                activationCost,
-                              )}{" "}
-                              OCH
-                            </span>
-
-                            <span className="mx-auto mt-3 block max-w-xl text-[7px] uppercase leading-relaxed opacity-65">
-                              Uses{" "}
-                              {formatBalance(
-                                activationCost,
-                              )}{" "}
-                              OCH from your connected EVM wallet.
-                              {ownerAllowance <
-                              activationCost
-                                ? " Your wallet may first request OCH authorization, then the activation confirmation."
-                                : " OCH authorization already exists."}
-                            </span>
-
-                          </button>
-
-                        )}
-
-                      </>
-
-                    )}
-
-                  </div>
-
+                      <span className="mt-3 block text-[10px] uppercase opacity-70">
+                        Missing {formatBalance(
+                          missingActivationOCH,
+                        )} OCH
+                      </span>
+                    </button>
+                  )}
                 </div>
 
                 {/* PING */}
 
-                <div className="mt-4 border border-[var(--hood-fg)]">
-
-                  <div className="flex items-center justify-between border-b border-[var(--hood-fg)] px-4 py-3">
-
-                    <p className="text-[9px] uppercase tracking-[0.15em]">
-                      Activation Ping
+                <div className="mt-3 border border-[var(--hood-fg)]">
+                  <div className="flex items-center justify-between gap-3 border-b border-[var(--hood-fg)] px-4 py-3">
+                    <p className="text-[12px] uppercase tracking-[0.14em]">
+                      Ping
                     </p>
 
-                    <p className="text-[8px] uppercase opacity-60">
-                      Ping #
-                      {
-                        selectedWallet.tokenId
-                      }
-                    </p>
-
+                    <span className="text-[7px] uppercase opacity-60">
+                      Ping #{selectedWallet.tokenId}
+                    </span>
                   </div>
 
-                  <div className="p-4">
-
-                    {selectedWallet.pingClaimed ? (
-
-                      <div className="bg-[var(--hood-fg)] p-4 text-[var(--hood-bg)]">
-
-                        <p className="text-[10px] uppercase">
-                          ✓ Ping claimed
-                        </p>
-
-                        <p className="mt-2 text-[8px] uppercase opacity-70">
-                          Load inventory below to display it.
-                        </p>
-
-                      </div>
-
-                    ) : selectedWallet.pingCanClaim ? (
-
-                      <button
-                        type="button"
-
-                        disabled={
-                          processing
-                        }
-
-                        onClick={() =>
-                          void claimPing()
-                        }
-
-                        className="w-full bg-[var(--hood-fg)] px-4 py-5 text-[var(--hood-bg)] disabled:opacity-35"
-                      >
-                        <span className="block text-[10px] uppercase">
-                          {txState.action ===
-                          "claim"
-                            ? "Claiming Ping…"
-                            : `Claim Ping #${selectedWallet.tokenId}`}
-                        </span>
-
-                        <span className="mt-2 block text-[7px] uppercase opacity-65">
-                          Sends the matching Ping directly into this HoodWallet
-                        </span>
-
-                      </button>
-
-                    ) : (
-
-                      <p className="text-[9px] uppercase">
-                        {selectedWallet.pingEverActivated
-                          ? "Ping currently unavailable."
-                          : "Activate this HoodWallet to unlock its Ping."}
+                  {!selectedWallet.active ? (
+                    <div className="p-4">
+                      <p className="text-[8px] uppercase opacity-55">
+                        Activate this HoodWallet to unlock Ping.
+                      </p>
+                    </div>
+                  ) : selectedWallet.pingClaimed ? (
+                    <div className="flex items-center justify-between gap-4 p-4">
+                      <p className="text-[10px] uppercase">
+                        Ping #{selectedWallet.tokenId}
                       </p>
 
-                    )}
-
-                  </div>
-
+                      <span className="text-[7px] uppercase opacity-60">
+                        ✓ Activated
+                      </span>
+                    </div>
+                  ) : selectedWallet.pingCanClaim ? (
+                    <button
+                      type="button"
+                      disabled={
+                        processing
+                      }
+                      onClick={() =>
+                        void claimPing()
+                      }
+                      className="w-full bg-[var(--hood-fg)] px-5 py-5 text-[var(--hood-bg)] disabled:opacity-35"
+                    >
+                      <span className="text-[13px] uppercase tracking-[0.14em]">
+                        {txState.action ===
+                        "claim"
+                          ? "Activating Ping…"
+                          : `Activate Ping #${selectedWallet.tokenId}`}
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="p-4">
+                      <p className="text-[8px] uppercase opacity-55">
+                        Ping is not currently claimable.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
-                {/* STATUS */}
+                {/* TX STATUS */}
 
                 {txState.message && (
-
-                  <div className="mt-4 bg-[var(--hood-fg)] p-4 text-[var(--hood-bg)]">
-
-                    <p className="text-[8px] uppercase leading-relaxed">
-                      {
-                        txState.message
-                      }
+                  <div className="mt-3 border border-[var(--hood-fg)] px-4 py-3">
+                    <p className="text-[8px] uppercase leading-relaxed opacity-70">
+                      {txState.message}
                     </p>
-
                   </div>
-
                 )}
 
-                {/* TOKEN / ETH SEND */}
+                {/* INVENTORY */}
 
-                <div className="mt-4 border border-[var(--hood-fg)]">
-
-                  <button
-                    type="button"
-
-                    onClick={() =>
-                      setSendPanelOpen(
-                        (current) =>
-                          !current,
-                      )
-                    }
-
-                    className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
-                  >
-
+                <div className="mt-3 border border-[var(--hood-fg)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hood-fg)] px-4 py-3">
                     <div>
-
-                      <p className="text-[9px] uppercase tracking-[0.15em]">
-                        Send funds
+                      <p className="text-[12px] uppercase tracking-[0.14em]">
+                        Inventory
                       </p>
 
-                      <p className="mt-1 text-[7px] uppercase opacity-50">
-                        ETH + trusted tokens from HoodWallet
+                      <p className="mt-1 text-[8px] uppercase opacity-55">
+                        Tokens + NFTs held by this HoodWallet
                       </p>
-
                     </div>
-
-                    <span className="text-xl leading-none">
-                      {sendPanelOpen
-                        ? "−"
-                        : "+"}
-                    </span>
-
-                  </button>
-
-                  {sendPanelOpen && (
-
-                    <div className="border-t border-[var(--hood-fg)] p-4">
-
-                    {!selectedWallet.active ? (
-
-                      <p className="text-[9px] uppercase">
-                        Activate this HoodWallet before sending.
-                      </p>
-
-                    ) : (
-
-                      <>
-
-                        <label className="text-[7px] uppercase opacity-60">
-                          Trusted asset
-                        </label>
-
-                        <select
-                          value={
-                            sendAssetKey
-                          }
-
-                          onChange={(
-                            event,
-                          ) =>
-                            setSendAssetKey(
-                              event.target.value,
-                            )
-                          }
-
-                          className="mt-2 w-full border border-[var(--hood-fg)] bg-[var(--hood-bg)] p-3 text-[9px] text-[var(--hood-fg)]"
-                        >
-                          {sendableAssets.map(
-                            (
-                              asset,
-                            ) => (
-
-                              <option
-                                key={
-                                  assetKey(
-                                    asset,
-                                  )
-                                }
-
-                                value={
-                                  assetKey(
-                                    asset,
-                                  )
-                                }
-                              >
-                                {
-                                  asset.symbol
-                                }{" "}
-                                —{" "}
-                                {
-                                  asset.balanceFormatted
-                                }
-                              </option>
-
-                            ),
-                          )}
-                        </select>
-
-                        <p className="mt-2 text-[7px] uppercase opacity-55">
-                          Untrusted tokens are never available for sending.
-                        </p>
-
-                        <label className="mt-4 block text-[7px] uppercase opacity-60">
-                          Recipient
-                        </label>
-
-                        <input
-                          value={
-                            sendRecipient
-                          }
-
-                          onChange={(
-                            event,
-                          ) =>
-                            setSendRecipient(
-                              event.target.value,
-                            )
-                          }
-
-                          placeholder="0x..."
-
-                          className="mt-2 w-full border border-[var(--hood-fg)] bg-transparent p-3 text-[9px]"
-                        />
-
-                        <div className="mt-4 flex items-center justify-between">
-
-                          <label className="text-[7px] uppercase opacity-60">
-                            Amount
-                          </label>
-
-                          {selectedSendAsset && (
-
-                            <button
-                              type="button"
-
-                              onClick={() =>
-                                setSendAmount(
-                                  formatUnits(
-                                    selectedSendAsset.balanceRaw,
-
-                                    selectedSendAsset.decimals,
-                                  ),
-                                )
-                              }
-
-                              className="text-[7px] uppercase underline"
-                            >
-                              Max
-                            </button>
-
-                          )}
-
-                        </div>
-
-                        <input
-                          value={
-                            sendAmount
-                          }
-
-                          onChange={(
-                            event,
-                          ) =>
-                            setSendAmount(
-                              event.target.value,
-                            )
-                          }
-
-                          inputMode="decimal"
-
-                          placeholder="0.0"
-
-                          className="mt-2 w-full border border-[var(--hood-fg)] bg-transparent p-3 text-[9px]"
-                        />
-
-                        <button
-                          type="button"
-
-                          disabled={
-                            processing ||
-                            !sendRecipient ||
-                            !sendAmount
-                          }
-
-                          onClick={() =>
-                            void sendFromWallet()
-                          }
-
-                          className="mt-4 w-full bg-[var(--hood-fg)] px-4 py-4 text-[9px] uppercase text-[var(--hood-bg)] disabled:opacity-30"
-                        >
-                          {txState.action ===
-                          "send"
-                            ? "Sending…"
-                            : "Send from HoodWallet"}
-                        </button>
-
-                      </>
-
-                    )}
-
-                    </div>
-
-                  )}
-
-                </div>
-
-                {/* MANUAL INVENTORY */}
-
-                <div className="mt-4 border border-[var(--hood-fg)]">
-
-                  <div className="border-b border-[var(--hood-fg)] px-4 py-3">
-
-                    <div className="flex items-center justify-between">
-
-                      <p className="text-[9px] uppercase tracking-[0.15em]">
-                        Token + NFT Inventory
-                      </p>
-
-                      <p className="text-[7px] uppercase opacity-55">
-                        Manual only
-                      </p>
-
-                    </div>
-
-                  </div>
-
-                  <div className="p-4">
 
                     <button
                       type="button"
-
                       disabled={
                         inventoryLoading
                       }
-
                       onClick={() =>
                         void loadInventory()
                       }
-
-                      className="w-full border border-[var(--hood-fg)] px-4 py-5 text-[9px] uppercase tracking-[0.14em] disabled:opacity-35"
+                      className="text-[11px] uppercase underline underline-offset-4 disabled:opacity-30"
                     >
                       {inventoryLoading
-                        ? "Loading selected HoodWallet inventory…"
-                        : inventoryLoaded
-                          ? "Refresh token + NFT inventory"
-                          : "Load token + NFT inventory"}
+                        ? "Refreshing…"
+                        : "Refresh inventory"}
                     </button>
-
-                    <p className="mt-3 text-[7px] uppercase leading-relaxed opacity-55">
-                      Only this selected HoodWallet is scanned.
-                    </p>
-
-                    {inventoryLoaded && (
-
-                      <>
-
-                        {/* FILTER */}
-
-                        <div className="mt-4 grid grid-cols-2 border border-[var(--hood-fg)]">
-
-                          <button
-                            type="button"
-
-                            onClick={() =>
-                              setTrustedOnly(
-                                true,
-                              )
-                            }
-
-                            className={`p-3 text-[8px] uppercase ${
-                              trustedOnly
-                                ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
-                                : ""
-                            }`}
-                          >
-                            Trusted
-                          </button>
-
-                          <button
-                            type="button"
-
-                            onClick={() =>
-                              setTrustedOnly(
-                                false,
-                              )
-                            }
-
-                            className={`border-l border-[var(--hood-fg)] p-3 text-[8px] uppercase ${
-                              !trustedOnly
-                                ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
-                                : ""
-                            }`}
-                          >
-                            All
-                          </button>
-
-                        </div>
-
-                        {/* ADDITIONAL TOKENS */}
-
-                        <div className="mt-5">
-
-                          <p className="text-[8px] uppercase tracking-[0.14em]">
-                            Additional tokens
-                          </p>
-
-                          {visibleInventoryAssets.length ===
-                          0 ? (
-
-                            <p className="mt-3 text-[8px] uppercase opacity-50">
-                              No additional token balances.
-                            </p>
-
-                          ) : (
-
-                            <div className="mt-2 border border-[var(--hood-fg)]">
-
-                              {visibleInventoryAssets.map(
-                                (
-                                  asset,
-                                ) => (
-
-                                  <div
-                                    key={
-                                      assetKey(
-                                        asset,
-                                      )
-                                    }
-
-                                    className="flex items-center justify-between border-b border-[var(--hood-fg)] p-3 last:border-b-0"
-                                  >
-
-                                    <div>
-
-                                      <p className="text-[9px] uppercase">
-                                        {
-                                          asset.symbol
-                                        }
-                                      </p>
-
-                                      {asset.trusted ? (
-
-                                        <p className="mt-1 text-[6px] uppercase opacity-50">
-                                          Trusted
-                                        </p>
-
-                                      ) : (
-
-                                        <>
-
-                                          <p className="mt-1 text-[6px] uppercase opacity-50">
-                                            Untrusted · sending disabled
-                                          </p>
-
-                                          {asset.contract && (
-
-                                            <a
-                                              href={
-                                                explorerToken(
-                                                  asset.contract,
-                                                )
-                                              }
-
-                                              target="_blank"
-
-                                              rel="noreferrer"
-
-                                              className="text-[6px] underline opacity-45"
-                                            >
-                                              Contract ↗
-                                            </a>
-
-                                          )}
-
-                                        </>
-
-                                      )}
-
-                                    </div>
-
-                                    <p className="text-xl">
-                                      {
-                                        asset.balanceFormatted
-                                      }
-                                    </p>
-
-                                  </div>
-
-                                ),
-                              )}
-
-                            </div>
-
-                          )}
-
-                        </div>
-
-                        {/* NFT INVENTORY */}
-
-                        <div className="mt-6">
-
-                          <div className="flex items-center justify-between">
-
-                            <p className="text-[8px] uppercase tracking-[0.14em]">
-                              NFT Inventory
-                            </p>
-
-                            <p className="text-[7px] uppercase opacity-50">
-                              {
-                                visibleInventoryNfts.length
-                              }{" "}
-                              item
-                              {visibleInventoryNfts.length ===
-                              1
-                                ? ""
-                                : "s"}
-                            </p>
-
-                          </div>
-
-                          {visibleInventoryNfts.length ===
-                          0 ? (
-
-                            <p className="mt-3 text-[8px] uppercase opacity-50">
-                              No visible NFTs found.
-                            </p>
-
-                          ) : (
-
-                            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-
-                              {visibleInventoryNfts.map(
-                                (
-                                  nft,
-                                ) => (
-
-                                  <article
-                                    key={`${nft.contract}-${nft.tokenId}`}
-
-                                    className="border border-[var(--hood-fg)]"
-                                  >
-
-                                    <div className="aspect-square">
-
-                                      <NftArtwork
-                                        nft={
-                                          nft
-                                        }
-                                      />
-
-                                    </div>
-
-                                    <div className="border-t border-[var(--hood-fg)] p-3">
-
-                                      <p className="text-[7px] uppercase opacity-55">
-                                        {
-                                          nft.collectionName
-                                        }
-                                      </p>
-
-                                      <p className="mt-1 text-[10px] uppercase">
-                                        {
-                                          nft.name
-                                        }
-                                      </p>
-
-                                      <p className="mt-2 text-[7px] uppercase opacity-50">
-                                        #
-                                        {
-                                          nft.tokenId
-                                        }
-                                      </p>
-
-                                      <p className="mt-2 text-[6px] uppercase opacity-50">
-                                        {nft.trusted
-                                          ? "Trusted"
-                                          : "Unverified"}
-                                      </p>
-
-                                      <button
-                                        type="button"
-
-                                        disabled={
-                                          !selectedWallet.active ||
-                                          processing
-                                        }
-
-                                        onClick={() => {
-                                          setSelectedNftToSend(
-                                            nft,
-                                          );
-
-                                          setNftRecipient(
-                                            "",
-                                          );
-
-                                          setNftAmount(
-                                            "1",
-                                          );
-                                        }}
-
-                                        className="mt-3 w-full border border-[var(--hood-fg)] px-2 py-2 text-[7px] uppercase tracking-[0.12em] disabled:opacity-30"
-                                      >
-                                        Send NFT
-                                      </button>
-
-                                      <a
-                                        href={
-                                          openSeaNft(
-                                            nft.contract,
-                                            nft.tokenId,
-                                          )
-                                        }
-
-                                        target="_blank"
-
-                                        rel="noreferrer"
-
-                                        className="mt-2 block w-full text-center text-[6px] uppercase underline underline-offset-2 opacity-55"
-                                      >
-                                        View on OpenSea
-                                      </a>
-
-                                    </div>
-
-                                  </article>
-
-                                ),
-                              )}
-
-                            </div>
-
-                          )}
-
-                        </div>
-
-                        {/* NFT SEND PANEL */}
-
-                        {selectedNftToSend && (
-
-                          <div className="mt-6 border border-[var(--hood-fg)]">
-
-                            <div className="flex items-center justify-between border-b border-[var(--hood-fg)] px-4 py-3">
-
-                              <div>
-
-                                <p className="text-[7px] uppercase opacity-55">
-                                  Send NFT
-                                </p>
-
-                                <p className="mt-1 text-[11px] uppercase">
-                                  {
-                                    selectedNftToSend.name
-                                  }
-                                </p>
-
-                              </div>
-
-                              <button
-                                type="button"
-
-                                onClick={() =>
-                                  setSelectedNftToSend(
-                                    null,
-                                  )
-                                }
-
-                                className="text-[8px] uppercase underline"
-                              >
-                                Cancel
-                              </button>
-
-                            </div>
-
-                            <div className="p-4">
-
-                              <div className="grid gap-2 sm:grid-cols-2">
-
-                                <div className="border border-[var(--hood-fg)] p-3">
-
-                                  <p className="text-[7px] uppercase opacity-55">
-                                    Collection
-                                  </p>
-
-                                  <p className="mt-2 text-[9px] uppercase">
-                                    {
-                                      selectedNftToSend.collectionName
-                                    }
-                                  </p>
-
-                                </div>
-
-                                <div className="border border-[var(--hood-fg)] p-3">
-
-                                  <p className="text-[7px] uppercase opacity-55">
-                                    Token ID
-                                  </p>
-
-                                  <p className="mt-2 text-[9px] uppercase">
-                                    #
-                                    {
-                                      selectedNftToSend.tokenId
-                                    }
-                                  </p>
-
-                                </div>
-
-                              </div>
-
-                              <label className="mt-4 block text-[7px] uppercase opacity-60">
-                                Recipient
-                              </label>
-
-                              <input
-                                type="text"
-
-                                spellCheck={
-                                  false
-                                }
-
-                                value={
-                                  nftRecipient
-                                }
-
-                                onChange={(
-                                  event,
-                                ) =>
-                                  setNftRecipient(
-                                    event.target.value,
-                                  )
-                                }
-
-                                placeholder="0x..."
-
-                                className="mt-2 w-full border border-[var(--hood-fg)] bg-transparent p-3 text-[9px]"
-                              />
-
-                              {selectedNftToSend.kind ===
-                                "erc1155" && (
-
-                                <>
-
-                                  <div className="mt-4 flex items-center justify-between">
-
-                                    <label className="text-[7px] uppercase opacity-60">
-                                      Amount
-                                    </label>
-
-                                    <p className="text-[7px] uppercase opacity-55">
-                                      Available:{" "}
-                                      {
-                                        selectedNftToSend.balance
-                                      }
-                                    </p>
-
-                                  </div>
-
-                                  <input
-                                    type="number"
-
-                                    min="1"
-
-                                    step="1"
-
-                                    value={
-                                      nftAmount
-                                    }
-
-                                    onChange={(
-                                      event,
-                                    ) =>
-                                      setNftAmount(
-                                        event.target.value,
-                                      )
-                                    }
-
-                                    className="mt-2 w-full border border-[var(--hood-fg)] bg-transparent p-3 text-[9px]"
-                                  />
-
-                                </>
-
-                              )}
-
-                              <button
-                                type="button"
-
-                                disabled={
-                                  processing ||
-                                  !nftRecipient
-                                }
-
-                                onClick={() =>
-                                  void sendNftFromWallet()
-                                }
-
-                                className="mt-4 w-full bg-[var(--hood-fg)] px-4 py-5 text-[var(--hood-bg)] disabled:opacity-30"
-                              >
-
-                                <span className="block text-[9px] uppercase tracking-[0.14em]">
-                                  {txState.action ===
-                                  "send-nft"
-                                    ? "Sending NFT…"
-                                    : "Send NFT from HoodWallet"}
-                                </span>
-
-                                <span className="mt-2 block text-[7px] uppercase opacity-65">
-                                  {
-                                    selectedNftToSend.collectionName
-                                  }{" "}
-                                  #
-                                  {
-                                    selectedNftToSend.tokenId
-                                  }
-                                </span>
-
-                              </button>
-
-                              <p className="mt-3 text-[7px] uppercase leading-relaxed opacity-55">
-                                The HoodWallet transfers this NFT directly to the recipient address. Unverified means the collection is not in the trusted asset registry.
-                              </p>
-
-                            </div>
-
-                          </div>
-
-                        )}
-
-                      </>
-
-                    )}
-
                   </div>
 
+                  <div className="grid grid-cols-2 border-b border-[var(--hood-fg)]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setInventoryView(
+                          "verified",
+                        )
+                      }
+                      className={`px-4 py-4 text-[11px] uppercase tracking-[0.14em] ${
+                        inventoryView ===
+                        "verified"
+                          ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                          : ""
+                      }`}
+                    >
+                      Verified
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setInventoryView(
+                          "all",
+                        )
+                      }
+                      className={`border-l border-[var(--hood-fg)] px-4 py-4 text-[11px] uppercase tracking-[0.14em] ${
+                        inventoryView ===
+                        "all"
+                          ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                          : ""
+                      }`}
+                    >
+                      All
+                      {unverifiedAssetCount > 0
+                        ? ` +${unverifiedAssetCount}`
+                        : ""}
+                    </button>
+                  </div>
+
+                  <div className="p-4">
+                    {inventoryView === "all" &&
+                      unverifiedAssetCount > 0 && (
+                        <p className="mb-4 text-[8px] uppercase leading-relaxed opacity-60">
+                          Unverified means the asset is not in the OnChainHoodies registry yet. It can still be sent out of your HoodWallet.
+                        </p>
+                      )}
+
+                    {/* TOKENS */}
+
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[7px] uppercase tracking-[0.14em] opacity-60">
+                        Tokens
+                      </p>
+
+                      <p className="text-[7px] uppercase opacity-45">
+                        {displayedAssets.length} assets
+                      </p>
+                    </div>
+
+                    <div className="mt-2 divide-y divide-[var(--hood-fg)] border border-[var(--hood-fg)]">
+                      {displayedAssets.map(
+                        (asset) => {
+                          const sendEnabled =
+                            canSendAsset(
+                              asset,
+                            );
+
+                          return (
+                            <div
+                              key={
+                                assetKey(
+                                  asset,
+                                )
+                              }
+                              className="grid gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(140px,auto)_auto] sm:items-center"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-[10px] uppercase">
+                                  {asset.symbol}
+                                </p>
+
+                                <div className="mt-1 flex flex-wrap items-center gap-2">
+                                  <p className="truncate text-[7px] uppercase opacity-55">
+                                    {asset.name}
+                                  </p>
+
+                                  {!asset.trusted && (
+                                    <span className="border border-[var(--hood-fg)] px-1.5 py-0.5 text-[6px] uppercase opacity-60">
+                                      Unverified
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <p className="text-lg sm:text-right">
+                                {asset.balanceFormatted}
+                              </p>
+
+                              <button
+                                type="button"
+                                disabled={
+                                  !selectedWallet.active ||
+                                  !sendEnabled
+                                }
+                                onClick={() =>
+                                  chooseAssetToSend(
+                                    asset,
+                                  )
+                                }
+                                className="border border-[var(--hood-fg)] px-4 py-3 text-[10px] uppercase disabled:cursor-not-allowed disabled:opacity-25"
+                              >
+                                Send
+                              </button>
+                            </div>
+                          );
+                        },
+                      )}
+                    </div>
+
+                    {inventoryLoading &&
+                      !inventoryLoaded && (
+                        <p className="mt-2 text-[7px] uppercase opacity-45">
+                          Discovering ERC-20 + NFT balances…
+                        </p>
+                      )}
+
+                    {/* TOKEN SEND */}
+
+                    {sendPanelOpen &&
+                      selectedSendAsset && (
+                        <div className="mt-3 border border-[var(--hood-fg)] p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-[7px] uppercase opacity-55">
+                                Send token
+                              </p>
+
+                              <p className="mt-1 text-[11px] uppercase">
+                                {selectedSendAsset.symbol}
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSendPanelOpen(
+                                  false,
+                                )
+                              }
+                              className="text-[7px] uppercase underline underline-offset-4"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+
+                          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                            <input
+                              type="text"
+                              spellCheck={
+                                false
+                              }
+                              value={
+                                sendRecipient
+                              }
+                              onChange={(
+                                event,
+                              ) =>
+                                setSendRecipient(
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="Recipient 0x…"
+                              className="border border-[var(--hood-fg)] bg-transparent p-3 text-[9px] outline-none"
+                            />
+
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={
+                                sendAmount
+                              }
+                              onChange={(
+                                event,
+                              ) =>
+                                setSendAmount(
+                                  event.target.value,
+                                )
+                              }
+                              placeholder={`Amount / max ${selectedSendAsset.balanceFormatted}`}
+                              className="border border-[var(--hood-fg)] bg-transparent p-3 text-[9px] outline-none"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={
+                              processing ||
+                              !sendRecipient ||
+                              !sendAmount
+                            }
+                            onClick={() =>
+                              void sendFromWallet()
+                            }
+                            className="mt-2 w-full bg-[var(--hood-fg)] px-4 py-4 text-[var(--hood-bg)] text-[9px] uppercase tracking-[0.14em] disabled:opacity-30"
+                          >
+                            {txState.action ===
+                            "send"
+                              ? "Sending…"
+                              : `Send ${selectedSendAsset.symbol}`}
+                          </button>
+                        </div>
+                      )}
+
+                    {/* NFTS */}
+
+                    <div className="mt-6 flex items-center justify-between gap-3">
+                      <p className="text-[7px] uppercase tracking-[0.14em] opacity-60">
+                        NFTs
+                      </p>
+
+                      <p className="text-[7px] uppercase opacity-45">
+                        {displayedNfts.length} items
+                      </p>
+                    </div>
+
+                    {displayedNfts.length ===
+                    0 ? (
+                      <div className="mt-2 border border-[var(--hood-fg)] p-5">
+                        <p className="text-[8px] uppercase opacity-45">
+                          {inventoryLoading
+                            ? "Reading NFT inventory…"
+                            : "No NFTs found in this HoodWallet."}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+                        {displayedNfts.map(
+                          (nft) => (
+                            <article
+                              key={`${nft.contract.toLowerCase()}:${nft.tokenId}`}
+                              className="overflow-hidden border border-[var(--hood-fg)]"
+                            >
+                              <div className="aspect-square bg-black">
+                                <NftArtwork
+                                  nft={nft}
+                                />
+                              </div>
+
+                              <div className="border-t border-[var(--hood-fg)] p-3">
+                                <p className="truncate text-[10px] uppercase">
+                                  {sameAddress(
+                                    nft.contract,
+                                    siteConfig.pingAddress,
+                                  )
+                                    ? `Ping #${nft.tokenId}`
+                                    : nft.name}
+                                </p>
+
+                                {!nft.trusted && (
+                                  <p className="mt-2 text-[6px] uppercase opacity-55">
+                                    Unverified collection
+                                  </p>
+                                )}
+
+                                <div className="mt-3 flex items-center gap-4">
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      processing ||
+                                      !selectedWallet.active
+                                    }
+                                    onClick={() => {
+                                      setSelectedNftToSend(
+                                        nft,
+                                      );
+
+                                      setNftRecipient(
+                                        "",
+                                      );
+
+                                      setNftAmount(
+                                        "1",
+                                      );
+                                    }}
+                                    className="text-[9px] uppercase underline underline-offset-4 disabled:opacity-25"
+                                  >
+                                    Send
+                                  </button>
+
+                                  <a
+                                    href={
+                                      openSeaNft(
+                                        nft.contract,
+                                        nft.tokenId,
+                                      )
+                                    }
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[7px] uppercase underline underline-offset-4 opacity-65"
+                                  >
+                                    OpenSea ↗
+                                  </a>
+                                </div>
+                              </div>
+                            </article>
+                          ),
+                        )}
+                      </div>
+                    )}
+
+                    {/* NFT SEND */}
+
+                    {selectedNftToSend && (
+                      <div className="mt-3 border border-[var(--hood-fg)] p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[7px] uppercase opacity-55">
+                              Send NFT
+                            </p>
+
+                            <p className="mt-1 text-[10px] uppercase">
+                              {selectedNftToSend.name}
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedNftToSend(
+                                null,
+                              )
+                            }
+                            className="text-[7px] uppercase underline underline-offset-4"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+
+                        <input
+                          type="text"
+                          spellCheck={
+                            false
+                          }
+                          value={
+                            nftRecipient
+                          }
+                          onChange={(
+                            event,
+                          ) =>
+                            setNftRecipient(
+                              event.target.value,
+                            )
+                          }
+                          placeholder="Recipient 0x…"
+                          className="mt-4 w-full border border-[var(--hood-fg)] bg-transparent p-3 text-[9px] outline-none"
+                        />
+
+                        {selectedNftToSend.kind ===
+                          "erc1155" && (
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={
+                              nftAmount
+                            }
+                            onChange={(
+                              event,
+                            ) =>
+                              setNftAmount(
+                                event.target.value,
+                              )
+                            }
+                            className="mt-2 w-full border border-[var(--hood-fg)] bg-transparent p-3 text-[9px] outline-none"
+                          />
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={
+                            processing ||
+                            !nftRecipient
+                          }
+                          onClick={() =>
+                            void sendNftFromWallet()
+                          }
+                          className="mt-2 w-full bg-[var(--hood-fg)] px-4 py-4 text-[var(--hood-bg)] text-[9px] uppercase tracking-[0.14em] disabled:opacity-30"
+                        >
+                          {txState.action ===
+                          "send-nft"
+                            ? "Sending NFT…"
+                            : "Send NFT"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
+                {/* SHARE */}
+
+                <div className="mt-3 border border-[var(--hood-fg)]">
+                  <div className="border-b border-[var(--hood-fg)] px-4 py-3">
+                    <p className="text-[12px] uppercase tracking-[0.14em]">
+                      Share HoodWallet
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                    <div>
+                      <p className="text-[11px] uppercase">
+                        Turn your HoodWallet into a share card.
+                      </p>
+
+                      <p className="mt-2 max-w-2xl text-[8px] uppercase leading-relaxed opacity-55">
+                        Portrait 1:2 format with your Hoodie and NFT collection. You choose what financial information is shown.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExportModalOpen(
+                          true,
+                        )
+                      }
+                      className="border border-[var(--hood-fg)] px-6 py-4 text-[10px] uppercase tracking-[0.14em]"
+                    >
+                      Create wallet card
+                    </button>
+                  </div>
+                </div>
               </>
-
             ) : null}
-
           </section>
-
         </div>
-
       </section>
 
-      <SiteFooter />
+      {exportModalOpen &&
+        selectedWallet &&
+        selectedHoodie && (
+          <div
+            className="fixed inset-0 z-[100] overflow-y-auto bg-black/90 p-4 md:p-8"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Create HoodWallet card"
+            onMouseDown={(event) => {
+              if (
+                event.target ===
+                event.currentTarget
+              ) {
+                setExportModalOpen(false);
+              }
+            }}
+          >
+            <div className="mx-auto max-w-[1320px] border border-[#ccff00] bg-black p-4 text-[#ccff00] md:p-5">
+              <div className="flex flex-col gap-4 border-b border-[#ccff00] pb-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-[18px] uppercase tracking-[0.12em]">
+                    Share HoodWallet
+                  </p>
+                  <p className="mt-2 text-[9px] uppercase leading-relaxed opacity-55">
+                    A 2:1 wallet card built from the inventory view you are currently looking at.
+                  </p>
+                </div>
 
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExportModalOpen(false)
+                  }
+                  className="text-[12px] uppercase underline underline-offset-4"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)]">
+                <div>
+                  <div className="border border-[#ccff00] p-3">
+                    <p className="text-[8px] uppercase opacity-55">
+                      Inventory source
+                    </p>
+                    <p className="mt-2 text-[15px] uppercase">
+                      {inventoryView === "all"
+                        ? "All assets"
+                        : "Verified assets"}
+                    </p>
+                    <p className="mt-2 text-[8px] uppercase leading-relaxed opacity-50">
+                      Switch VERIFIED / ALL in the wallet before opening this card to change what is shared.
+                    </p>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    {[
+                      {
+                        label: "Show token balances",
+                        checked: exportShowBalances,
+                        toggle: () =>
+                          setExportShowBalances(
+                            (current) =>
+                              !current,
+                          ),
+                      },
+                      {
+                        label: "Show NFT artwork",
+                        checked: exportShowNfts,
+                        toggle: () =>
+                          setExportShowNfts(
+                            (current) =>
+                              !current,
+                          ),
+                      },
+                      {
+                        label: "Show full wallet address",
+                        checked: exportShowAddress,
+                        toggle: () =>
+                          setExportShowAddress(
+                            (current) =>
+                              !current,
+                          ),
+                      },
+                    ].map((option) => (
+                      <button
+                        key={option.label}
+                        type="button"
+                        onClick={option.toggle}
+                        className={`flex w-full items-center justify-between border border-[#ccff00] px-4 py-3 text-left text-[10px] uppercase tracking-[0.1em] ${
+                          option.checked
+                            ? "bg-[#ccff00] text-black"
+                            : ""
+                        }`}
+                      >
+                        <span>{option.label}</span>
+                        <span>
+                          {option.checked
+                            ? "■"
+                            : "□"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={exportBusy}
+                    onClick={() =>
+                      void exportHoodWalletCard()
+                    }
+                    className="mt-4 w-full bg-[#ccff00] px-4 py-4 text-[12px] uppercase tracking-[0.16em] text-black disabled:opacity-40"
+                  >
+                    {exportBusy
+                      ? "Creating PNG…"
+                      : "Save wallet card"}
+                  </button>
+
+                  <p className="mt-3 text-[8px] uppercase opacity-45">
+                    PNG / 1600 × 800 / 2:1
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-center bg-[#080808] p-3 md:p-5">
+                  <div className="aspect-[2/1] w-full max-w-[960px] overflow-hidden border border-[#ccff00] bg-black p-[3%] text-[#ccff00] shadow-2xl">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-[clamp(12px,1.7vw,24px)] uppercase tracking-[0.12em]">
+                          HoodWallet
+                        </p>
+                        <p className="mt-1 text-[clamp(5px,0.65vw,9px)] uppercase opacity-55">
+                          View / {inventoryView}
+                        </p>
+                      </div>
+                      <p className="text-[clamp(6px,0.75vw,10px)] uppercase">
+                        {selectedWallet.active
+                          ? "● Active"
+                          : "○ Inactive"}
+                      </p>
+                    </div>
+
+                    <div className="mt-[4%] grid grid-cols-[32%_minmax(0,1fr)] gap-[4%]">
+                      <div>
+                        <div className="aspect-square overflow-hidden bg-[#ccff00]">
+                          <HoodieArtwork hoodie={selectedHoodie} />
+                        </div>
+                        <p className="mt-[5%] text-[clamp(9px,1.35vw,19px)] uppercase">
+                          #{selectedWallet.tokenId}
+                        </p>
+                        <p className="mt-[2%] text-[clamp(5px,0.55vw,8px)] uppercase opacity-55">
+                          OnChainHoodie
+                        </p>
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="text-[clamp(5px,0.55vw,8px)] uppercase opacity-55">
+                          Wallet
+                        </p>
+                        <p className="mt-[1%] break-all text-[clamp(6px,0.8vw,11px)] uppercase">
+                          {exportShowAddress
+                            ? selectedWallet.walletAddress
+                            : shortAddress(
+                                selectedWallet.walletAddress,
+                              )}
+                        </p>
+
+                        {exportShowBalances && (
+                          <div className="mt-[4%] border border-[#ccff00] p-[2.5%]">
+                            <div className="flex items-center justify-between text-[clamp(5px,0.55vw,8px)] uppercase opacity-55">
+                              <span>Assets</span>
+                              <span>{exportAssets.length}</span>
+                            </div>
+                            <div className="mt-[2%] grid grid-cols-3 gap-[2%]">
+                              {exportAssets
+                                .slice(0, 6)
+                                .map((asset) => (
+                                  <div
+                                    key={assetKey(asset)}
+                                    className="min-w-0"
+                                  >
+                                    <p className="truncate text-[clamp(5px,0.55vw,8px)] uppercase opacity-55">
+                                      {asset.symbol}
+                                    </p>
+                                    <p className="mt-[2%] truncate text-[clamp(7px,0.9vw,13px)] uppercase">
+                                      {asset.balanceFormatted}
+                                    </p>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {exportShowNfts && (
+                          <div className="mt-[4%]">
+                            <div className="mb-[2%] flex items-center justify-between text-[clamp(5px,0.55vw,8px)] uppercase">
+                              <span>NFTs</span>
+                              <span className="opacity-55">
+                                {exportNfts.length}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-6 gap-[1.5%]">
+                              {exportNfts
+                                .slice(0, 6)
+                                .map((nft) => (
+                                  <div
+                                    key={`${nft.contract}:${nft.tokenId}`}
+                                    className="min-w-0 overflow-hidden border border-[#ccff00]"
+                                  >
+                                    <div className="aspect-square bg-black">
+                                      <NftArtwork nft={nft} />
+                                    </div>
+                                    <p className="truncate border-t border-[#ccff00] px-[6%] py-[5%] text-[clamp(4px,0.42vw,6px)] uppercase">
+                                      {nft.name}
+                                    </p>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-[3%] flex items-center justify-between border-t border-[#ccff00] pt-[2%] text-[clamp(4px,0.48vw,7px)] uppercase tracking-[0.1em]">
+                      <span>OnChainHoodies / Robinhood Chain</span>
+                      <span>One Hoodie. One on-chain wallet.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+      <SiteFooter />
     </main>
   );
 }

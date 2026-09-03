@@ -64,10 +64,16 @@ type AlchemyOwnedNft = {
   contract?: {
     address?: string;
     name?: string;
+    symbol?: string;
 
     isSpam?: boolean;
 
     spamClassifications?: string[];
+  };
+
+  collection?: {
+    name?: string;
+    slug?: string;
   };
 
   tokenId?: string;
@@ -114,6 +120,7 @@ type NftResponse = {
 
   name: string;
   collectionName: string;
+  symbol?: string;
 
   image?: string;
 
@@ -663,24 +670,23 @@ function pickNftImage(
   nft: AlchemyOwnedNft,
 ) {
   /*
-   * Prefer the NFT's original/raw artwork before
-   * Alchemy-rendered cache URLs. This matters for
-   * newly revealed and animated collections where
-   * cached thumbnails can lag behind the metadata.
+   * Wallet UI priority:
+   *
+   * 1. Alchemy cached/processed media.
+   * 2. Alchemy PNG conversion.
+   * 3. Alchemy thumbnail.
+   * 4. Original token media.
+   * 5. Raw metadata image fields.
+   *
+   * The cached Alchemy URLs are dramatically more reliable for
+   * heterogeneous wallet inventories than drawing arbitrary IPFS,
+   * gateway and collection-hosted URLs directly in the browser.
    */
-  const original =
-    nft.image?.originalUrl?.trim();
-
-  if (
-    original &&
-    !looksLikeVideo(
-      original,
-    )
-  ) {
-    return original;
-  }
-
-  const rawCandidates = [
+  const candidates = [
+    nft.image?.cachedUrl,
+    nft.image?.pngUrl,
+    nft.image?.thumbnailUrl,
+    nft.image?.originalUrl,
     nft.raw?.metadata?.image,
     nft.raw?.metadata?.image_url,
     nft.raw?.metadata?.imageUrl,
@@ -688,7 +694,7 @@ function pickNftImage(
 
   for (
     const candidate of
-    rawCandidates
+    candidates
   ) {
     const value =
       candidate?.trim();
@@ -703,36 +709,143 @@ function pickNftImage(
     }
   }
 
-  const cachedCandidates = [
-    nft.image?.cachedUrl,
-    nft.image?.pngUrl,
-    nft.image?.thumbnailUrl,
-  ];
+  return undefined;
+}
 
-  for (
-    const candidate of
-    cachedCandidates
+function buildAlchemyMetadataBatchUrl() {
+  const base =
+    getAlchemyNftBaseUrl();
+
+  const apiKey =
+    getAlchemyApiKey();
+
+  return `${base}/${apiKey}/getNFTMetadataBatch`;
+}
+
+function buildAlchemyMetadataUrl(
+  contract: string,
+  tokenId: string,
+  refreshCache = false,
+) {
+  const base =
+    getAlchemyNftBaseUrl();
+
+  const apiKey =
+    getAlchemyApiKey();
+
+  const params =
+    new URLSearchParams({
+      contractAddress:
+        contract,
+      tokenId,
+      tokenUriTimeoutInMs:
+        "5000",
+      refreshCache:
+        refreshCache
+          ? "true"
+          : "false",
+    });
+
+  return (
+    `${base}/${apiKey}/getNFTMetadata?` +
+    params.toString()
+  );
+}
+
+async function fetchAlchemyMetadataBatch(
+  nfts: NftResponse[],
+) {
+  if (
+    nfts.length === 0
   ) {
-    const value =
-      candidate?.trim();
-
-    if (
-      value &&
-      !looksLikeVideo(
-        value,
-      )
-    ) {
-      return value;
-    }
+    return [] as AlchemyOwnedNft[];
   }
 
-  /*
-   * Real video media is returned last. The page
-   * can try the HoodWallet image proxy for a still
-   * frame. GIFs are not treated as video and remain
-   * animated in a normal <img>.
-   */
-  return original;
+  const response =
+    await fetch(
+      buildAlchemyMetadataBatchUrl(),
+      {
+        method:
+          "POST",
+
+        headers: {
+          accept:
+            "application/json",
+          "content-type":
+            "application/json",
+        },
+
+        cache:
+          "no-store",
+
+        body:
+          JSON.stringify({
+            tokens:
+              nfts.slice(0, 100).map(
+                (nft) => ({
+                  contractAddress:
+                    nft.contract,
+                  tokenId:
+                    nft.tokenId,
+                  tokenType:
+                    nft.kind === "erc1155"
+                      ? "ERC1155"
+                      : "ERC721",
+                }),
+              ),
+            tokenUriTimeoutInMs:
+              5000,
+            refreshCache:
+              false,
+          }),
+      },
+    );
+
+  if (
+    !response.ok
+  ) {
+    throw new Error(
+      `Alchemy NFT metadata batch request failed (${response.status}).`,
+    );
+  }
+
+  const payload =
+    (await response.json()) as unknown;
+
+  return Array.isArray(payload)
+    ? payload as AlchemyOwnedNft[]
+    : [];
+}
+
+async function fetchAlchemyFreshMetadata(
+  nft: NftResponse,
+) {
+  const response =
+    await fetch(
+      buildAlchemyMetadataUrl(
+        nft.contract,
+        nft.tokenId,
+        true,
+      ),
+      {
+        headers: {
+          accept:
+            "application/json",
+        },
+        cache:
+          "no-store",
+      },
+    );
+
+  if (
+    !response.ok
+  ) {
+    throw new Error(
+      `Alchemy fresh NFT metadata request failed (${response.status}).`,
+    );
+  }
+
+  return (await response.json()) as AlchemyOwnedNft;
 }
 
 function normalizeAlchemyNft(
@@ -771,6 +884,7 @@ function normalizeAlchemyNft(
       : "erc721";
 
   const collectionName =
+    nft.collection?.name?.trim() ||
     nft.contract?.name?.trim() ||
     "NFT Collection";
 
@@ -804,6 +918,10 @@ function normalizeAlchemyNft(
     name,
 
     collectionName,
+
+    symbol:
+      nft.contract?.symbol?.trim() ||
+      undefined,
 
     image:
       pickNftImage(
@@ -919,17 +1037,135 @@ async function fetchAlchemyNfts(
   );
 
   /*
-   * Freshly revealed collections can be indexed for ownership
-   * before Alchemy refreshes their image metadata. Only for NFTs
-   * with no image do we ask OpenSea for a current image.
+   * Some ownership records arrive before their processed media.
+   * Ask Alchemy's metadata service for those exact NFTs first.
+   * We do one batch cache lookup, then a small number of fresh
+   * metadata reads. OpenSea remains the final fallback only.
    */
-  const missingImages =
+  let missingImages =
+    collected.filter(
+      (nft) =>
+        !nft.image ||
+        nft.image.trim() === "",
+    );
+
+  if (
+    missingImages.length > 0
+  ) {
+    try {
+      const metadata =
+        await fetchAlchemyMetadataBatch(
+          missingImages.slice(0, 100),
+        );
+
+      const byKey =
+        new Map<string, AlchemyOwnedNft>();
+
+      for (
+        const item of metadata
+      ) {
+        const contract =
+          item.contract?.address?.trim();
+        const tokenId =
+          item.tokenId?.trim();
+
+        if (
+          contract &&
+          tokenId &&
+          isAddress(contract)
+        ) {
+          byKey.set(
+            `${contract.toLowerCase()}:${tokenId}`,
+            item,
+          );
+        }
+      }
+
+      for (
+        const nft of missingImages
+      ) {
+        const item =
+          byKey.get(
+            `${nft.contract.toLowerCase()}:${nft.tokenId}`,
+          );
+
+        const image =
+          item
+            ? pickNftImage(item)
+            : undefined;
+
+        if (image) {
+          nft.image =
+            image;
+        }
+      }
+    } catch (error) {
+      console.warn(
+        "HoodWallet Alchemy metadata batch fallback unavailable.",
+        error,
+      );
+    }
+  }
+
+  missingImages =
+    collected.filter(
+      (nft) =>
+        !nft.image ||
+        nft.image.trim() === "",
+    );
+
+  const MAX_ALCHEMY_REFRESH_FALLBACKS =
+    12;
+
+  if (
+    missingImages.length > 0
+  ) {
+    const refreshed =
+      await Promise.allSettled(
+        missingImages
+          .slice(
+            0,
+            MAX_ALCHEMY_REFRESH_FALLBACKS,
+          )
+          .map(
+            async (nft) => ({
+              nft,
+              metadata:
+                await fetchAlchemyFreshMetadata(
+                  nft,
+                ),
+            }),
+          ),
+      );
+
+    for (
+      const result of refreshed
+    ) {
+      if (
+        result.status !==
+        "fulfilled"
+      ) {
+        continue;
+      }
+
+      const image =
+        pickNftImage(
+          result.value.metadata,
+        );
+
+      if (image) {
+        result.value.nft.image =
+          image;
+      }
+    }
+  }
+
+  missingImages =
     collected
       .filter(
         (nft) =>
           !nft.image ||
-          nft.image.trim() ===
-            "",
+          nft.image.trim() === "",
       )
       .slice(
         0,
@@ -937,17 +1173,8 @@ async function fetchAlchemyNfts(
       );
 
   if (
-    missingImages.length >
-    0
+    missingImages.length > 0
   ) {
-    console.log(
-      "HoodWallet missing NFT images:",
-      missingImages.map(
-        (nft) =>
-          `${nft.contract}:${nft.tokenId}`,
-      ),
-    );
-
     const refreshed =
       await Promise.all(
         missingImages.map(
@@ -968,14 +1195,6 @@ async function fetchAlchemyNfts(
         image,
       } of refreshed
     ) {
-      console.log(
-        "HoodWallet OpenSea image:",
-        nft.contract,
-        nft.tokenId,
-        image ||
-          "NONE",
-      );
-
       if (image) {
         nft.image =
           image;
