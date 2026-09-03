@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAddress, isAddress } from "ethers";
+import { Contract, JsonRpcProvider, getAddress, isAddress } from "ethers";
 
 import { siteConfig } from "../../../../lib/config";
 import trustedAssetRegistryJson from "../../../../lib/hoodwallet-assets.json";
@@ -32,6 +32,10 @@ type TrustedAssetRegistry = {
   erc20?: TrustedRegistryEntry[];
   nfts?: TrustedRegistryEntry[];
 };
+
+type BlockscoutTokenBalancePayload =
+  | BlockscoutTokenBalance[]
+  | { items?: BlockscoutTokenBalance[] };
 
 type BlockscoutTokenBalance = {
   value?: string;
@@ -123,6 +127,7 @@ type NftResponse = {
   symbol?: string;
 
   image?: string;
+  imageCandidates: string[];
 
   balance: string;
 
@@ -313,22 +318,29 @@ function getBlockscoutContractAddress(
 function normalizeTokenBalances(
   payload: unknown,
 ): AssetResponse[] {
-  if (
-    !Array.isArray(
-      payload,
-    )
-  ) {
-    return [];
-  }
+  const rawItems =
+    Array.isArray(payload)
+      ? payload
+      : payload &&
+          typeof payload === "object" &&
+          Array.isArray(
+            (payload as { items?: unknown[] }).items,
+          )
+        ? (payload as { items: unknown[] }).items
+        : [];
 
   return (
-    payload as BlockscoutTokenBalance[]
+    rawItems as BlockscoutTokenBalance[]
   )
-    .filter(
-      (item) =>
-        item.token?.type ===
-        "ERC-20",
-    )
+    .filter((item) => {
+      const tokenType =
+        item.token?.type
+          ?.trim()
+          .toUpperCase()
+          .replaceAll("-", "");
+
+      return tokenType === "ERC20";
+    })
     .map(
       (
         item,
@@ -438,6 +450,136 @@ function normalizeTokenBalances(
           right.symbol,
         ),
     );
+}
+
+/*//////////////////////////////////////////////////////////////
+                  DIRECT TRUSTED ERC-20 READS
+
+  Blockscout is useful for discovery, but it must not be the
+  source of truth for assets we explicitly trust. Explorer
+  indexes can lag or temporarily omit balances. Every ERC-20 in
+  hoodwallet-assets.json is therefore read directly from-chain
+  and then merged with Blockscout discovery below.
+//////////////////////////////////////////////////////////////*/
+
+const ERC20_BALANCE_ABI = [
+  "function balanceOf(address account) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+] as const;
+
+async function fetchTrustedErc20Balances(
+  walletAddress: string,
+): Promise<AssetResponse[]> {
+  if (!siteConfig.rpcUrl) {
+    return [];
+  }
+
+  const provider = new JsonRpcProvider(
+    siteConfig.rpcUrl,
+    Number(siteConfig.chainId),
+    { staticNetwork: true },
+  );
+
+  const entries =
+    trustedAssetRegistry.erc20 ?? [];
+
+  const results =
+    await Promise.allSettled(
+      entries.map(
+        async (entry): Promise<AssetResponse | null> => {
+          const normalized =
+            normalizeContractAddress(entry.contract);
+
+          if (!normalized) {
+            return null;
+          }
+
+          const contractAddress =
+            getAddress(normalized);
+
+          const token =
+            new Contract(
+              contractAddress,
+              ERC20_BALANCE_ABI,
+              provider,
+            );
+
+          const [balanceResult, decimalsResult] =
+            await Promise.all([
+              token.balanceOf(walletAddress) as Promise<bigint>,
+              token.decimals() as Promise<bigint | number>,
+            ]);
+
+          const balanceRaw =
+            BigInt(balanceResult);
+
+          if (balanceRaw <= BigInt(0)) {
+            return null;
+          }
+
+          const decimals =
+            Number(decimalsResult);
+
+          return {
+            symbol: entry.symbol?.trim() || "TOKEN",
+            name: entry.name?.trim() || entry.symbol?.trim() || "ERC-20",
+            balanceRaw: balanceRaw.toString(),
+            balanceFormatted: formatTokenBalance(
+              balanceRaw,
+              Number.isInteger(decimals) && decimals >= 0 && decimals <= 255
+                ? decimals
+                : 18,
+              6,
+            ),
+            contract: contractAddress,
+            decimals:
+              Number.isInteger(decimals) && decimals >= 0 && decimals <= 255
+                ? decimals
+                : 18,
+            kind: "erc20",
+            trusted: true,
+          };
+        },
+      ),
+    );
+
+  return results
+    .filter(
+      (result): result is PromiseFulfilledResult<AssetResponse | null> =>
+        result.status === "fulfilled",
+    )
+    .map((result) => result.value)
+    .filter((asset): asset is AssetResponse => asset !== null);
+}
+
+function mergeErc20Assets(
+  discovered: AssetResponse[],
+  trustedDirect: AssetResponse[],
+) {
+  const merged =
+    new Map<string, AssetResponse>();
+
+  for (const asset of discovered) {
+    const key =
+      asset.contract?.toLowerCase() ||
+      `${asset.symbol}:${asset.name}`;
+
+    merged.set(key, asset);
+  }
+
+  // Direct on-chain reads win for trusted contracts.
+  for (const asset of trustedDirect) {
+    const key =
+      asset.contract?.toLowerCase() ||
+      `${asset.symbol}:${asset.name}`;
+
+    merged.set(key, asset);
+  }
+
+  return Array.from(merged.values()).sort(
+    (left, right) =>
+      left.symbol.localeCompare(right.symbol),
+  );
 }
 
 /*//////////////////////////////////////////////////////////////
@@ -666,21 +808,15 @@ function looksLikeVideo(
   );
 }
 
-function pickNftImage(
+function collectNftImageCandidates(
   nft: AlchemyOwnedNft,
 ) {
   /*
-   * Wallet UI priority:
+   * Never trust one Alchemy CDN URL as the only source. A cachedUrl may be
+   * stale while pngUrl, thumbnailUrl, originalUrl or metadata.image still
+   * works. Return the complete ordered list to the client so it can retry.
    *
-   * 1. Alchemy cached/processed media.
-   * 2. Alchemy PNG conversion.
-   * 3. Alchemy thumbnail.
-   * 4. Original token media.
-   * 5. Raw metadata image fields.
-   *
-   * The cached Alchemy URLs are dramatically more reliable for
-   * heterogeneous wallet inventories than drawing arbitrary IPFS,
-   * gateway and collection-hosted URLs directly in the browser.
+   * Alchemy recommends its hosted/cached media first, then original/raw.
    */
   const candidates = [
     nft.image?.cachedUrl,
@@ -692,24 +828,43 @@ function pickNftImage(
     nft.raw?.metadata?.imageUrl,
   ];
 
-  for (
-    const candidate of
-    candidates
-  ) {
-    const value =
-      candidate?.trim();
+  return Array.from(
+    new Set(
+      candidates
+        .map((value) => value?.trim() || "")
+        .filter(
+          (value) =>
+            value.length > 0 &&
+            !looksLikeVideo(value),
+        ),
+    ),
+  );
+}
 
-    if (
-      value &&
-      !looksLikeVideo(
-        value,
-      )
-    ) {
-      return value;
-    }
-  }
+function pickNftImage(
+  nft: AlchemyOwnedNft,
+) {
+  return collectNftImageCandidates(
+    nft,
+  )[0];
+}
 
-  return undefined;
+function mergeImageCandidates(
+  nft: NftResponse,
+  metadata: AlchemyOwnedNft,
+) {
+  const merged =
+    Array.from(
+      new Set([
+        ...nft.imageCandidates,
+        ...collectNftImageCandidates(
+          metadata,
+        ),
+      ]),
+    );
+
+  nft.imageCandidates = merged;
+  nft.image = merged[0];
 }
 
 function buildAlchemyMetadataBatchUrl() {
@@ -834,6 +989,10 @@ async function fetchAlchemyFreshMetadata(
         },
         cache:
           "no-store",
+        signal:
+          AbortSignal.timeout(
+            2500,
+          ),
       },
     );
 
@@ -925,6 +1084,11 @@ function normalizeAlchemyNft(
 
     image:
       pickNftImage(
+        nft,
+      ),
+
+    imageCandidates:
+      collectNftImageCandidates(
         nft,
       ),
 
@@ -1045,8 +1209,7 @@ async function fetchAlchemyNfts(
   let missingImages =
     collected.filter(
       (nft) =>
-        !nft.image ||
-        nft.image.trim() === "",
+        nft.imageCandidates.length === 0,
     );
 
   if (
@@ -1089,14 +1252,11 @@ async function fetchAlchemyNfts(
             `${nft.contract.toLowerCase()}:${nft.tokenId}`,
           );
 
-        const image =
-          item
-            ? pickNftImage(item)
-            : undefined;
-
-        if (image) {
-          nft.image =
-            image;
+        if (item) {
+          mergeImageCandidates(
+            nft,
+            item,
+          );
         }
       }
     } catch (error) {
@@ -1110,8 +1270,7 @@ async function fetchAlchemyNfts(
   missingImages =
     collected.filter(
       (nft) =>
-        !nft.image ||
-        nft.image.trim() === "",
+        nft.imageCandidates.length === 0,
     );
 
   const MAX_ALCHEMY_REFRESH_FALLBACKS =
@@ -1148,15 +1307,10 @@ async function fetchAlchemyNfts(
         continue;
       }
 
-      const image =
-        pickNftImage(
-          result.value.metadata,
-        );
-
-      if (image) {
-        result.value.nft.image =
-          image;
-      }
+      mergeImageCandidates(
+        result.value.nft,
+        result.value.metadata,
+      );
     }
   }
 
@@ -1164,8 +1318,7 @@ async function fetchAlchemyNfts(
     collected
       .filter(
         (nft) =>
-          !nft.image ||
-          nft.image.trim() === "",
+          nft.imageCandidates.length === 0,
       )
       .slice(
         0,
@@ -1196,8 +1349,15 @@ async function fetchAlchemyNfts(
       } of refreshed
     ) {
       if (image) {
+        nft.imageCandidates =
+          Array.from(
+            new Set([
+              ...nft.imageCandidates,
+              image,
+            ]),
+          );
         nft.image =
-          image;
+          nft.imageCandidates[0];
       }
     }
   }
@@ -1305,11 +1465,16 @@ export async function GET(
 
   const [
     tokenResult,
+    trustedTokenResult,
     nftResult,
   ] =
     await Promise.allSettled(
       [
         fetchBlockscoutBalances(
+          walletAddress,
+        ),
+
+        fetchTrustedErc20Balances(
           walletAddress,
         ),
 
@@ -1331,25 +1496,41 @@ export async function GET(
     NftResponse[] =
     [];
 
-  if (
-    tokenResult.status ===
-    "fulfilled"
-  ) {
-    assets =
-      normalizeTokenBalances(
-        tokenResult.value,
-      );
-  } else {
+  const discoveredAssets =
+    tokenResult.status === "fulfilled"
+      ? normalizeTokenBalances(tokenResult.value)
+      : [];
+
+  const directTrustedAssets =
+    trustedTokenResult.status === "fulfilled"
+      ? trustedTokenResult.value
+      : [];
+
+  assets = mergeErc20Assets(
+    discoveredAssets,
+    directTrustedAssets,
+  );
+
+  if (tokenResult.status === "rejected") {
     console.error(
       `HoodWallet ERC-20 discovery failed for ${walletAddress}:`,
       tokenResult.reason,
     );
 
+    // Do not blank verified tokens merely because Blockscout failed.
     warnings.push(
-      tokenResult.reason instanceof
-        Error
-        ? tokenResult.reason.message
-        : "ERC-20 balances are temporarily unavailable.",
+      "Explorer ERC-20 discovery is temporarily unavailable; verified token balances were read directly on-chain.",
+    );
+  }
+
+  if (trustedTokenResult.status === "rejected") {
+    console.error(
+      `HoodWallet direct trusted ERC-20 reads failed for ${walletAddress}:`,
+      trustedTokenResult.reason,
+    );
+
+    warnings.push(
+      "Direct verified-token balance checks are temporarily unavailable.",
     );
   }
 
