@@ -64,48 +64,24 @@ type JourneyMilestone = {
   description: string;
   href: string;
   cta: string;
-
   completed: boolean;
   recorded: boolean;
-  source: "journey" | "legacy" | "community" | null;
-
+  source: "journey" | "legacy" | null;
   currentlyTrue: boolean;
-
-  completedAt:
-    number | null;
-
-  transactionHash:
-    string | null;
-
-  talkCount?:
-    number;
-
-  state?:
-    PingState;
-
-  // Season 2 builder/community actions
-  season2?:
-    boolean;
+  completedAt: number | null;
+  transactionHash: string | null;
+  talkCount?: number;
+  state?: PingState;
 
   qualification?: {
-    qualified?:
-      boolean;
-
-    qualifiedOnchain?:
-      boolean;
-
-    verificationMode?:
-      string;
-
-    verificationDelay?:
-      string | null;
-
-    ethIn?:
-      string | null;
-
-    countedAsBee?:
-      boolean | null;
+    qualified?: boolean;
+    qualifiedOnchain?: boolean;
+    ethIn?: string | null;
+    countedAsBee?: boolean | null;
+    verificationMode?: string;
+    verificationDelay?: string | null;
   };
+
 };
 
 type JourneyResponse = {
@@ -1210,17 +1186,17 @@ function JourneyRow({
         </div>
 
         <div>
-          <p className="text-[7px] uppercase tracking-[0.16em] opacity-55">
+          <p className="text-[10px] uppercase tracking-[0.18em] opacity-65">
             {milestone.app?.replaceAll("_", " ") || "OCH"}
           </p>
 
-          <h3 className="mt-2 text-[24px] uppercase leading-none tracking-[-0.035em]">
+          <h3 className="mt-2 text-[32px] uppercase leading-none tracking-[-0.045em]">
             {milestone.title || milestone.name || milestone.app || "Journey"}
           </h3>
         </div>
 
         <div>
-          <div className="flex items-center gap-2 text-[14px] uppercase tracking-[0.035em]">
+          <div className="flex items-center gap-2 text-[18px] uppercase tracking-[0.035em]">
             {checkedIn ? (
               <>
                 <Check
@@ -1236,10 +1212,12 @@ function JourneyRow({
             )}
           </div>
 
-          <p className="mt-2 text-[11px] uppercase leading-relaxed opacity-80">
-            {checkedIn ? `${milestone.name} is in Hoodie #${journey.tokenId}'s Journey.` : t.text}
-          </p>
-          {!checkedIn && <Link href={t.href} className="mt-2 inline-block text-[7px] uppercase underline underline-offset-4">{t.cta} →</Link>}
+          <p className="mt-3 max-w-xl text-[16px] uppercase leading-relaxed opacity-90">
+  {checkedIn
+    ? `${milestone.name} is in Hoodie #${journey.tokenId}'s Journey.`
+    : t.text}
+</p>
+          {!checkedIn && <Link href={t.href} className="mt-3 inline-block text-[10px] uppercase underline underline-offset-4">{t.cta} →</Link>}
         </div>
         <div className="md:text-right">
           {checkedIn ? (
@@ -1299,7 +1277,7 @@ function Season2Panel({
         Season 2
       </p>
 
-      <h3 className="mt-3 text-3xl uppercase tracking-[-0.04em]">
+      <h3 className="mt-3 text-5xl uppercase tracking-[-0.05em]">
         Play through the Hood
       </h3>
 
@@ -1308,9 +1286,9 @@ function Season2Panel({
         Builders create.
       </p>
 
-      <div className="mt-6 grid gap-4 text-[10px] uppercase leading-relaxed md:grid-cols-3">
+      <div className="mt-8 grid gap-8 text-[14px] uppercase leading-relaxed md:grid-cols-3">
         <div>
-          <p className="text-[14px]">10% $OCH</p>
+          <p className="text-[18px]">10% $OCH</p>
           <p className="mt-1">
             → Every Hoodie
           </p>
@@ -1320,7 +1298,7 @@ function Season2Panel({
         </div>
 
         <div>
-          <p className="text-[14px]">10% $OCH</p>
+          <p className="text-[18px]">10% $OCH</p>
           <p className="mt-1">
             → Ecosystem growth
           </p>
@@ -1330,7 +1308,7 @@ function Season2Panel({
         </div>
 
         <div>
-          <p className="text-[14px]">5% $OCH</p>
+          <p className="text-[22px]">5% $OCH</p>
           <p className="mt-1">
             → Community & X
           </p>
@@ -1873,9 +1851,9 @@ export default function JourneyPage() {
             <section className="mt-10">
               <div className="flex flex-col gap-4 border-b border-[var(--hood-fg)] pb-4 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <p className="text-[7px] uppercase tracking-[0.16em] opacity-50">Hoodie #{selectedTokenId}</p>
+                  <p className="text-[12px] uppercase tracking-[0.20em] opacity-60">Hoodie #{selectedTokenId}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-3">
-                    <h2 className="text-4xl tracking-[-0.05em] md:text-5xl">JOURNEY</h2>
+                    <h2 className="text-6xl tracking-[-0.06em] md:text-7xl">JOURNEY</h2>
                     {activeHoodies[selectedTokenId] && (
                       <span className="bg-[var(--hood-fg)] px-3 py-2 text-[6px] uppercase tracking-[0.12em] text-[var(--hood-bg)]">● Wallet active</span>
                     )}
@@ -1893,7 +1871,7 @@ export default function JourneyPage() {
                   <div className="mt-4 border border-[var(--hood-fg)] p-8 text-center text-[8px] uppercase">Reading Journey…</div>
                 ) : journey ? (
                   <div className="mt-4">
-                    <p className="mb-3 text-[8px] uppercase tracking-[0.16em] opacity-60">Already part of the story</p>
+                    <p className="mb-3 text-[12px] uppercase tracking-[0.20em] opacity-70">Already part of the story</p>
                     <div className="space-y-3">
                       {journey.milestones
                         .filter(m => m.recorded || pending[localKey(selectedTokenId, m.key)])
@@ -1920,7 +1898,7 @@ export default function JourneyPage() {
                         ))}
                     </div>
 
-                    <p className="mb-3 mt-8 text-[8px] uppercase tracking-[0.16em] opacity-60">What&apos;s next?</p>
+                    <p className="mb-3 mt-8 text-[12px] uppercase tracking-[0.20em] opacity-70">What&apos;s next?</p>
 
                     {journey.milestones.some(isSeason2Milestone) && (
                       <div className="mb-4 border border-[var(--hood-fg)] px-4 py-3 text-[9px] uppercase tracking-[0.14em]">
