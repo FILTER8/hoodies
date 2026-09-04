@@ -29,6 +29,7 @@ const IDS = {
   hoodWalletActivated: "0x239902d75dd4133b2e3c4f65fa01858d6e22407b7ed186aa42966e7f997962cf",
   hoodTalkSpoken: "0xae701161971ede8a03aaa7cf86b28afe5171979b2e6db2e67310b1bbfa90d37b",
   pingClaimed: "0xb08fecf851d41fdd453731545fe282b0e49a7d8efd63cc4b7a66550141a910d4",
+  hooneySwap: "0xefd09bd70e8788d1c1b30fa785e6b4441d016d4e4e27b01a4bb4b3768f8c0d41",
 } as const;
 
 const HOOD_OS_ABI = ["function isActive(uint256 tokenId) view returns (bool)"] as const;
@@ -71,6 +72,15 @@ type JourneyMilestone = {
   transactionHash: string | null;
   talkCount?: number;
   state?: PingState;
+
+  qualification?: {
+    qualified?: boolean;
+    qualifiedOnchain?: boolean;
+    ethIn?: string | null;
+    countedAsBee?: boolean | null;
+    verificationMode?: string;
+    verificationDelay?: string | null;
+  };
 
 };
 
@@ -152,6 +162,7 @@ function milestoneId(m: JourneyMilestone) {
   if (m.key === "hoodWalletActivated") return IDS.hoodWalletActivated;
   if (m.key === "hoodTalkSpoken") return IDS.hoodTalkSpoken;
   if (m.key === "pingClaimed") return IDS.pingClaimed;
+  if (m.key === "hooneySwap") return IDS.hooneySwap;
   return m.milestoneId;
 }
 
@@ -172,6 +183,25 @@ function task(m: JourneyMilestone, j: JourneyResponse) {
     if (j.ping.state === "available") return { status: "○ READY TO CLAIM", text: `Ping #${j.tokenId} is waiting for this Hoodie.`, href: "/hoodwallet", cta: `CLAIM PING #${j.tokenId}` };
     return { status: "○ LOCKED", text: "Activate your HoodWallet first to unlock Ping.", href: "/hoodwallet", cta: "ACTIVATE HOODWALLET" };
   }
+
+  if (m.key === "hooneySwap") {
+    if (m.completed) {
+      return {
+        status: "● SWAPPED IN THE HIVE",
+        text: "A qualifying Hooney swap was verified onchain.",
+        href: "https://hooney.xyz/",
+        cta: "OPEN HOONEY",
+      };
+    }
+
+    return {
+      status: "○ WAITING FOR VERIFICATION",
+      text: "Make one Hooney swap of at least 0.005 ETH. Verification can take up to 1 hour.",
+      href: "https://hooney.xyz/",
+      cta: "OPEN HOONEY",
+    };
+  }
+
   return { status: m.completed ? "● READY" : "○ NOT DONE", text: m.description, href: m.href, cta: m.cta };
 }
 
@@ -231,6 +261,22 @@ function MilestoneVisual({
     );
   }
 
+  if (
+    milestone.key ===
+    "hooneySwap"
+  ) {
+    return (
+      <Image
+        unoptimized
+        src="/journey/bee.png"
+        alt="Hooney"
+        width={64}
+        height={64}
+        className="h-16 w-16 object-contain"
+      />
+    );
+  }
+
   return (
     <Flag
       width={56}
@@ -276,6 +322,13 @@ function shareIconSource(
     "pingClaimed"
   ) {
     return "/journey/ping.png";
+  }
+
+  if (
+    milestone.key ===
+    "hooneySwap"
+  ) {
+    return "/journey/bee.png";
   }
 
   return null;
@@ -984,6 +1037,43 @@ async function makeShareCard({
         : "MY HOODIE SPOKE ONCHAIN.";
   }
 
+  if (
+    milestone.key ===
+    "hooneySwap"
+  ) {
+    personalCopy =
+      "SWAPPED IN THE HIVE.";
+  }
+
+  if (
+    milestone.season2
+  ) {
+    ctx.fillStyle =
+      ink;
+
+    ctx.fillRect(
+      720,
+      520,
+      350,
+      42,
+    );
+
+    ctx.fillStyle =
+      background;
+
+    ctx.font =
+      `700 18px ${font}`;
+
+    ctx.fillText(
+      "SEASON 2 BUILDER ACTION",
+      735,
+      548,
+    );
+
+    ctx.fillStyle =
+      ink;
+  }
+
   ctx.font =
     `700 38px ${font}`;
 
@@ -1122,7 +1212,7 @@ function JourneyRow({
             )}
           </div>
 
-          <p className="mt-2 text-[8px] uppercase leading-relaxed opacity-65">
+          <p className="mt-2 text-[11px] uppercase leading-relaxed opacity-80">
             {checkedIn ? `${milestone.name} is in Hoodie #${journey.tokenId}'s Journey.` : t.text}
           </p>
           {!checkedIn && <Link href={t.href} className="mt-2 inline-block text-[7px] uppercase underline underline-offset-4">{t.cta} →</Link>}
@@ -1164,6 +1254,72 @@ function JourneyRow({
   );
 }
 
+
+
+function isSeason2Milestone(
+  milestone: JourneyMilestone,
+) {
+  return milestone.season2 === true;
+}
+
+function Season2Panel({
+  visible,
+}: {
+  visible: boolean;
+}) {
+  if (!visible) return null;
+
+  return (
+    <div className="mt-10 border border-[var(--hood-fg)] bg-[var(--hood-fg)] p-5 md:p-6 text-[var(--hood-bg)]">
+      <p className="text-[10px] uppercase tracking-[0.16em]">
+        Season 2
+      </p>
+
+      <h3 className="mt-3 text-3xl uppercase tracking-[-0.04em]">
+        Play through the Hood
+      </h3>
+
+      <p className="mt-4 max-w-xl text-[11px] uppercase leading-relaxed">
+        Hoodies collect.
+        Builders create.
+      </p>
+
+      <div className="mt-6 grid gap-4 text-[10px] uppercase leading-relaxed md:grid-cols-3">
+        <div>
+          <p className="text-[14px]">10% $OCH</p>
+          <p className="mt-1">
+            → Every Hoodie
+          </p>
+          <p className="mt-1 opacity-70">
+            Automatic allocation
+          </p>
+        </div>
+
+        <div>
+          <p className="text-[14px]">10% $OCH</p>
+          <p className="mt-1">
+            → Ecosystem growth
+          </p>
+          <p className="mt-1 opacity-70">
+            HOOD IT
+          </p>
+        </div>
+
+        <div>
+          <p className="text-[14px]">5% $OCH</p>
+          <p className="mt-1">
+            → Community & X
+          </p>
+          <p className="mt-1 opacity-70">
+            In cooperation with HoodX
+            <br />
+            Tag @onchainhoodies
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function StatsPanel({ stats, loading }: { stats: JourneyStats | null; loading: boolean }) {
   if (loading) return <div className="border border-[var(--hood-fg)] p-8 text-center text-[8px] uppercase">Reading Journey stats…</div>;
@@ -1741,6 +1897,13 @@ export default function JourneyPage() {
                     </div>
 
                     <p className="mb-3 mt-8 text-[8px] uppercase tracking-[0.16em] opacity-60">What&apos;s next?</p>
+
+                    {journey.milestones.some(isSeason2Milestone) && (
+                      <div className="mb-4 border border-[var(--hood-fg)] px-4 py-3 text-[9px] uppercase tracking-[0.14em]">
+                        Season 2 Builder Actions
+                      </div>
+                    )}
+
                     <div className="space-y-3">
                       {journey.milestones
                         .filter(m => !m.recorded && !pending[localKey(selectedTokenId, m.key)])
@@ -1768,6 +1931,14 @@ export default function JourneyPage() {
                           />
                         ))}
                     </div>
+
+                    <Season2Panel
+                      visible={
+                        journey.milestones.some(
+                          isSeason2Milestone,
+                        )
+                      }
+                    />
                   </div>
                 ) : null
               ) : (
