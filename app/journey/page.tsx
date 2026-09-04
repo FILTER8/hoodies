@@ -64,24 +64,53 @@ type JourneyMilestone = {
   description: string;
   href: string;
   cta: string;
+
   completed: boolean;
   recorded: boolean;
-  source: "journey" | "legacy" | null;
+
+  source:
+    | "journey"
+    | "legacy"
+    | "community"
+    | null;
+
   currentlyTrue: boolean;
-  completedAt: number | null;
-  transactionHash: string | null;
-  talkCount?: number;
-  state?: PingState;
+
+  completedAt:
+    number | null;
+
+  transactionHash:
+    string | null;
+
+  talkCount?:
+    number;
+
+  state?:
+    PingState;
+
+  // Season 2 community/build milestones
+  season2?:
+    boolean;
 
   qualification?: {
-    qualified?: boolean;
-    qualifiedOnchain?: boolean;
-    ethIn?: string | null;
-    countedAsBee?: boolean | null;
-    verificationMode?: string;
-    verificationDelay?: string | null;
-  };
+    qualified?:
+      boolean;
 
+    qualifiedOnchain?:
+      boolean;
+
+    verificationMode?:
+      string;
+
+    verificationDelay?:
+      string | null;
+
+    ethIn?:
+      string | null;
+
+    countedAsBee?:
+      boolean | null;
+  };
 };
 
 type JourneyResponse = {
