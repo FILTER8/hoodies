@@ -117,6 +117,134 @@ const ERC1155_INTERFACE =
     "function safeTransferFrom(address from,address to,uint256 id,uint256 amount,bytes data)",
   ]);
 
+const HOOD_WALLET_EXECUTE_INTERFACE =
+  new Interface([
+    "function execute(address target,uint256 value,bytes data,uint8 operation) payable returns (bytes result)",
+  ]);
+
+const HOOD_WALLET_GAS_FALLBACK =
+  BigInt(1_000_000);
+
+const HOOD_WALLET_GAS_MAX =
+  BigInt(2_000_000);
+
+const TX_GAS_BUFFER_PERCENT =
+  BigInt(140);
+
+const TX_GAS_BUFFER_FLAT =
+  BigInt(30_000);
+
+const APPROVE_GAS_FALLBACK =
+  BigInt(150_000);
+
+const ACTIVATE_GAS_FALLBACK =
+  BigInt(1_500_000);
+
+const SWAP_GAS_FALLBACK =
+  BigInt(1_500_000);
+
+const EOA_TX_GAS_MAX =
+  BigInt(3_000_000);
+
+const OCH_APPROVE_INTERFACE =
+  new Interface([
+    "function approve(address spender,uint256 amount) returns (bool)",
+  ]);
+
+const HOOD_OS_ACTIVATE_INTERFACE =
+  new Interface([
+    "function activate(uint256 tokenId)",
+  ]);
+
+async function estimateBufferedTransactionGas(
+  provider: JsonRpcProvider,
+  from: string,
+  to: string,
+  data: Hex,
+  value: bigint,
+  fallback: bigint,
+) {
+  try {
+    const estimated =
+      await provider.estimateGas({
+        from: getAddress(from),
+        to: getAddress(to),
+        data,
+        value,
+      });
+
+    const buffered =
+      (estimated * TX_GAS_BUFFER_PERCENT) /
+        BigInt(100) +
+      TX_GAS_BUFFER_FLAT;
+
+    return buffered > EOA_TX_GAS_MAX
+      ? EOA_TX_GAS_MAX
+      : buffered;
+  } catch (gasError) {
+    console.warn(
+      "Transaction gas estimation failed; using safe fallback.",
+      gasError,
+    );
+
+    return fallback;
+  }
+}
+
+async function estimateHoodWalletExecuteGas(
+  provider: JsonRpcProvider,
+  owner: string,
+  wallet: string,
+  target: Address,
+  value: bigint,
+  data: Hex,
+) {
+  const executeData =
+    HOOD_WALLET_EXECUTE_INTERFACE.encodeFunctionData(
+      "execute",
+      [
+        target,
+        value,
+        data,
+        OPERATION_CALL,
+      ],
+    );
+
+  try {
+    const estimated =
+      await provider.estimateGas({
+        from: getAddress(owner),
+        to: getAddress(wallet),
+        data: executeData,
+        value: BigInt(0),
+      });
+
+    /*
+     * Robinhood Chain wallet/RPC gas estimation can be inconsistent for
+     * nested HoodWallet.execute(...) calls. Estimate once through our RPC
+     * and add a generous buffer so the injected wallet does not need to
+     * discover the limit itself. A higher gas limit does not mean all of it
+     * is spent; the transaction only pays for gas actually consumed.
+     */
+    const buffered =
+      (estimated * BigInt(140)) /
+        BigInt(100) +
+      BigInt(30_000);
+
+    return buffered >
+      HOOD_WALLET_GAS_MAX
+      ? HOOD_WALLET_GAS_MAX
+      : buffered;
+  } catch (gasError) {
+    console.warn(
+      "HoodWallet gas estimation failed; using safe fallback.",
+      gasError,
+    );
+
+    return HOOD_WALLET_GAS_FALLBACK;
+  }
+}
+
 /*//////////////////////////////////////////////////////////////
                              TYPES
 //////////////////////////////////////////////////////////////*/
@@ -2094,7 +2222,8 @@ export default function HoodWalletPage() {
         }
 
         if (
-          !selectedWallet
+          !selectedWallet ||
+          !provider
         ) {
           return;
         }
@@ -2177,6 +2306,25 @@ export default function HoodWalletPage() {
                 )} OCH in your wallet. Activation will continue automatically afterward.`,
             });
 
+            const approvalData =
+              OCH_APPROVE_INTERFACE.encodeFunctionData(
+                "approve",
+                [
+                  siteConfig.hoodOSAddress,
+                  activationCost,
+                ],
+              ) as Hex;
+
+            const approvalGas =
+              await estimateBufferedTransactionGas(
+                provider,
+                address,
+                siteConfig.ochAddress,
+                approvalData,
+                BigInt(0),
+                APPROVE_GAS_FALLBACK,
+              );
+
             const approvalHash =
               await walletClient.writeContract({
                 chain: null,
@@ -2232,6 +2380,9 @@ export default function HoodWalletPage() {
 
                   activationCost,
                 ],
+
+                gas:
+                  approvalGas,
 
                 account:
                   requireWalletAccount(
@@ -2291,6 +2442,26 @@ export default function HoodWalletPage() {
             });
           }
 
+          const activationData =
+            HOOD_OS_ACTIVATE_INTERFACE.encodeFunctionData(
+              "activate",
+              [
+                BigInt(
+                  selectedWallet.tokenId,
+                ),
+              ],
+            ) as Hex;
+
+          const activationGas =
+            await estimateBufferedTransactionGas(
+              provider,
+              address,
+              siteConfig.hoodOSAddress,
+              activationData,
+              BigInt(0),
+              ACTIVATE_GAS_FALLBACK,
+            );
+
           const activationHash =
             await walletClient.writeContract({
                 chain: null,
@@ -2331,6 +2502,9 @@ export default function HoodWalletPage() {
                   selectedWallet.tokenId,
                 ),
               ],
+
+              gas:
+                activationGas,
 
               account:
                 requireWalletAccount(
@@ -2624,6 +2798,16 @@ export default function HoodWalletPage() {
               )}. Unused ETH is returned by the router.`,
           });
 
+          const swapGas =
+            await estimateBufferedTransactionGas(
+              provider,
+              address,
+              payload.execution.to,
+              payload.execution.data as Hex,
+              maxEth,
+              SWAP_GAS_FALLBACK,
+            );
+
           const swapHash =
             await walletClient.sendTransaction({
               chain:
@@ -2642,6 +2826,9 @@ export default function HoodWalletPage() {
 
               value:
                 maxEth,
+
+              gas:
+                swapGas,
             });
 
           setTxState({
@@ -2721,6 +2908,25 @@ export default function HoodWalletPage() {
                 )} OCH for HoodWallet activation.`,
             });
 
+            const approvalData =
+              OCH_APPROVE_INTERFACE.encodeFunctionData(
+                "approve",
+                [
+                  siteConfig.hoodOSAddress,
+                  activationCost,
+                ],
+              ) as Hex;
+
+            const approvalGas =
+              await estimateBufferedTransactionGas(
+                provider,
+                address,
+                siteConfig.ochAddress,
+                approvalData,
+                BigInt(0),
+                APPROVE_GAS_FALLBACK,
+              );
+
             const approvalHash =
               await walletClient.writeContract({
                 chain:
@@ -2779,6 +2985,9 @@ export default function HoodWalletPage() {
                   activationCost,
                 ],
 
+                gas:
+                  approvalGas,
+
                 account:
                   walletAccount,
               });
@@ -2826,6 +3035,26 @@ export default function HoodWalletPage() {
               `OCH ready. Confirm activation of HoodWallet #${selectedWallet.tokenId}.`,
           });
 
+          const activationData =
+            HOOD_OS_ACTIVATE_INTERFACE.encodeFunctionData(
+              "activate",
+              [
+                BigInt(
+                  selectedWallet.tokenId,
+                ),
+              ],
+            ) as Hex;
+
+          const activationGas =
+            await estimateBufferedTransactionGas(
+              provider,
+              address,
+              siteConfig.hoodOSAddress,
+              activationData,
+              BigInt(0),
+              ACTIVATE_GAS_FALLBACK,
+            );
+
           const activationHash =
             await walletClient.writeContract({
               chain:
@@ -2868,6 +3097,9 @@ export default function HoodWalletPage() {
                   selectedWallet.tokenId,
                 ),
               ],
+
+              gas:
+                activationGas,
 
               account:
                 walletAccount,
@@ -3241,7 +3473,8 @@ export default function HoodWalletPage() {
         if (
           !selectedWallet ||
           !selectedSendAsset ||
-          !address
+          !address ||
+          !provider
         ) {
           return;
         }
@@ -3411,9 +3644,19 @@ export default function HoodWalletPage() {
           const walletClient =
             await getWalletClient();
 
+          const hoodWalletGas =
+            await estimateHoodWalletExecuteGas(
+              provider,
+              address,
+              selectedWallet.walletAddress,
+              target,
+              value,
+              data,
+            );
+
           const hash =
             await walletClient.writeContract({
-                chain: null,
+              chain: null,
               address:
                 selectedWallet.walletAddress as Address,
 
@@ -3489,6 +3732,9 @@ export default function HoodWalletPage() {
 
               value:
                 BigInt(0),
+
+              gas:
+                hoodWalletGas,
 
               account:
                 requireWalletAccount(
@@ -3580,6 +3826,7 @@ export default function HoodWalletPage() {
         ensureRequiredNetwork,
         getWalletClient,
         loadSelectedWallet,
+        provider,
         selectedSendAsset,
         selectedWallet,
         sendAmount,
@@ -3598,7 +3845,8 @@ export default function HoodWalletPage() {
         if (
           !selectedWallet ||
           !selectedNftToSend ||
-          !address
+          !address ||
+          !provider
         ) {
           return;
         }
@@ -3791,9 +4039,19 @@ export default function HoodWalletPage() {
           const walletClient =
             await getWalletClient();
 
+          const hoodWalletGas =
+            await estimateHoodWalletExecuteGas(
+              provider,
+              address,
+              selectedWallet.walletAddress,
+              target,
+              BigInt(0),
+              data,
+            );
+
           const hash =
             await walletClient.writeContract({
-                chain: null,
+              chain: null,
               address:
                 selectedWallet.walletAddress as Address,
 
@@ -3869,6 +4127,9 @@ export default function HoodWalletPage() {
 
               value:
                 BigInt(0),
+
+              gas:
+                hoodWalletGas,
 
               account:
                 requireWalletAccount(
@@ -3963,6 +4224,7 @@ export default function HoodWalletPage() {
         loadSelectedWallet,
         nftAmount,
         nftRecipient,
+        provider,
         selectedNftToSend,
         selectedWallet,
         waitForHash,
