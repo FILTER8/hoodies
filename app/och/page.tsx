@@ -113,27 +113,27 @@ const tokenDetails = [
 const seasonTwoPillars = [
   {
     number: "01",
-    title: "HoodOS",
+    title: "Own",
     description:
-      "Build apps that give Hoodies new on-chain capabilities through their HoodWallet.",
+      "Every Hoodie participates in the Season 02 Hoodie allocation automatically. No task is required for this path.",
   },
   {
     number: "02",
-    title: "$OCH",
+    title: "Use",
     description:
-      "Create meaningful uses for the currency of the Hood inside products, games and protocols.",
+      "Use HoodWallet and real ecosystem products on-chain. Completed actions can become part of your Hoodie Journey.",
   },
   {
     number: "03",
-    title: "Usage",
+    title: "Build",
     description:
-      "Working products and real usage matter more than announcements or passive integrations.",
+      "Create apps, games, tools and protocols that give Hoodies meaningful things to do with HoodWallet and $OCH.",
   },
   {
     number: "04",
-    title: "Open",
+    title: "Share",
     description:
-      "Build permissionlessly. Season 02 is about extending what the Hood can actually do.",
+      "Community contribution and X participation form the third Season 02 path in cooperation with HoodX.",
   },
 ];
 
@@ -646,20 +646,17 @@ export default function OCHPage() {
               <p className="mt-4 text-sm leading-relaxed opacity-70">
                 Hood Talk, submitted X contributions and verified Hoodie representation. The participation window is closed.
               </p>
-              <Link href="/passport" className="mt-6 inline-block text-[8px] uppercase underline underline-offset-4">
-                View Season 01
-              </Link>
             </article>
 
             <article className="border-b-2 border-r-2 border-[#ccff00] bg-[#ccff00] p-6 text-black md:p-8">
-              <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Season 02 · Builders</p>
-              <p className="mt-6 text-6xl tracking-[-0.06em]">10%</p>
-              <h3 className="mt-6 text-2xl">BUILD THE ECONOMY</h3>
+              <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Season 02 · Live</p>
+              <p className="mt-6 text-6xl tracking-[-0.06em]">25M</p>
+              <h3 className="mt-6 text-2xl">PLAY THROUGH THE HOOD</h3>
               <p className="mt-4 text-sm leading-relaxed opacity-70">
-                For builders extending the Hood through HoodOS or creating meaningful utility for $OCH.
+                10M OCH for Hoodies, 10M for ecosystem growth through builder actions, and 5M for community & X in cooperation with HoodX.
               </p>
               <a href="#season-02" className="mt-6 inline-block text-[8px] uppercase !text-black underline underline-offset-4">
-                Season 02 direction
+                See Season 02
               </a>
             </article>
 
@@ -668,7 +665,7 @@ export default function OCHPage() {
               <p className="mt-6 text-6xl tracking-[-0.06em]">10%</p>
               <h3 className="mt-6 text-2xl">NEXT CHAPTER</h3>
               <p className="mt-4 text-sm leading-relaxed opacity-70">
-                Reserved for the next phase of community participation and ecosystem contribution.
+                Reserved for the next chapter after Season 02.
               </p>
             </article>
           </div>
@@ -789,7 +786,7 @@ export default function OCHPage() {
                 HOODIES CAN USE.
               </h2>
               <p className="mt-8 max-w-2xl text-lg leading-relaxed opacity-75 md:text-xl">
-                HoodOS turns the Hoodie into an active on-chain account. MintOS lets it mint. BuyOS lets it collect. Community builders can add the next capabilities.
+                HoodOS turns the Hoodie into an active on-chain account. MintOS lets it mint. BuyOS lets it collect. Community builders can add the next capabilities. Journey records what the Hoodie does across that economy.
               </p>
             </div>
             <div className="border-2 border-black p-6 md:p-8">
@@ -849,24 +846,40 @@ export default function OCHPage() {
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
             <p>08 / Season 02</p>
-            <p>Builders</p>
+            <p>25,000,000 OCH</p>
           </div>
 
           <div className="mt-12 grid gap-12 lg:grid-cols-[0.75fr_1.25fr]">
             <div>
-              <p className="text-[10px] uppercase tracking-[0.2em] opacity-55">The next season</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] opacity-55">Play through the Hood</p>
               <h2 className="section-title mt-4">
-                BUILD THE
+                OWN. USE.
                 <br />
-                ECONOMY.
+                BUILD. SHARE.
               </h2>
+
               <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                Season 02 supports builders extending the Hood through HoodOS or creating meaningful utility for $OCH.
+                Season 02 is not only for developers. Builders create new things to do, and Hoodies participate by owning, using, recording and sharing across the ecosystem.
               </p>
-              <p className="mt-5 max-w-lg text-sm leading-relaxed opacity-60">
-                The direction is utility and usage. Final measurement and allocation rules can be published separately before rewards are finalized.
-              </p>
-              <Link href="/builders" className="pixel-cta mt-10">Explore Builders</Link>
+
+              <div className="mt-8 grid border-l-2 border-t-2 border-black sm:grid-cols-3">
+                {[
+                  ["Hoodies", "10M OCH", "Automatic allocation across the Hoodie supply."],
+                  ["Ecosystem Growth", "10M OCH", "Builder apps, games, tools and on-chain usage through the Hood."],
+                  ["Community & X", "5M OCH", "Community contribution in cooperation with HoodX."],
+                ].map(([label, value, copy]) => (
+                  <div key={label} className="border-b-2 border-r-2 border-black p-4">
+                    <p className="text-[7px] uppercase tracking-[0.14em] opacity-50">{label}</p>
+                    <p className="mt-3 text-2xl tracking-[-0.04em]">{value}</p>
+                    <p className="mt-3 text-xs leading-relaxed opacity-65">{copy}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link href="/journey" className="pixel-cta">Start your Journey →</Link>
+                <Link href="/builders" className="pixel-cta pixel-cta-dark">Explore Builders →</Link>
+              </div>
             </div>
 
             <div className="grid border-l-2 border-t-2 border-black sm:grid-cols-2">

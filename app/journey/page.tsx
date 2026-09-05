@@ -137,18 +137,45 @@ type JourneyResponse = {
   };
 };
 
-type JourneyStats = {
-  totalRecordedCompletions?: number;
-  hoodWallet?: { currentlyActive?: number };
-  ping?: { claimed?: number; home?: number; away?: number };
-  milestones?: {
-    hoodWalletActivated?: { historicalCount?: number | null };
-    hoodTalkSpoken?: { historicalCount?: number | null };
-    pingClaimed?: { historicalCount?: number | null };
-  };
+type LeaderboardEntry = {
+  rank: number;
+  tokenId: number;
+  hoodItCount: number;
+  lastCompletedAt: number | null;
+  owner: string | null;
+  image: string;
+  token: string;
+  journey: string;
+  opensea: string;
 };
 
-type Tab = "journey" | "stats";
+type LeaderboardResponse = {
+  schemaVersion: "1.0";
+  updatedAt: string | null;
+  summary: {
+    totalHoodIts: number;
+    hoodiesWithHistory: number;
+    hooneyHoodIts: number;
+  };
+  limit: number;
+  totalRanked: number;
+  entries: LeaderboardEntry[];
+};
+
+type RankResponse = {
+  schemaVersion: "1.0";
+  tokenId: number;
+  rank: number | null;
+  hoodItCount: number;
+  lastCompletedAt: number | null;
+  owner: string | null;
+  image: string;
+  token: string;
+  journey: string;
+  opensea: string;
+};
+
+type Tab = "journey" | "stats" | "leaderboard";
 type PendingMap = Record<string, boolean>;
 
 function err(error: unknown, fallback: string) {
@@ -163,6 +190,20 @@ function art(tokenId: string) {
   return apiConfig.isMainnet
     ? collectionApiUrl(`/images/${encodeURIComponent(tokenId)}.svg`)
     : `/api/hoodies/image?tokenId=${encodeURIComponent(tokenId)}`;
+}
+
+function openSeaItemUrl(
+  tokenId: string | number,
+) {
+  return `https://opensea.io/item/robinhood/${"0x9ec6c5b9f572a9b02138e553bc5f5882da735f45"}/${tokenId}`;
+}
+
+function openSeaWalletUrl(
+  owner: string | null,
+) {
+  return owner
+    ? `https://opensea.io/${owner.toLowerCase()}`
+    : null;
 }
 
 function account<T>(value: T | undefined): T {
@@ -1074,34 +1115,34 @@ async function makeShareCard({
       "SWAPPED IN THE HIVE.";
   }
 
-  if (
-    milestone.season2
-  ) {
-    ctx.fillStyle =
-      ink;
+if (
+  milestone.season2
+) {
+  ctx.fillStyle =
+    ink;
 
-    ctx.fillRect(
-      720,
-      520,
-      350,
-      42,
-    );
+  ctx.fillRect(
+    720,
+    900,
+    350,
+    42,
+  );
 
-    ctx.fillStyle =
-      background;
+  ctx.fillStyle =
+    background;
 
-    ctx.font =
-      `700 18px ${font}`;
+  ctx.font =
+    `700 18px ${font}`;
 
-    ctx.fillText(
-      "SEASON 2 BUILDER ACTION",
-      735,
-      548,
-    );
+  ctx.fillText(
+    "SEASON 2 BUILDER ACTION",
+    735,
+    928,
+  );
 
-    ctx.fillStyle =
-      ink;
-  }
+  ctx.fillStyle =
+    ink;
+}
 
   ctx.font =
     `700 38px ${font}`;
@@ -1352,27 +1393,415 @@ function Season2Panel({
   );
 }
 
-function StatsPanel({ stats, loading }: { stats: JourneyStats | null; loading: boolean }) {
-  if (loading) return <div className="border border-[var(--hood-fg)] p-8 text-center text-[8px] uppercase">Reading Journey stats…</div>;
-  if (!stats) return <div className="border border-[var(--hood-fg)] p-8 text-center text-[8px] uppercase">Stats unavailable.</div>;
+function shortAddress(
+  address:
+    string | null,
+) {
+  if (!address) {
+    return "OWNER UNKNOWN";
+  }
+
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+function StatsPanel({
+  leaderboard,
+  loading,
+}: {
+  leaderboard:
+    LeaderboardResponse | null;
+
+  loading:
+    boolean;
+}) {
+  if (
+    loading &&
+    !leaderboard
+  ) {
+    return (
+      <div className="border border-[var(--hood-fg)] p-10 text-center text-[12px] uppercase tracking-[0.14em]">
+        Reading Journey stats…
+      </div>
+    );
+  }
+
+  if (!leaderboard) {
+    return (
+      <div className="border border-[var(--hood-fg)] p-10 text-center text-[12px] uppercase tracking-[0.14em]">
+        Journey stats unavailable.
+      </div>
+    );
+  }
 
   const cards = [
-    ["Wallets active", stats.hoodWallet?.currentlyActive ?? stats.milestones?.hoodWalletActivated?.historicalCount ?? 0],
-    ["Hoodies spoken", stats.milestones?.hoodTalkSpoken?.historicalCount ?? 0],
-    ["Ping claimed", stats.ping?.claimed ?? stats.milestones?.pingClaimed?.historicalCount ?? 0],
-    ["Ping home", stats.ping?.home ?? 0],
-    ["Ping away", stats.ping?.away ?? 0],
-    ["Journey check-ins", stats.totalRecordedCompletions ?? 0],
-  ];
+    [
+      "Total Hood Its",
+      leaderboard.summary.totalHoodIts,
+    ],
+    [
+      "Hoodies With History",
+      leaderboard.summary.hoodiesWithHistory,
+    ],
+    [
+      "Hooney",
+      leaderboard.summary.hooneyHoodIts,
+    ],
+  ] as const;
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {cards.map(([label, value]) => (
-        <div key={String(label)} className="border border-[var(--hood-fg)] p-5">
-          <p className="text-[7px] uppercase tracking-[0.15em] opacity-55">{label}</p>
-          <p className="mt-3 text-5xl tracking-[-0.05em]">{Number(value).toLocaleString()}</p>
+    <div>
+      <div className="grid gap-3 md:grid-cols-3">
+        {cards.map(
+          ([
+            label,
+            value,
+          ]) => (
+            <div
+              key={label}
+              className="border border-[var(--hood-fg)] p-6"
+            >
+              <p className="text-[11px] uppercase tracking-[0.16em] opacity-65">
+                {label}
+              </p>
+
+              <p className="mt-4 text-6xl leading-none tracking-[-0.06em] md:text-7xl">
+                {Number(
+                  value,
+                ).toLocaleString()}
+              </p>
+            </div>
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LeaderboardPanel({
+  leaderboard,
+  loading,
+  searchValue,
+  onSearchValueChange,
+  onSearch,
+  searching,
+  searchResult,
+  selectedTokenId,
+}: {
+  leaderboard:
+    LeaderboardResponse | null;
+
+  loading:
+    boolean;
+
+  searchValue:
+    string;
+
+  onSearchValueChange:
+    (value: string) => void;
+
+  onSearch:
+    () => void;
+
+  searching:
+    boolean;
+
+  searchResult:
+    RankResponse | null;
+
+  selectedTokenId:
+    string;
+}) {
+  if (
+    loading &&
+    !leaderboard
+  ) {
+    return (
+      <div className="border border-[var(--hood-fg)] p-10 text-center text-[12px] uppercase tracking-[0.14em]">
+        Reading leaderboard…
+      </div>
+    );
+  }
+
+  if (!leaderboard) {
+    return (
+      <div className="border border-[var(--hood-fg)] p-10 text-center text-[12px] uppercase tracking-[0.14em]">
+        Leaderboard unavailable.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex flex-col gap-4 border-b border-[var(--hood-fg)] pb-5 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-[12px] uppercase tracking-[0.18em] opacity-60">
+            Onchain ranking
+          </p>
+
+          <h3 className="mt-2 text-4xl uppercase tracking-[-0.05em] md:text-5xl">
+            Hood It Leaderboard
+          </h3>
         </div>
-      ))}
+
+        <form
+          className="flex w-full max-w-[430px]"
+          onSubmit={event => {
+            event.preventDefault();
+            onSearch();
+          }}
+        >
+          <input
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={searchValue}
+            onChange={event =>
+              onSearchValueChange(
+                event.target.value.replace(
+                  /\D/g,
+                  "",
+                ),
+              )
+            }
+            placeholder="SEARCH HOODIE #"
+            aria-label="Search Hoodie ID"
+            className="min-h-[52px] min-w-0 flex-1 border border-r-0 border-[var(--hood-fg)] bg-transparent px-4 text-[13px] uppercase outline-none placeholder:text-[var(--hood-fg)] placeholder:opacity-45"
+          />
+
+          <button
+            type="submit"
+            disabled={
+              searching ||
+              !searchValue
+            }
+            className="min-h-[52px] border border-[var(--hood-fg)] bg-[var(--hood-fg)] px-5 text-[10px] uppercase tracking-[0.14em] text-[var(--hood-bg)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {searching
+              ? "Searching…"
+              : "Find"}
+          </button>
+        </form>
+      </div>
+
+      {searchResult && (
+        <div className="mt-4 border-2 border-[var(--hood-fg)]">
+          <div className="border-b border-[var(--hood-fg)] bg-[var(--hood-fg)] px-4 py-3 text-[var(--hood-bg)]">
+            <p className="text-[10px] uppercase tracking-[0.16em]">
+              Hoodie search
+            </p>
+          </div>
+
+          <div className="grid gap-5 p-4 sm:grid-cols-[112px_minmax(0,1fr)_auto] sm:items-center">
+            <a
+              href={openSeaItemUrl(
+                searchResult.tokenId,
+              )}
+              target="_blank"
+              rel="noreferrer"
+              className="block aspect-square w-[112px] border border-[var(--hood-fg)] bg-[#ccff00]"
+            >
+              <Image
+                unoptimized
+                src={searchResult.image}
+                alt={`OnChainHoodie #${searchResult.tokenId}`}
+                width={112}
+                height={112}
+                className="h-full w-full object-cover"
+              />
+            </a>
+
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.14em] opacity-60">
+                {searchResult.rank
+                  ? `Rank #${searchResult.rank}`
+                  : "No rank yet"}
+              </p>
+
+              <a
+                href={openSeaItemUrl(
+                  searchResult.tokenId,
+                )}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-block text-3xl uppercase tracking-[-0.04em] underline-offset-4 hover:underline"
+              >
+                Hoodie #{searchResult.tokenId}
+              </a>
+
+              <p className="mt-3 text-[13px] uppercase">
+                {searchResult.hoodItCount}{" "}
+                {searchResult.hoodItCount === 1
+                  ? "Hood It"
+                  : "Hood Its"}
+              </p>
+
+              {searchResult.owner && (
+                <a
+                  href={openSeaWalletUrl(
+                    searchResult.owner,
+                  ) || "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-block text-[10px] uppercase tracking-[0.08em] underline underline-offset-4 opacity-70"
+                  title={searchResult.owner}
+                >
+                  {shortAddress(
+                    searchResult.owner,
+                  )}
+                </a>
+              )}
+            </div>
+
+            {searchResult.owner ? (
+              <a
+                href={openSeaWalletUrl(
+                  searchResult.owner,
+                ) || "#"}
+                target="_blank"
+                rel="noreferrer"
+                className="border border-[var(--hood-fg)] px-5 py-4 text-center text-[9px] uppercase tracking-[0.14em] hover:bg-[var(--hood-fg)] hover:text-[var(--hood-bg)]"
+              >
+                Owner on OpenSea →
+              </a>
+            ) : (
+              <span className="border border-[var(--hood-fg)] px-5 py-4 text-center text-[9px] uppercase tracking-[0.14em] opacity-40">
+                Owner unavailable
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 border border-[var(--hood-fg)]">
+        <div className="hidden grid-cols-[70px_88px_minmax(0,1fr)_150px_180px] border-b border-[var(--hood-fg)] px-4 py-3 text-[9px] uppercase tracking-[0.14em] opacity-60 md:grid">
+          <span>Rank</span>
+          <span>Hoodie</span>
+          <span>Identity</span>
+          <span>Hood Its</span>
+          <span className="text-right">Owner</span>
+        </div>
+
+        {leaderboard.entries.map(
+          entry => {
+            const selected =
+              String(
+                entry.tokenId,
+              ) ===
+              selectedTokenId;
+
+            const ownerUrl =
+              openSeaWalletUrl(
+                entry.owner,
+              );
+
+            return (
+              <div
+                key={entry.tokenId}
+                className={`grid gap-4 border-b border-[var(--hood-fg)] p-4 last:border-b-0 md:grid-cols-[70px_88px_minmax(0,1fr)_150px_180px] md:items-center ${
+                  selected
+                    ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                    : ""
+                }`}
+              >
+                <div className="text-4xl leading-none tracking-[-0.05em]">
+                  #{entry.rank}
+                </div>
+
+                <a
+                  href={openSeaItemUrl(
+                    entry.tokenId,
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`block aspect-square w-[88px] border ${
+                    selected
+                      ? "border-[var(--hood-bg)]"
+                      : "border-[var(--hood-fg)]"
+                  } bg-[#ccff00]`}
+                >
+                  <Image
+                    unoptimized
+                    src={entry.image}
+                    alt={`OnChainHoodie #${entry.tokenId}`}
+                    width={88}
+                    height={88}
+                    className="h-full w-full object-cover"
+                  />
+                </a>
+
+                <div>
+                  <a
+                    href={openSeaItemUrl(
+                      entry.tokenId,
+                    )}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[24px] uppercase tracking-[-0.035em] underline-offset-4 hover:underline"
+                  >
+                    Hoodie #{entry.tokenId}
+                  </a>
+
+                  {selected && (
+                    <p className="mt-2 text-[9px] uppercase tracking-[0.14em]">
+                      Your selected Hoodie
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-4xl leading-none tracking-[-0.05em]">
+                    {entry.hoodItCount}
+                  </p>
+
+                  <p className="mt-2 text-[9px] uppercase tracking-[0.14em] opacity-65">
+                    {entry.hoodItCount === 1
+                      ? "Hood It"
+                      : "Hood Its"}
+                  </p>
+                </div>
+
+                <div className="md:text-right">
+                  {ownerUrl ? (
+                    <>
+                      <a
+                        href={ownerUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] uppercase tracking-[0.06em] underline underline-offset-4"
+                        title={entry.owner || undefined}
+                      >
+                        {shortAddress(
+                          entry.owner,
+                        )}
+                      </a>
+
+                      <div>
+                        <a
+                          href={ownerUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-3 inline-block text-[9px] uppercase underline underline-offset-4"
+                        >
+                          Owner on OpenSea →
+                        </a>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[10px] uppercase opacity-40">
+                      Owner unknown
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          },
+        )}
+
+        {!leaderboard.entries.length && (
+          <div className="p-10 text-center text-[12px] uppercase tracking-[0.14em]">
+            No Hood Its recorded yet.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1386,12 +1815,15 @@ export default function JourneyPage() {
   const [activeHoodies, setActiveHoodies] = useState<Record<string, boolean>>({});
   const [selectedTokenId, setSelectedTokenId] = useState("");
   const [journey, setJourney] = useState<JourneyResponse | null>(null);
-  const [stats, setStats] = useState<JourneyStats | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardResponse | null>(null);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardSearch, setLeaderboardSearch] = useState("");
+  const [leaderboardSearchResult, setLeaderboardSearchResult] = useState<RankResponse | null>(null);
+  const [leaderboardSearching, setLeaderboardSearching] = useState(false);
   const [pending, setPending] = useState<PendingMap>({});
   const [ownershipLoading, setOwnershipLoading] = useState(false);
   const [ownershipChecked, setOwnershipChecked] = useState(false);
   const [journeyLoading, setJourneyLoading] = useState(false);
-  const [statsLoading, setStatsLoading] = useState(false);
   const [checkingInKey, setCheckingInKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sharingKey, setSharingKey] = useState<string | null>(null);
@@ -1549,18 +1981,76 @@ export default function JourneyPage() {
     return () => { cancelled = true; };
   }, [selectedTokenId, loadJourney]);
 
-  const loadStats = useCallback(async () => {
-    setStatsLoading(true);
-    try {
-      const response = await fetch(`${API}/v1/journey/stats`, { cache: "no-store" });
-      if (!response.ok) throw new Error("Unable to load Journey stats.");
-      setStats(await response.json() as JourneyStats);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setStatsLoading(false);
-    }
-  }, []);
+  const loadLeaderboard =
+    useCallback(
+      async () => {
+        setLeaderboardLoading(
+          true,
+        );
+
+        try {
+          const response =
+            await fetch(
+              `${API}/v1/journey/leaderboard?limit=10`,
+              {
+                cache:
+                  "no-store",
+                headers: {
+                  accept:
+                    "application/json",
+                },
+              },
+            );
+
+          if (
+            !response.ok
+          ) {
+            throw new Error(
+              "Unable to load Journey leaderboard.",
+            );
+          }
+
+          setLeaderboard(
+            await response.json() as LeaderboardResponse,
+          );
+        } catch (e) {
+          console.error(e);
+
+          setError(
+            err(
+              e,
+              "Unable to load Journey leaderboard.",
+            ),
+          );
+        } finally {
+          setLeaderboardLoading(
+            false,
+          );
+        }
+      },
+      [],
+    );
+
+  const openLeaderboard =
+    useCallback(
+      () => {
+        setTab(
+          "leaderboard",
+        );
+
+        if (
+          !leaderboard &&
+          !leaderboardLoading
+        ) {
+          void loadLeaderboard();
+        }
+      },
+      [
+        leaderboard,
+        leaderboardLoading,
+        loadLeaderboard,
+      ],
+    );
 
   const openStats =
     useCallback(
@@ -1570,16 +2060,102 @@ export default function JourneyPage() {
         );
 
         if (
-          !stats &&
-          !statsLoading
+          !leaderboard &&
+          !leaderboardLoading
         ) {
-          void loadStats();
+          void loadLeaderboard();
         }
       },
       [
-        loadStats,
-        stats,
-        statsLoading,
+        leaderboard,
+        leaderboardLoading,
+        loadLeaderboard,
+      ],
+    );
+
+  const searchLeaderboard =
+    useCallback(
+      async () => {
+        const tokenId =
+          Number(
+            leaderboardSearch,
+          );
+
+        if (
+          !Number.isInteger(
+            tokenId,
+          ) ||
+          tokenId <
+            0 ||
+          tokenId >
+            5999
+        ) {
+          setError(
+            "Enter a Hoodie ID between 0 and 5999.",
+          );
+
+          return;
+        }
+
+        setLeaderboardSearching(
+          true,
+        );
+
+        setError(
+          null,
+        );
+
+        try {
+          const response =
+            await fetch(
+              `${API}/v1/journey/rank/${tokenId}`,
+              {
+                cache:
+                  "no-store",
+                headers: {
+                  accept:
+                    "application/json",
+                },
+              },
+            );
+
+          const payload =
+            await response.json() as RankResponse & {
+              error?:
+                string;
+            };
+
+          if (
+            !response.ok
+          ) {
+            throw new Error(
+              payload.error ||
+              `Unable to find Hoodie #${tokenId}.`,
+            );
+          }
+
+          setLeaderboardSearchResult(
+            payload,
+          );
+        } catch (e) {
+          setLeaderboardSearchResult(
+            null,
+          );
+
+          setError(
+            err(
+              e,
+              "Unable to search the leaderboard.",
+            ),
+          );
+        } finally {
+          setLeaderboardSearching(
+            false,
+          );
+        }
+      },
+      [
+        leaderboardSearch,
       ],
     );
 
@@ -1747,6 +2323,32 @@ export default function JourneyPage() {
       ],
     );
 
+  const selectedHoodItCount =
+    useMemo(
+      () => {
+        if (!journey) {
+          return 0;
+        }
+
+        return journey.milestones.filter(
+          milestone =>
+            milestone.recorded ||
+            pending[
+              localKey(
+                String(
+                  journey.tokenId,
+                ),
+                milestone.key,
+              )
+            ],
+        ).length;
+      },
+      [
+        journey,
+        pending,
+      ],
+    );
+
   return (
     <main
       className="min-h-screen bg-[var(--hood-bg)] text-[var(--hood-fg)]"
@@ -1883,15 +2485,40 @@ export default function JourneyPage() {
                   <p className="text-[12px] uppercase tracking-[0.20em] opacity-60">Hoodie #{selectedTokenId}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-3">
                     <h2 className="text-6xl tracking-[-0.06em] md:text-7xl">JOURNEY</h2>
+                    <span className="border border-[var(--hood-fg)] px-3 py-2 text-[10px] uppercase tracking-[0.12em]">
+                      Hood It {selectedHoodItCount}
+                    </span>
+
                     {activeHoodies[selectedTokenId] && (
-                      <span className="bg-[var(--hood-fg)] px-3 py-2 text-[6px] uppercase tracking-[0.12em] text-[var(--hood-bg)]">● Wallet active</span>
+                      <span className="bg-[var(--hood-fg)] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[var(--hood-bg)]">● Wallet active</span>
                     )}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 border border-[var(--hood-fg)]">
-                  <button type="button" onClick={() => setTab("journey")} className={`px-6 py-3 text-[7px] uppercase tracking-[0.14em] ${tab === "journey" ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}>Journey</button>
-                  <button type="button" onClick={openStats} className={`border-l border-[var(--hood-fg)] px-6 py-3 text-[7px] uppercase tracking-[0.14em] ${tab === "stats" ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}>Stats</button>
+                <div className="grid grid-cols-3 border border-[var(--hood-fg)]">
+                  <button
+                    type="button"
+                    onClick={() => setTab("journey")}
+                    className={`px-5 py-3 text-[9px] uppercase tracking-[0.14em] ${tab === "journey" ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}
+                  >
+                    Journey
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={openStats}
+                    className={`border-l border-[var(--hood-fg)] px-5 py-3 text-[9px] uppercase tracking-[0.14em] ${tab === "stats" ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}
+                  >
+                    Stats
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={openLeaderboard}
+                    className={`border-l border-[var(--hood-fg)] px-5 py-3 text-[9px] uppercase tracking-[0.14em] ${tab === "leaderboard" ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}
+                  >
+                    Leaderboard
+                  </button>
                 </div>
               </div>
 
@@ -1972,9 +2599,28 @@ export default function JourneyPage() {
                     />
                   </div>
                 ) : null
+              ) : tab === "stats" ? (
+                <div className="mt-4">
+                  <StatsPanel
+                    leaderboard={leaderboard}
+                    loading={leaderboardLoading}
+                  />
+                </div>
               ) : (
                 <div className="mt-4">
-                  <StatsPanel stats={stats} loading={statsLoading} />
+                  <LeaderboardPanel
+                    leaderboard={leaderboard}
+                    loading={leaderboardLoading}
+                    searchValue={leaderboardSearch}
+                    onSearchValueChange={value => {
+                      setLeaderboardSearch(value);
+                      setLeaderboardSearchResult(null);
+                    }}
+                    onSearch={() => void searchLeaderboard()}
+                    searching={leaderboardSearching}
+                    searchResult={leaderboardSearchResult}
+                    selectedTokenId={selectedTokenId}
+                  />
                 </div>
               )}
             </section>

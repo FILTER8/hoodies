@@ -15,6 +15,9 @@ const API_BASE = "https://api.onchainhoodies.xyz";
 const PING_OPENSEA_URL =
   `https://opensea.io/assets/robinhood/${siteConfig.pingAddress}`;
 
+const HOODIE_OPENSEA_BASE =
+  `https://opensea.io/assets/robinhood/${siteConfig.collectionAddress}`;
+
 type NeighborName = "Builder" | "Collector" | "Flipper" | "HODLer";
 
 type NeighborToken = {
@@ -81,51 +84,6 @@ const neighborFallbacks: Record<NeighborName, string> = {
   HODLer: "/hodler.png",
 };
 
-const tools = [
-  {
-    label: "Live",
-    title: "Hood Talk",
-    copy: "Give your Hoodie a permanent on-chain voice.",
-    href: "/hood-talk",
-    action: "Open Hood Talk",
-  },
-  {
-    label: "Live",
-    title: "Hoodie Explorer",
-    copy: "Explore traits, rarity, market data and on-chain ink.",
-    href: "/tools/explorer",
-    action: "Open explorer",
-  },
-  {
-    label: "Live",
-    title: "Grid Exporter",
-    copy: "Turn the Hoodies in your wallet into one clean branded grid.",
-    href: "/tools/export",
-    action: "Open exporter",
-  },
-  {
-    label: "New",
-    title: "Collage Maker",
-    copy: "Build animated Hoodie scenes with stickers, drawings and frames.",
-    href: "/tools/collage",
-    action: "Make a scene",
-  },
-  {
-    label: "Live",
-    title: "Hoodie Cam",
-    copy: "See your surroundings through the black-and-green language of the Hood.",
-    href: "/cam",
-    action: "Open camera",
-  },
-  {
-    label: "New",
-    title: "Gym Builder",
-    copy: "Turn any Hoodie into a gym bro using its raw on-chain PixelData.",
-    href: "/tools/gym",
-    action: "Enter the gym",
-  },
-];
-
 type FaqLink = {
   label: string;
   href: string;
@@ -158,9 +116,16 @@ const faqs: Faq[] = [
   {
     question: "What can I do with my Hoodie?",
     answer:
-      "Your Hoodie can speak through Hood Talk, own assets through HoodWallet and use apps through HoodOS. MintOS lets a Hoodie mint supported public OpenSea drops, BuyOS lets it collect secondary NFTs, and the wider ecosystem adds tools, games and experiments around the collection.",
-    href: "/hoodos",
-    linkLabel: "Explore HoodOS",
+      "Start with Hoodie Journey. It shows what your Hoodie has already done, what it can do next and which ecosystem actions can become part of its on-chain history. From there your Hoodie can speak through Hood Talk, own assets through HoodWallet, unlock Ping and use apps through HoodOS and community builds.",
+    href: "/journey",
+    linkLabel: "Start your Journey",
+  },
+  {
+    question: "What is Hoodie Journey?",
+    answer:
+      "Hoodie Journey is the on-chain activity layer for each Hoodie. It shows what your Hoodie has already done across the ecosystem and what it can do next. Completed actions can be recorded through HoodWallet so the Hoodie builds a permanent history over time.",
+    href: "/journey",
+    linkLabel: "Start your Journey",
   },
   {
     question: "What is Hood Talk?",
@@ -265,6 +230,10 @@ const contracts = [
   {
     label: "Hood Talk",
     address: siteConfig.hoodTalkRegistryAddress,
+  },
+  {
+    label: "Journey Registry",
+    address: "0x93513A0e4d0E016ccf296C4c2888b59c06708ea7",
   },
   {
     label: "HoodOS",
@@ -1093,16 +1062,16 @@ export default function Home() {
         </h1>
 
         <p className="mt-10 max-w-xl text-lg leading-relaxed md:text-2xl">
-          Fully on-chain Hoodies. One growing Hood.
+          Fully on-chain characters. They talk. Own. Remember.
         </p>
 
         <div className="mt-10 flex flex-wrap justify-center gap-3">
-          <a
-            href="#builds"
+          <Link
+            href="/journey"
             className="pixel-cta"
           >
-            Explore the builds
-          </a>
+            Start your Journey
+          </Link>
 
           <a
             href={siteConfig.openSeaUrl}
@@ -1180,36 +1149,58 @@ export default function Home() {
                     : "Loading";
 
                 return (
-                  <button
+                  <article
                     key={hoodie}
-                    type="button"
-                    onClick={() =>
-                      void refreshNeighbor(
-                        hoodie,
-                      )
-                    }
-                    disabled={isLoading}
-                    aria-label={`Load another ${hoodie} Hoodie`}
-                    className="border-2 border-[#ccff00] text-left disabled:cursor-wait disabled:opacity-70"
+                    className="border-2 border-[#ccff00] text-left"
                   >
-                    <div className="aspect-square overflow-hidden bg-[#ccff00]">
-                      <img
-                        src={image}
-                        alt={
-                          neighbor?.name ??
-                          `${hoodie} OnChainHoodie`
-                        }
-                        className="image-render-pixel h-full w-full object-cover"
-                      />
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void refreshNeighbor(
+                          hoodie,
+                        )
+                      }
+                      disabled={isLoading}
+                      aria-label={`Load another ${hoodie} Hoodie`}
+                      className="block w-full disabled:cursor-wait disabled:opacity-70"
+                    >
+                      <div className="aspect-square overflow-hidden bg-[#ccff00]">
+                        <img
+                          src={image}
+                          alt={
+                            neighbor?.name ??
+                            `${hoodie} OnChainHoodie`
+                          }
+                          className="image-render-pixel h-full w-full object-cover"
+                        />
+                      </div>
+                    </button>
 
                     <div className="flex items-center justify-between gap-2 border-t-2 border-[#ccff00] p-3 text-[10px] uppercase tracking-[0.14em]">
-                      <span>{hoodie}</span>
-                      <span className="opacity-60">
-                        {tokenLabel}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void refreshNeighbor(hoodie)}
+                        disabled={isLoading}
+                        className="text-left disabled:cursor-wait disabled:opacity-70"
+                      >
+                        {hoodie}
+                      </button>
+
+                      {neighbor ? (
+                        <a
+                          href={`${HOODIE_OPENSEA_BASE}/${neighbor.tokenId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="opacity-60 underline underline-offset-4 hover:opacity-100"
+                          aria-label={`View OnChainHoodie #${neighbor.tokenId} on OpenSea`}
+                        >
+                          {tokenLabel}
+                        </a>
+                      ) : (
+                        <span className="opacity-60">{tokenLabel}</span>
+                      )}
                     </div>
-                  </button>
+                  </article>
                 );
               })}
             </div>
@@ -1896,76 +1887,111 @@ export default function Home() {
       </section>
 
       <section
-        id="builds"
+        id="journey"
         className="px-6 py-20 md:py-24"
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>05 / Things to do</p>
+            <p>05 / Journey</p>
             <p>Use your Hoodie</p>
           </div>
 
-          <div className="mt-10 grid border-l-2 border-t-2 border-black sm:grid-cols-2 lg:grid-cols-3">
-            {tools.map(
-              (tool, index) => (
-                <article
-                  key={tool.title}
-                  className="flex min-h-[190px] flex-col justify-between border-b-2 border-r-2 border-black p-5 md:p-6"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-[8px] uppercase tracking-[0.16em] opacity-50">
-                        {String(
-                          index + 1,
-                        ).padStart(
-                          2,
-                          "0",
-                        )}
-                      </span>
+          <div className="mt-12 grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-stretch">
+            <div className="flex flex-col justify-between">
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.18em] opacity-50">
+                  Start here
+                </p>
 
-                      <span className="border border-black px-2 py-1 text-[8px] uppercase tracking-[0.13em]">
-                        {tool.label}
-                      </span>
-                    </div>
+                <h2 className="section-title mt-5">
+                  YOUR HOODIE
+                  <br />
+                  HAS A HISTORY.
+                </h2>
 
-                    <h3 className="mt-7 text-2xl leading-none tracking-[-0.04em] md:text-3xl">
-                      {tool.title}
-                    </h3>
+                <p className="mt-7 max-w-xl text-lg leading-relaxed opacity-75 md:text-xl">
+                  See what your Hoodie has already done, discover what comes next
+                  and record meaningful ecosystem actions on-chain through its
+                  HoodWallet.
+                </p>
 
-                    <p className="mt-4 max-w-sm text-sm leading-relaxed opacity-70">
-                      {tool.copy}
-                    </p>
-                  </div>
+                <p className="mt-5 max-w-xl text-sm leading-relaxed opacity-60 md:text-base">
+                  Activate. Talk. Claim Ping. Use builder apps. Hood it into the
+                  Journey.
+                </p>
+              </div>
 
-                  <Link
-                    href={tool.href}
-                    className="mt-6 text-[9px] uppercase tracking-[0.15em] underline underline-offset-4"
-                  >
-                    {tool.action} →
-                  </Link>
-                </article>
-              ),
-            )}
-          </div>
-
-          <div className="mt-5 flex flex-col gap-4 border-2 border-black bg-black p-5 text-[#ccff00] md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-[8px] uppercase tracking-[0.16em] opacity-50">
-                Community ecosystem
-              </p>
-
-              <p className="mt-2 text-lg md:text-xl">
-                These are only the front doors. See
-                what the Hood is building.
-              </p>
+              <Link
+                href="/journey"
+                className="pixel-cta pixel-cta-dark mt-9 w-fit"
+              >
+                Start your Journey →
+              </Link>
             </div>
 
-            <Link
-              href="/builders"
-              className="pixel-cta shrink-0 border-[#ccff00] bg-[#ccff00] text-black"
-            >
-              Explore community builds →
-            </Link>
+            <div className="border-2 border-black bg-black p-5 text-[#ccff00] md:p-7">
+              <div className="flex flex-col gap-5 border-b border-[#ccff00] pb-6 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-[8px] uppercase tracking-[0.18em] opacity-55">
+                    Season 02
+                  </p>
+                  <h3 className="mt-2 text-4xl leading-none tracking-[-0.05em] md:text-5xl">
+                    PLAY THROUGH THE HOOD
+                  </h3>
+                </div>
+
+                <div className="sm:text-right">
+                  <p className="text-4xl leading-none md:text-5xl">25M</p>
+                  <p className="mt-2 text-[8px] uppercase tracking-[0.16em] opacity-55">
+                    $OCH allocated
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid border-l border-t border-[#ccff00] md:grid-cols-3">
+                {[
+                  {
+                    amount: "10M",
+                    title: "OWN",
+                    copy: "Every Hoodie participates automatically.",
+                  },
+                  {
+                    amount: "10M",
+                    title: "USE & BUILD",
+                    copy: "Builders create. Hoodies use new on-chain apps, games and $OCH utility.",
+                  },
+                  {
+                    amount: "5M",
+                    title: "CREATE & SHARE",
+                    copy: "Community contribution and X participation with HoodX.",
+                  },
+                ].map((item) => (
+                  <div
+                    key={item.title}
+                    className="border-b border-r border-[#ccff00] p-5"
+                  >
+                    <p className="text-3xl leading-none">{item.amount}</p>
+                    <p className="mt-3 text-[9px] uppercase tracking-[0.16em]">
+                      {item.title}
+                    </p>
+                    <p className="mt-4 text-xs leading-relaxed opacity-65">
+                      {item.copy}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 grid grid-cols-4 border border-[#ccff00] text-center text-[8px] uppercase tracking-[0.14em] sm:text-[9px]">
+                {["Activate", "Explore", "Use", "Hood it"].map((step, index) => (
+                  <div
+                    key={step}
+                    className={`p-3 ${index > 0 ? "border-l border-[#ccff00]" : ""}`}
+                  >
+                    {String(index + 1).padStart(2, "0")} · {step}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -2046,7 +2072,7 @@ export default function Home() {
                 <Link
                   key={app.title}
                   href={app.href}
-                  className="flex min-h-[220px] flex-col justify-between border-b-2 border-r-2 border-[#ccff00] p-5 transition-colors hover:bg-[#ccff00] hover:text-black md:p-6"
+                  className="flex min-h-[220px] flex-col justify-between border-b-2 border-r-2 border-[#ccff00] p-5 transition-opacity hover:opacity-80 md:p-6"
                 >
                   <div>
                     <p className="text-[7px] uppercase tracking-[0.15em] opacity-50">
@@ -2091,10 +2117,9 @@ export default function Home() {
               </h2>
 
               <p className="mt-6 max-w-lg text-base leading-relaxed opacity-70 md:text-lg">
-                Build with an open CC0 collection,
-                use the public infrastructure or
-                discover what the community is
-                already creating around the Hood.
+                Build apps, games, tools and protocols for the Hood. Use the
+                open CC0 collection, public infrastructure, HoodWallet and $OCH
+                to give Hoodies new things to do on-chain.
               </p>
             </div>
 
