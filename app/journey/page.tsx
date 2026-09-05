@@ -244,8 +244,8 @@ function task(m: JourneyMilestone, j: JourneyResponse) {
   }
   if (m.key === "hoodTalkSpoken") {
     return m.completed
-      ? { status: "● SPOKEN ONCHAIN", text: "Your Hoodie has already spoken onchain.", href: "/hoodtalk", cta: "OPEN HOOD TALK" }
-      : { status: "○ NOT SPOKEN", text: "Give your Hoodie a permanent voice onchain.", href: "/hoodtalk", cta: "OPEN HOOD TALK" };
+      ? { status: "● SPOKEN ONCHAIN", text: "Your Hoodie has already spoken onchain.", href: "/hood-talk", cta: "OPEN HOOD TALK" }
+      : { status: "○ NOT SPOKEN", text: "Give your Hoodie a permanent voice onchain.", href: "/hood-talk", cta: "OPEN HOOD TALK" };
   }
   if (m.key === "pingClaimed") {
     if (j.ping.state === "home") return { status: "● PING IS HOME", text: `Ping #${j.tokenId} lives inside this HoodWallet.`, href: "/hoodwallet", cta: "OPEN HOODWALLET" };
