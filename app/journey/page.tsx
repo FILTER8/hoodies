@@ -30,6 +30,7 @@ const IDS = {
   hoodTalkSpoken: "0xae701161971ede8a03aaa7cf86b28afe5171979b2e6db2e67310b1bbfa90d37b",
   pingClaimed: "0xb08fecf851d41fdd453731545fe282b0e49a7d8efd63cc4b7a66550141a910d4",
   hooneySwap: "0xefd09bd70e8788d1c1b30fa785e6b4441d016d4e4e27b01a4bb4b3768f8c0d41",
+  hoodlitaireWon: "0xfacfe3851303ecdff4bc5657ee1306973651205e0da2789aa31ef299a16f21ec",
 } as const;
 
 const HOOD_OS_ABI = ["function isActive(uint256 tokenId) view returns (bool)"] as const;
@@ -72,6 +73,7 @@ type JourneyMilestone = {
     | "journey"
     | "legacy"
     | "community"
+    | "contract"
     | null;
 
   currentlyTrue: boolean;
@@ -91,6 +93,15 @@ type JourneyMilestone = {
   // Season 2 community/build milestones
   season2?:
     boolean;
+
+  completedGames?:
+    number;
+
+  verificationMode?:
+    string;
+
+  verificationDelay?:
+    string | null;
 
   qualification?: {
     qualified?:
@@ -142,7 +153,8 @@ type LeaderboardEntry = {
   tokenId: number;
   hoodItCount: number;
   lastCompletedAt: number | null;
-  owner: string | null;
+  hoodWallet: string | null;
+  hoodWalletOpenSea?: string | null;
   image: string;
   token: string;
   journey: string;
@@ -156,6 +168,7 @@ type LeaderboardResponse = {
     totalHoodIts: number;
     hoodiesWithHistory: number;
     hooneyHoodIts: number;
+    hoodlitaireHoodIts: number;
   };
   limit: number;
   totalRanked: number;
@@ -168,7 +181,8 @@ type RankResponse = {
   rank: number | null;
   hoodItCount: number;
   lastCompletedAt: number | null;
-  owner: string | null;
+  hoodWallet: string | null;
+  hoodWalletOpenSea?: string | null;
   image: string;
   token: string;
   journey: string;
@@ -199,10 +213,10 @@ function openSeaItemUrl(
 }
 
 function openSeaWalletUrl(
-  owner: string | null,
+  hoodWallet: string | null,
 ) {
-  return owner
-    ? `https://opensea.io/${owner.toLowerCase()}`
+  return hoodWallet
+    ? `https://opensea.io/${hoodWallet.toLowerCase()}`
     : null;
 }
 
@@ -233,6 +247,7 @@ function milestoneId(m: JourneyMilestone) {
   if (m.key === "hoodTalkSpoken") return IDS.hoodTalkSpoken;
   if (m.key === "pingClaimed") return IDS.pingClaimed;
   if (m.key === "hooneySwap") return IDS.hooneySwap;
+  if (m.key === "hoodlitaireWon") return IDS.hoodlitaireWon;
   return m.milestoneId;
 }
 
@@ -269,6 +284,24 @@ function task(m: JourneyMilestone, j: JourneyResponse) {
       text: "Make one Hooney swap of at least 0.005 ETH. Verification can take up to 1 hour.",
       href: "https://hooney.xyz/",
       cta: "OPEN HOONEY",
+    };
+  }
+
+  if (m.key === "hoodlitaireWon") {
+    if (m.completed) {
+      return {
+        status: "● GAME WON",
+        text: "A Hoodlitaire win is recorded onchain and ready for Journey.",
+        href: "https://hoodlab.xyz/hoodlitaire",
+        cta: "PLAY HOODLITAIRE",
+      };
+    }
+
+    return {
+      status: "○ WIN A GAME",
+      text: "Win one game of Hoodlitaire with your Hoodie.",
+      href: "https://hoodlab.xyz/hoodlitaire",
+      cta: "PLAY HOODLITAIRE",
     };
   }
 
@@ -347,6 +380,22 @@ function MilestoneVisual({
     );
   }
 
+  if (
+    milestone.key ===
+    "hoodlitaireWon"
+  ) {
+    return (
+      <Image
+        unoptimized
+        src="/journey/hoodlitaire.png"
+        alt="Hoodlitaire"
+        width={64}
+        height={64}
+        className="h-16 w-16 object-contain"
+      />
+    );
+  }
+
   return (
     <Flag
       width={56}
@@ -399,6 +448,13 @@ function shareIconSource(
     "hooneySwap"
   ) {
     return "/journey/bee.png";
+  }
+
+  if (
+    milestone.key ===
+    "hoodlitaireWon"
+  ) {
+    return "/journey/hoodlitaire.png";
   }
 
   return null;
@@ -1115,6 +1171,14 @@ async function makeShareCard({
       "SWAPPED IN THE HIVE.";
   }
 
+  if (
+    milestone.key ===
+    "hoodlitaireWon"
+  ) {
+    personalCopy =
+      "WON HOODLITAIRE.";
+  }
+
 if (
   milestone.season2
 ) {
@@ -1398,7 +1462,7 @@ function shortAddress(
     string | null,
 ) {
   if (!address) {
-    return "OWNER UNKNOWN";
+    return "HOODWALLET UNKNOWN";
   }
 
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
@@ -1446,11 +1510,15 @@ function StatsPanel({
       "Hooney",
       leaderboard.summary.hooneyHoodIts,
     ],
+    [
+      "Hoodlitaire",
+      leaderboard.summary.hoodlitaireHoodIts,
+    ],
   ] as const;
 
   return (
     <div>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {cards.map(
           ([
             label,
@@ -1634,37 +1702,41 @@ function LeaderboardPanel({
                   : "Hood Its"}
               </p>
 
-              {searchResult.owner && (
+              {searchResult.hoodWallet && (
                 <a
-                  href={openSeaWalletUrl(
-                    searchResult.owner,
-                  ) || "#"}
+                  href={
+                    searchResult.hoodWalletOpenSea ||
+                    openSeaWalletUrl(
+                      searchResult.hoodWallet,
+                    ) ||
+                    "#"
+                  }
                   target="_blank"
                   rel="noreferrer"
                   className="mt-2 inline-block text-[10px] uppercase tracking-[0.08em] underline underline-offset-4 opacity-70"
-                  title={searchResult.owner}
+                  title={searchResult.hoodWallet}
                 >
                   {shortAddress(
-                    searchResult.owner,
+                    searchResult.hoodWallet,
                   )}
                 </a>
               )}
             </div>
 
-            {searchResult.owner ? (
+            {searchResult.hoodWallet ? (
               <a
                 href={openSeaWalletUrl(
-                  searchResult.owner,
+                  searchResult.hoodWallet,
                 ) || "#"}
                 target="_blank"
                 rel="noreferrer"
                 className="border border-[var(--hood-fg)] px-5 py-4 text-center text-[9px] uppercase tracking-[0.14em] hover:bg-[var(--hood-fg)] hover:text-[var(--hood-bg)]"
               >
-                Owner on OpenSea →
+                HoodWallet on OpenSea →
               </a>
             ) : (
               <span className="border border-[var(--hood-fg)] px-5 py-4 text-center text-[9px] uppercase tracking-[0.14em] opacity-40">
-                Owner unavailable
+                HoodWallet unavailable
               </span>
             )}
           </div>
@@ -1677,7 +1749,7 @@ function LeaderboardPanel({
           <span>Hoodie</span>
           <span>Identity</span>
           <span>Hood Its</span>
-          <span className="text-right">Owner</span>
+          <span className="text-right">HoodWallet</span>
         </div>
 
         {leaderboard.entries.map(
@@ -1688,9 +1760,10 @@ function LeaderboardPanel({
               ) ===
               selectedTokenId;
 
-            const ownerUrl =
+            const hoodWalletUrl =
+              entry.hoodWalletOpenSea ||
               openSeaWalletUrl(
-                entry.owner,
+                entry.hoodWallet,
               );
 
             return (
@@ -1760,34 +1833,34 @@ function LeaderboardPanel({
                 </div>
 
                 <div className="md:text-right">
-                  {ownerUrl ? (
+                  {hoodWalletUrl ? (
                     <>
                       <a
-                        href={ownerUrl}
+                        href={hoodWalletUrl}
                         target="_blank"
                         rel="noreferrer"
                         className="text-[11px] uppercase tracking-[0.06em] underline underline-offset-4"
-                        title={entry.owner || undefined}
+                        title={entry.hoodWallet || undefined}
                       >
                         {shortAddress(
-                          entry.owner,
+                          entry.hoodWallet,
                         )}
                       </a>
 
                       <div>
                         <a
-                          href={ownerUrl}
+                          href={hoodWalletUrl}
                           target="_blank"
                           rel="noreferrer"
                           className="mt-3 inline-block text-[9px] uppercase underline underline-offset-4"
                         >
-                          Owner on OpenSea →
+                          HoodWallet on OpenSea →
                         </a>
                       </div>
                     </>
                   ) : (
                     <p className="text-[10px] uppercase opacity-40">
-                      Owner unknown
+                      HoodWallet unknown
                     </p>
                   )}
                 </div>
