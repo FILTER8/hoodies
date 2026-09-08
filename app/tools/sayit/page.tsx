@@ -891,15 +891,23 @@ export default function SayItPage() {
         ),
       }));
     } else {
-      setBubbleOffset((current) => ({
-        x: clamp(
-          current.x + deltaX,
-          -BUBBLE.x + 20,
-          CANVAS_WIDTH - BUBBLE.x - 20,
-        ),
-        y: clamp(current.y + deltaY, -420, 420),
-      }));
-    }
+  setBubbleOffset((current) => ({
+    x: Math.round(
+      clamp(
+        current.x + deltaX,
+        -BUBBLE.x + 20,
+        CANVAS_WIDTH - BUBBLE.x - 20,
+      ),
+    ),
+    y: Math.round(
+      clamp(
+        current.y + deltaY,
+        -420,
+        420,
+      ),
+    ),
+  }));
+}
   }
 
   function finishDrag(event: ReactPointerEvent<HTMLCanvasElement>) {
