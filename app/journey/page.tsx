@@ -175,6 +175,28 @@ type LeaderboardResponse = {
   entries: LeaderboardEntry[];
 };
 
+type JourneyMilestoneCatalogItem = {
+  key: string;
+  milestoneId: string;
+  app: string;
+  action: string;
+  title?: string;
+  name: string;
+  description: string;
+  season2?: boolean;
+  recordedCount: number;
+  historicalCount: number | null;
+};
+
+type JourneyMilestonesResponse = {
+  schemaVersion: "1.0";
+  registry: string;
+  startBlock: number;
+  total: number;
+  bootstrapComplete: boolean;
+  milestones: JourneyMilestoneCatalogItem[];
+};
+
 type RankResponse = {
   schemaVersion: "1.0";
   tokenId: number;
@@ -1468,15 +1490,503 @@ function shortAddress(
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
+function saveObjectUrl(
+  url: string,
+  filename: string,
+) {
+  const anchor =
+    document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = "none";
+
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  window.setTimeout(
+    () => URL.revokeObjectURL(url),
+    1500,
+  );
+}
+
+function statsChartRows(
+  milestones: JourneyMilestonesResponse | null,
+) {
+  if (!milestones) return [];
+
+  return milestones.milestones.map(
+    milestone => ({
+      key: milestone.key,
+      label:
+        milestone.title ||
+        milestone.name ||
+        milestone.app.replaceAll("_", " "),
+      value: milestone.recordedCount || 0,
+      season2: milestone.season2 === true,
+    }),
+  );
+}
+
+function JourneyStatsChart({
+  milestones,
+}: {
+  milestones: JourneyMilestonesResponse | null;
+}) {
+  const rows = statsChartRows(milestones);
+  const maximum = Math.max(
+    1,
+    ...rows.map(row => row.value),
+  );
+
+  if (!rows.length) {
+    return (
+      <div className="grid min-h-[360px] place-items-center border border-[var(--hood-fg)] p-8 text-center">
+        <p className="text-[11px] uppercase tracking-[0.14em] opacity-60">
+          Milestone activity is loading…
+        </p>
+      </div>
+    );
+  }
+
+  const width = 1000;
+  const height = Math.max(390, rows.length * 66 + 95);
+  const left = 220;
+  const right = 70;
+  const top = 38;
+  const bottom = 46;
+  const chartWidth = width - left - right;
+  const rowHeight = (height - top - bottom) / rows.length;
+
+  return (
+    <div className="border border-[var(--hood-fg)] p-3 md:p-5">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">
+            Journey activity
+          </p>
+          <p className="mt-2 text-2xl uppercase tracking-[-0.04em]">
+            Hood Its by milestone
+          </p>
+        </div>
+
+        <p className="text-[8px] uppercase tracking-[0.13em] opacity-50">
+          Recorded onchain
+        </p>
+      </div>
+
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label="Journey Hood Its by milestone"
+        className="h-auto w-full overflow-visible"
+      >
+        {[0, 0.25, 0.5, 0.75, 1].map(step => {
+          const x = left + chartWidth * step;
+          const axisValue = Math.round(maximum * step);
+
+          return (
+            <g key={step}>
+              <line
+                x1={x}
+                x2={x}
+                y1={top}
+                y2={height - bottom}
+                stroke="currentColor"
+                strokeOpacity="0.14"
+                strokeWidth="1"
+              />
+              <text
+                x={x}
+                y={height - 15}
+                textAnchor="middle"
+                fill="currentColor"
+                fillOpacity="0.5"
+                fontSize="12"
+              >
+                {axisValue}
+              </text>
+            </g>
+          );
+        })}
+
+        {rows.map((row, index) => {
+          const y = top + index * rowHeight;
+          const barY = y + rowHeight * 0.24;
+          const barHeight = rowHeight * 0.48;
+          const barWidth =
+            row.value === 0
+              ? 2
+              : Math.max(
+                  3,
+                  (row.value / maximum) * chartWidth,
+                );
+
+          return (
+            <g key={row.key}>
+              <text
+                x={left - 18}
+                y={barY + barHeight / 2 + 5}
+                textAnchor="end"
+                fill="currentColor"
+                fontSize="14"
+              >
+                {row.label.toUpperCase()}
+              </text>
+
+              <rect
+                x={left}
+                y={barY}
+                width={barWidth}
+                height={barHeight}
+                fill="currentColor"
+              />
+
+              <text
+                x={Math.min(
+                  left + barWidth + 12,
+                  width - 35,
+                )}
+                y={barY + barHeight / 2 + 5}
+                fill="currentColor"
+                fontSize="14"
+              >
+                {row.value}
+              </text>
+
+              {row.season2 ? (
+                <text
+                  x={left - 18}
+                  y={barY + barHeight / 2 + 22}
+                  textAnchor="end"
+                  fill="currentColor"
+                  fillOpacity="0.5"
+                  fontSize="9"
+                >
+                  SEASON 2
+                </text>
+              ) : null}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+async function makeStatsExport({
+  leaderboard,
+  milestones,
+}: {
+  leaderboard: LeaderboardResponse;
+  milestones: JourneyMilestonesResponse | null;
+}) {
+  await document.fonts.ready;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = 1200;
+  canvas.height = 1200;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas unavailable.");
+
+  const background = "#000000";
+  const ink = "#ccff00";
+  const font =
+    getComputedStyle(document.body).fontFamily ||
+    "monospace";
+
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 8;
+  ctx.strokeRect(36, 36, 1128, 1128);
+
+  ctx.fillStyle = ink;
+  ctx.font = `700 100px ${font}`;
+  ctx.fillText("HOOD IT", 72, 165);
+
+  ctx.font = `700 38px ${font}`;
+  ctx.fillText("JOURNEY STATS", 76, 225);
+
+  const cards = [
+    ["TOTAL HOOD ITS", leaderboard.summary.totalHoodIts],
+    ["HOODIES WITH HISTORY", leaderboard.summary.hoodiesWithHistory],
+    ["HOONEY", leaderboard.summary.hooneyHoodIts],
+    ["HOODLITAIRE", leaderboard.summary.hoodlitaireHoodIts],
+  ] as const;
+
+  cards.forEach(([label, value], index) => {
+    const column = index % 2;
+    const row = Math.floor(index / 2);
+    const x = 76 + column * 520;
+    const y = 300 + row * 175;
+
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, 470, 140);
+
+    ctx.fillStyle = ink;
+    ctx.font = `400 18px ${font}`;
+    ctx.fillText(label, x + 24, y + 34);
+
+    ctx.font = `700 62px ${font}`;
+    ctx.fillText(
+      Number(value).toLocaleString(),
+      x + 24,
+      y + 108,
+    );
+  });
+
+  const rows = statsChartRows(milestones);
+  const maximum = Math.max(
+    1,
+    ...rows.map(row => row.value),
+  );
+
+  ctx.font = `700 26px ${font}`;
+  ctx.fillText("HOOD ITS BY MILESTONE", 76, 705);
+
+  rows.forEach((row, index) => {
+    const y = 760 + index * 62;
+    const maxBarWidth = 570;
+    const barWidth =
+      row.value === 0
+        ? 2
+        : Math.max(
+            3,
+            (row.value / maximum) * maxBarWidth,
+          );
+
+    ctx.font = `400 17px ${font}`;
+    ctx.fillText(
+      row.label.toUpperCase(),
+      76,
+      y + 20,
+    );
+
+    ctx.fillRect(
+      390,
+      y,
+      barWidth,
+      28,
+    );
+
+    ctx.font = `700 18px ${font}`;
+    ctx.fillText(
+      String(row.value),
+      Math.min(985, 410 + barWidth),
+      y + 21,
+    );
+  });
+
+  ctx.font = `400 18px ${font}`;
+  ctx.fillText(
+    "ONCHAINHOODIES · ROBINHOOD CHAIN",
+    76,
+    1110,
+  );
+
+  const blob = await new Promise<Blob>(
+    (resolve, reject) => {
+      canvas.toBlob(
+        result =>
+          result
+            ? resolve(result)
+            : reject(
+                new Error(
+                  "Stats PNG render failed.",
+                ),
+              ),
+        "image/png",
+      );
+    },
+  );
+
+  return {
+    url: URL.createObjectURL(blob),
+    filename: "onchainhoodies-journey-stats.png",
+  };
+}
+
+async function makeLeaderboardExport(
+  leaderboard: LeaderboardResponse,
+) {
+  await document.fonts.ready;
+
+  const topTen =
+    leaderboard.entries.slice(0, 10);
+
+  const canvas =
+    document.createElement("canvas");
+
+  canvas.width = 1200;
+  canvas.height = 1500;
+
+  const ctx =
+    canvas.getContext("2d");
+
+  if (!ctx) {
+    throw new Error(
+      "Canvas unavailable.",
+    );
+  }
+
+  const background = "#000000";
+  const ink = "#ccff00";
+  const font =
+    getComputedStyle(document.body).fontFamily ||
+    "monospace";
+
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 8;
+  ctx.strokeRect(36, 36, 1128, 1428);
+
+  ctx.fillStyle = ink;
+  ctx.font = `700 94px ${font}`;
+  ctx.fillText("HOOD IT", 72, 155);
+
+  ctx.font = `700 36px ${font}`;
+  ctx.fillText("TOP 10 · JOURNEY LEADERBOARD", 76, 215);
+
+  ctx.font = `400 18px ${font}`;
+  ctx.fillText(
+    `${leaderboard.summary.totalHoodIts} HOOD ITS · ${leaderboard.summary.hoodiesWithHistory} HOODIES WITH HISTORY`,
+    76,
+    258,
+  );
+
+  for (
+    let index = 0;
+    index < topTen.length;
+    index += 1
+  ) {
+    const entry = topTen[index];
+    const y = 310 + index * 108;
+
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(
+      72,
+      y,
+      1056,
+      92,
+    );
+
+    ctx.fillStyle = ink;
+    ctx.font = `700 34px ${font}`;
+    ctx.fillText(
+      `#${entry.rank}`,
+      92,
+      y + 57,
+    );
+
+    try {
+      const artwork =
+        await loadCanvasImage(
+          entry.image,
+        );
+
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(
+        artwork,
+        190,
+        y + 10,
+        72,
+        72,
+      );
+    } catch {
+      ctx.strokeRect(
+        190,
+        y + 10,
+        72,
+        72,
+      );
+    }
+
+    ctx.font = `700 24px ${font}`;
+    ctx.fillText(
+      `HOODIE #${entry.tokenId}`,
+      292,
+      y + 42,
+    );
+
+    ctx.font = `400 15px ${font}`;
+    ctx.fillText(
+      entry.hoodWallet
+        ? shortAddress(entry.hoodWallet)
+        : "HOODWALLET UNKNOWN",
+      292,
+      y + 68,
+    );
+
+    ctx.font = `700 34px ${font}`;
+    ctx.textAlign = "right";
+    ctx.fillText(
+      String(entry.hoodItCount),
+      1084,
+      y + 47,
+    );
+
+    ctx.font = `400 13px ${font}`;
+    ctx.fillText(
+      entry.hoodItCount === 1
+        ? "HOOD IT"
+        : "HOOD ITS",
+      1084,
+      y + 70,
+    );
+
+    ctx.textAlign = "left";
+  }
+
+  ctx.font = `400 18px ${font}`;
+  ctx.fillText(
+    "ONCHAINHOODIES · ROBINHOOD CHAIN",
+    76,
+    1410,
+  );
+
+  const blob =
+    await new Promise<Blob>(
+      (resolve, reject) => {
+        canvas.toBlob(
+          result =>
+            result
+              ? resolve(result)
+              : reject(
+                  new Error(
+                    "Leaderboard PNG render failed.",
+                  ),
+                ),
+          "image/png",
+        );
+      },
+    );
+
+  return {
+    url: URL.createObjectURL(blob),
+    filename: "onchainhoodies-journey-top-10.png",
+  };
+}
+
 function StatsPanel({
   leaderboard,
+  milestones,
   loading,
+  exporting,
+  onExport,
 }: {
-  leaderboard:
-    LeaderboardResponse | null;
-
-  loading:
-    boolean;
+  leaderboard: LeaderboardResponse | null;
+  milestones: JourneyMilestonesResponse | null;
+  loading: boolean;
+  exporting: boolean;
+  onExport: () => void;
 }) {
   if (
     loading &&
@@ -1518,7 +2028,30 @@ function StatsPanel({
 
   return (
     <div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="flex flex-col gap-4 border-b border-[var(--hood-fg)] pb-5 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-[12px] uppercase tracking-[0.18em] opacity-60">
+            Onchain activity
+          </p>
+
+          <h3 className="mt-2 text-4xl uppercase tracking-[-0.05em] md:text-5xl">
+            Journey Stats
+          </h3>
+        </div>
+
+        <button
+          type="button"
+          onClick={onExport}
+          disabled={exporting}
+          className="min-h-[48px] border border-[var(--hood-fg)] px-5 text-[9px] uppercase tracking-[0.14em] hover:bg-[var(--hood-fg)] hover:text-[var(--hood-bg)] disabled:cursor-wait disabled:opacity-50"
+        >
+          {exporting
+            ? "Generating PNG…"
+            : "Export stats PNG"}
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {cards.map(
           ([
             label,
@@ -1541,6 +2074,12 @@ function StatsPanel({
           ),
         )}
       </div>
+
+      <div className="mt-4">
+        <JourneyStatsChart
+          milestones={milestones}
+        />
+      </div>
     </div>
   );
 }
@@ -1554,6 +2093,8 @@ function LeaderboardPanel({
   searching,
   searchResult,
   selectedTokenId,
+  exporting,
+  onExport,
 }: {
   leaderboard:
     LeaderboardResponse | null;
@@ -1578,6 +2119,12 @@ function LeaderboardPanel({
 
   selectedTokenId:
     string;
+
+  exporting:
+    boolean;
+
+  onExport:
+    () => void;
 }) {
   if (
     loading &&
@@ -1611,13 +2158,14 @@ function LeaderboardPanel({
           </h3>
         </div>
 
-        <form
-          className="flex w-full max-w-[430px]"
-          onSubmit={event => {
-            event.preventDefault();
-            onSearch();
-          }}
-        >
+        <div className="flex w-full max-w-[620px] flex-col gap-2 sm:flex-row">
+          <form
+            className="flex min-w-0 flex-1"
+            onSubmit={event => {
+              event.preventDefault();
+              onSearch();
+            }}
+          >
           <input
             inputMode="numeric"
             pattern="[0-9]*"
@@ -1647,7 +2195,19 @@ function LeaderboardPanel({
               ? "Searching…"
               : "Find"}
           </button>
-        </form>
+          </form>
+
+          <button
+            type="button"
+            onClick={onExport}
+            disabled={exporting || leaderboard.entries.length === 0}
+            className="min-h-[52px] border border-[var(--hood-fg)] px-5 text-[9px] uppercase tracking-[0.14em] hover:bg-[var(--hood-fg)] hover:text-[var(--hood-bg)] disabled:cursor-wait disabled:opacity-40"
+          >
+            {exporting
+              ? "Generating…"
+              : "Export Top 10 PNG"}
+          </button>
+        </div>
       </div>
 
       {searchResult && (
@@ -1890,6 +2450,10 @@ export default function JourneyPage() {
   const [journey, setJourney] = useState<JourneyResponse | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardResponse | null>(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [milestoneCatalog, setMilestoneCatalog] =
+    useState<JourneyMilestonesResponse | null>(null);
+  const [statsExporting, setStatsExporting] = useState(false);
+  const [leaderboardExporting, setLeaderboardExporting] = useState(false);
   const [leaderboardSearch, setLeaderboardSearch] = useState("");
   const [leaderboardSearchResult, setLeaderboardSearchResult] = useState<RankResponse | null>(null);
   const [leaderboardSearching, setLeaderboardSearching] = useState(false);
@@ -2062,30 +2626,57 @@ export default function JourneyPage() {
         );
 
         try {
-          const response =
-            await fetch(
-              `${API}/v1/journey/leaderboard?limit=10`,
-              {
-                cache:
-                  "no-store",
-                headers: {
-                  accept:
-                    "application/json",
+          const [
+            leaderboardResponse,
+            milestonesResponse,
+          ] =
+            await Promise.all([
+              fetch(
+                `${API}/v1/journey/leaderboard?limit=20`,
+                {
+                  cache:
+                    "no-store",
+                  headers: {
+                    accept:
+                      "application/json",
+                  },
                 },
-              },
-            );
+              ),
+              fetch(
+                `${API}/v1/journey/milestones`,
+                {
+                  cache:
+                    "no-store",
+                  headers: {
+                    accept:
+                      "application/json",
+                  },
+                },
+              ),
+            ]);
 
           if (
-            !response.ok
+            !leaderboardResponse.ok
           ) {
             throw new Error(
               "Unable to load Journey leaderboard.",
             );
           }
 
+          const leaderboardPayload =
+            await leaderboardResponse.json() as LeaderboardResponse;
+
           setLeaderboard(
-            await response.json() as LeaderboardResponse,
+            leaderboardPayload,
           );
+
+          if (
+            milestonesResponse.ok
+          ) {
+            setMilestoneCatalog(
+              await milestonesResponse.json() as JourneyMilestonesResponse,
+            );
+          }
         } catch (e) {
           console.error(e);
 
@@ -2229,6 +2820,77 @@ export default function JourneyPage() {
       },
       [
         leaderboardSearch,
+      ],
+    );
+
+  const exportStats =
+    useCallback(
+      async () => {
+        if (!leaderboard) return;
+
+        try {
+          setStatsExporting(true);
+          setError(null);
+
+          const card =
+            await makeStatsExport({
+              leaderboard,
+              milestones:
+                milestoneCatalog,
+            });
+
+          saveObjectUrl(
+            card.url,
+            card.filename,
+          );
+        } catch (exportError) {
+          setError(
+            err(
+              exportError,
+              "Unable to export Journey stats.",
+            ),
+          );
+        } finally {
+          setStatsExporting(false);
+        }
+      },
+      [
+        leaderboard,
+        milestoneCatalog,
+      ],
+    );
+
+  const exportLeaderboard =
+    useCallback(
+      async () => {
+        if (!leaderboard) return;
+
+        try {
+          setLeaderboardExporting(true);
+          setError(null);
+
+          const card =
+            await makeLeaderboardExport(
+              leaderboard,
+            );
+
+          saveObjectUrl(
+            card.url,
+            card.filename,
+          );
+        } catch (exportError) {
+          setError(
+            err(
+              exportError,
+              "Unable to export the Journey leaderboard.",
+            ),
+          );
+        } finally {
+          setLeaderboardExporting(false);
+        }
+      },
+      [
+        leaderboard,
       ],
     );
 
@@ -2511,28 +3173,137 @@ export default function JourneyPage() {
           </div>
         </div>
 
-        {!address ? (
+        <div className="mt-6 flex flex-col gap-4 border-b border-[var(--hood-fg)] pb-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.18em] opacity-55">
+              Explore the Journey
+            </p>
+            <p className="mt-2 max-w-xl text-[11px] uppercase leading-relaxed opacity-70">
+              Journey requires your Hoodie. Stats and leaderboard are public.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 border border-[var(--hood-fg)]">
+            <button
+              type="button"
+              onClick={() => setTab("journey")}
+              className={`px-5 py-3 text-[9px] uppercase tracking-[0.14em] ${
+                tab === "journey"
+                  ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                  : ""
+              }`}
+            >
+              Journey
+            </button>
+
+            <button
+              type="button"
+              onClick={openStats}
+              className={`border-l border-[var(--hood-fg)] px-5 py-3 text-[9px] uppercase tracking-[0.14em] ${
+                tab === "stats"
+                  ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                  : ""
+              }`}
+            >
+              Stats
+            </button>
+
+            <button
+              type="button"
+              onClick={openLeaderboard}
+              className={`border-l border-[var(--hood-fg)] px-5 py-3 text-[9px] uppercase tracking-[0.14em] ${
+                tab === "leaderboard"
+                  ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]"
+                  : ""
+              }`}
+            >
+              Leaderboard
+            </button>
+          </div>
+        </div>
+
+        {tab === "stats" ? (
+          <div className="mt-5">
+            <StatsPanel
+              leaderboard={leaderboard}
+              milestones={milestoneCatalog}
+              loading={leaderboardLoading}
+              exporting={statsExporting}
+              onExport={() => void exportStats()}
+            />
+          </div>
+        ) : tab === "leaderboard" ? (
+          <div className="mt-5">
+            <LeaderboardPanel
+              leaderboard={leaderboard}
+              loading={leaderboardLoading}
+              searchValue={leaderboardSearch}
+              onSearchValueChange={value => {
+                setLeaderboardSearch(value);
+                setLeaderboardSearchResult(null);
+              }}
+              onSearch={() => void searchLeaderboard()}
+              searching={leaderboardSearching}
+              searchResult={leaderboardSearchResult}
+              selectedTokenId={selectedTokenId}
+              exporting={leaderboardExporting}
+              onExport={() => void exportLeaderboard()}
+            />
+          </div>
+        ) : !address ? (
           <div className="mt-6 border border-[var(--hood-fg)] p-10 text-center">
-            <h2 className="text-4xl tracking-[-0.04em]">START YOUR JOURNEY</h2>
-            <p className="mt-4 text-[9px] uppercase opacity-60">Connect the wallet holding your Hoodie.</p>
-            <button type="button" onClick={() => void connect()} className="mt-6 bg-[var(--hood-fg)] px-8 py-4 text-[9px] uppercase tracking-[0.15em] text-[var(--hood-bg)]">Connect wallet</button>
+            <h2 className="text-4xl tracking-[-0.04em]">
+              START YOUR JOURNEY
+            </h2>
+
+            <p className="mt-4 text-[9px] uppercase opacity-60">
+              Connect the wallet holding your Hoodie.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => void connect()}
+              className="mt-6 bg-[var(--hood-fg)] px-8 py-4 text-[9px] uppercase tracking-[0.15em] text-[var(--hood-bg)]"
+            >
+              Connect wallet
+            </button>
+
             <div className="mt-7">
-              <a href={OPENSEA} target="_blank" rel="noreferrer" className="text-[8px] uppercase underline underline-offset-4">Buy secondary on OpenSea →</a>
+              <a
+                href={OPENSEA}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[8px] uppercase underline underline-offset-4"
+              >
+                Buy secondary on OpenSea →
+              </a>
             </div>
           </div>
         ) : ownershipLoading ? (
-          <div className="mt-6 border border-[var(--hood-fg)] p-8 text-center text-[9px] uppercase">Reading Hoodie ownership…</div>
+          <div className="mt-6 border border-[var(--hood-fg)] p-8 text-center text-[9px] uppercase">
+            Reading Hoodie ownership…
+          </div>
         ) : ownershipChecked && ownedHoodies.length === 0 ? (
           <div className="mt-6 border border-[var(--hood-fg)] p-10 text-center">
-            <h2 className="text-4xl">START YOUR JOURNEY</h2>
-            <p className="mt-4 text-[9px] uppercase opacity-60">No OnChainHoodie found in this wallet.</p>
+            <h2 className="text-4xl">
+              START YOUR JOURNEY
+            </h2>
+
+            <p className="mt-4 text-[9px] uppercase opacity-60">
+              No OnChainHoodie found in this wallet.
+            </p>
           </div>
         ) : (
           <>
             <section className="mt-7">
               <div className="flex items-end justify-between">
-                <h2 className="text-3xl tracking-[-0.04em]">YOUR HOODIES</h2>
-                <p className="text-[7px] uppercase opacity-50">{ownedHoodies.length} owned</p>
+                <h2 className="text-3xl tracking-[-0.04em]">
+                  YOUR HOODIES
+                </h2>
+
+                <p className="text-[7px] uppercase opacity-50">
+                  {ownedHoodies.length} owned
+                </p>
               </div>
 
               <div className="mt-4 flex gap-3 overflow-x-auto pb-4 [scrollbar-width:thin]">
@@ -2540,12 +3311,21 @@ export default function JourneyPage() {
                   <HoodieTile
                     key={hoodie.tokenId}
                     hoodie={hoodie}
-                    selected={hoodie.tokenId === selectedTokenId}
-                    active={activeHoodies[hoodie.tokenId] === true}
+                    selected={
+                      hoodie.tokenId ===
+                      selectedTokenId
+                    }
+                    active={
+                      activeHoodies[
+                        hoodie.tokenId
+                      ] === true
+                    }
                     onSelect={() => {
                       setError(null);
                       setJourney(null);
-                      setSelectedTokenId(hoodie.tokenId);
+                      setSelectedTokenId(
+                        hoodie.tokenId,
+                      );
                     }}
                   />
                 ))}
@@ -2555,147 +3335,124 @@ export default function JourneyPage() {
             <section className="mt-10">
               <div className="flex flex-col gap-4 border-b border-[var(--hood-fg)] pb-4 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <p className="text-[12px] uppercase tracking-[0.20em] opacity-60">Hoodie #{selectedTokenId}</p>
+                  <p className="text-[12px] uppercase tracking-[0.20em] opacity-60">
+                    Hoodie #{selectedTokenId}
+                  </p>
+
                   <div className="mt-2 flex flex-wrap items-center gap-3">
-                    <h2 className="text-6xl tracking-[-0.06em] md:text-7xl">JOURNEY</h2>
+                    <h2 className="text-6xl tracking-[-0.06em] md:text-7xl">
+                      JOURNEY
+                    </h2>
+
                     <span className="border border-[var(--hood-fg)] px-3 py-2 text-[10px] uppercase tracking-[0.12em]">
                       Hood It {selectedHoodItCount}
                     </span>
 
                     {activeHoodies[selectedTokenId] && (
-                      <span className="bg-[var(--hood-fg)] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[var(--hood-bg)]">● Wallet active</span>
+                      <span className="bg-[var(--hood-fg)] px-3 py-2 text-[8px] uppercase tracking-[0.12em] text-[var(--hood-bg)]">
+                        ● Wallet active
+                      </span>
                     )}
                   </div>
-                </div>
-
-                <div className="grid grid-cols-3 border border-[var(--hood-fg)]">
-                  <button
-                    type="button"
-                    onClick={() => setTab("journey")}
-                    className={`px-5 py-3 text-[9px] uppercase tracking-[0.14em] ${tab === "journey" ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}
-                  >
-                    Journey
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={openStats}
-                    className={`border-l border-[var(--hood-fg)] px-5 py-3 text-[9px] uppercase tracking-[0.14em] ${tab === "stats" ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}
-                  >
-                    Stats
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={openLeaderboard}
-                    className={`border-l border-[var(--hood-fg)] px-5 py-3 text-[9px] uppercase tracking-[0.14em] ${tab === "leaderboard" ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}
-                  >
-                    Leaderboard
-                  </button>
                 </div>
               </div>
 
-              {tab === "journey" ? (
-                journeyLoading && !journey ? (
-                  <div className="mt-4 border border-[var(--hood-fg)] p-8 text-center text-[8px] uppercase">Reading Journey…</div>
-                ) : journey ? (
-                  <div className="mt-4">
-                    <p className="mb-3 text-[12px] uppercase tracking-[0.20em] opacity-70">Already part of the story</p>
-                    <div className="space-y-3">
-                      {journey.milestones
-                        .filter(m => m.recorded || pending[localKey(selectedTokenId, m.key)])
-                        .map(m => (
-                          <JourneyRow
-                            key={m.key}
-                            milestone={m}
-                            journey={journey}
-                            checkedIn
-                            checkingIn={
-                              false
-                            }
-                            sharing={
-                              sharingKey ===
-                              m.key
-                            }
-                            onHoodIt={() => {}}
-                            onShare={item =>
-                              void shareMilestone(
-                                item,
-                              )
-                            }
-                          />
-                        ))}
-                    </div>
+              {journeyLoading && !journey ? (
+                <div className="mt-4 border border-[var(--hood-fg)] p-8 text-center text-[8px] uppercase">
+                  Reading Journey…
+                </div>
+              ) : journey ? (
+                <div className="mt-4">
+                  <p className="mb-3 text-[12px] uppercase tracking-[0.20em] opacity-70">
+                    Already part of the story
+                  </p>
 
-                    <p className="mb-3 mt-8 text-[12px] uppercase tracking-[0.20em] opacity-70">What&apos;s next?</p>
-
-                    {journey.milestones.some(isSeason2Milestone) && (
-                      <div className="mb-4 border border-[var(--hood-fg)] px-4 py-3 text-[9px] uppercase tracking-[0.14em]">
-                        Season 2 Builder Actions
-                      </div>
-                    )}
-
-                    <div className="space-y-3">
-                      {journey.milestones
-                        .filter(m => !m.recorded && !pending[localKey(selectedTokenId, m.key)])
-                        .map(m => (
-                          <JourneyRow
-                            key={m.key}
-                            milestone={m}
-                            journey={journey}
-                            checkedIn={
-                              false
-                            }
-                            checkingIn={
-                              checkingInKey ===
-                              m.key
-                            }
-                            sharing={
-                              false
-                            }
-                            onHoodIt={item =>
-                              void hoodIt(
-                                item,
-                              )
-                            }
-                            onShare={() => {}}
-                          />
-                        ))}
-                    </div>
-
-                    <Season2Panel
-                      visible={
-                        journey.milestones.some(
-                          isSeason2Milestone,
-                        )
-                      }
-                    />
+                  <div className="space-y-3">
+                    {journey.milestones
+                      .filter(
+                        m =>
+                          m.recorded ||
+                          pending[
+                            localKey(
+                              selectedTokenId,
+                              m.key,
+                            )
+                          ],
+                      )
+                      .map(m => (
+                        <JourneyRow
+                          key={m.key}
+                          milestone={m}
+                          journey={journey}
+                          checkedIn
+                          checkingIn={false}
+                          sharing={
+                            sharingKey === m.key
+                          }
+                          onHoodIt={() => {}}
+                          onShare={item =>
+                            void shareMilestone(
+                              item,
+                            )
+                          }
+                        />
+                      ))}
                   </div>
-                ) : null
-              ) : tab === "stats" ? (
-                <div className="mt-4">
-                  <StatsPanel
-                    leaderboard={leaderboard}
-                    loading={leaderboardLoading}
+
+                  <p className="mb-3 mt-8 text-[12px] uppercase tracking-[0.20em] opacity-70">
+                    What&apos;s next?
+                  </p>
+
+                  {journey.milestones.some(
+                    isSeason2Milestone,
+                  ) && (
+                    <div className="mb-4 border border-[var(--hood-fg)] px-4 py-3 text-[9px] uppercase tracking-[0.14em]">
+                      Season 2 Builder Actions
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    {journey.milestones
+                      .filter(
+                        m =>
+                          !m.recorded &&
+                          !pending[
+                            localKey(
+                              selectedTokenId,
+                              m.key,
+                            )
+                          ],
+                      )
+                      .map(m => (
+                        <JourneyRow
+                          key={m.key}
+                          milestone={m}
+                          journey={journey}
+                          checkedIn={false}
+                          checkingIn={
+                            checkingInKey ===
+                            m.key
+                          }
+                          sharing={false}
+                          onHoodIt={item =>
+                            void hoodIt(
+                              item,
+                            )
+                          }
+                          onShare={() => {}}
+                        />
+                      ))}
+                  </div>
+
+                  <Season2Panel
+                    visible={
+                      journey.milestones.some(
+                        isSeason2Milestone,
+                      )
+                    }
                   />
                 </div>
-              ) : (
-                <div className="mt-4">
-                  <LeaderboardPanel
-                    leaderboard={leaderboard}
-                    loading={leaderboardLoading}
-                    searchValue={leaderboardSearch}
-                    onSearchValueChange={value => {
-                      setLeaderboardSearch(value);
-                      setLeaderboardSearchResult(null);
-                    }}
-                    onSearch={() => void searchLeaderboard()}
-                    searching={leaderboardSearching}
-                    searchResult={leaderboardSearchResult}
-                    selectedTokenId={selectedTokenId}
-                  />
-                </div>
-              )}
+              ) : null}
             </section>
           </>
         )}
