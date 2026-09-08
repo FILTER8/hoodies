@@ -1,8 +1,7 @@
 "use client";
 
 import {
-  FormEvent,
-  useCallback,
+  PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
   useRef,
@@ -22,10 +21,8 @@ const PIXEL_FONT_URL = "/fonts/DepartureMono-Regular.woff";
 
 const AVATAR = {
   src: "/avatar.png",
-  x: 78,
+  defaultX: 78,
   defaultBottom: 585,
-  minBottom: 520,
-  maxBottom: 620,
   targetWidth: 470,
   maxHeight: 505,
 } as const;
@@ -74,12 +71,37 @@ const FOOTER_OPTIONS = [
 
 type FooterOption = (typeof FOOTER_OPTIONS)[number];
 
+type Point = {
+  x: number;
+  y: number;
+};
+
+type AvatarPosition = {
+  x: number;
+  bottom: number;
+};
+
+type Rect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type RenderHitboxes = {
+  avatar: Rect;
+  bubble: Rect;
+};
+
+type DragTarget = "avatar" | "bubble";
+
 type BubbleLayout = {
   lines: string[];
   width: number;
   height: number;
   top: number;
   bottom: number;
+  x: number;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -282,6 +304,7 @@ function getBubbleBottom(lineCount: number): number {
 function getBubbleLayout(
   context: CanvasRenderingContext2D,
   text: string,
+  bubbleOffset: Point,
 ): BubbleLayout {
   context.font = getCanvasFont(BUBBLE.fontSize);
   context.textBaseline = "alphabetic";
@@ -313,7 +336,8 @@ function getBubbleLayout(
     ),
   );
 
-  const bottom = getBubbleBottom(safeLines.length);
+  const bottom = getBubbleBottom(safeLines.length) + bubbleOffset.y;
+  const x = BUBBLE.x + bubbleOffset.x;
 
   return {
     lines: safeLines,
@@ -321,6 +345,7 @@ function getBubbleLayout(
     height,
     top: bottom - height,
     bottom,
+    x,
   };
 }
 
@@ -328,8 +353,8 @@ function drawPixelBubble(
   context: CanvasRenderingContext2D,
   layout: BubbleLayout,
 ): void {
-  const { x, border } = BUBBLE;
-  const { width, height, top, bottom } = layout;
+  const { border } = BUBBLE;
+  const { x, width, height, top, bottom } = layout;
   const right = x + width;
   const p = border;
 
@@ -496,7 +521,7 @@ function drawBubbleText(
     drawTrackedText(
       context,
       line,
-      BUBBLE.x + BUBBLE.paddingX,
+      layout.x + BUBBLE.paddingX,
       firstBaseline + index * BUBBLE.lineHeight,
       0,
       BUBBLE.textThickness,
@@ -535,8 +560,9 @@ async function drawComposition(
   context: CanvasRenderingContext2D,
   phrase: string,
   footerText: string,
-  avatarBottom: number,
-): Promise<void> {
+  avatarPosition: AvatarPosition,
+  bubbleOffset: Point,
+): Promise<RenderHitboxes> {
   context.save();
   context.imageSmoothingEnabled = false;
   context.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -545,8 +571,6 @@ async function drawComposition(
 
   const avatar = await getAvatar();
 
-  // Preserve avatar.png's intrinsic aspect ratio. We size it by width first,
-  // then cap the height only if necessary. This prevents any stretching.
   const sourceRatio = avatar.naturalWidth / avatar.naturalHeight;
   let avatarWidth = AVATAR.targetWidth;
   let avatarHeight = avatarWidth / sourceRatio;
@@ -556,30 +580,46 @@ async function drawComposition(
     avatarWidth = avatarHeight * sourceRatio;
   }
 
-  const avatarY = avatarBottom - avatarHeight;
+  const avatarY = avatarPosition.bottom - avatarHeight;
 
   context.drawImage(
     avatar,
-    AVATAR.x,
+    avatarPosition.x,
     avatarY,
     avatarWidth,
     avatarHeight,
   );
 
-  const layout = getBubbleLayout(context, phrase || " ");
+  const layout = getBubbleLayout(context, phrase || " ", bubbleOffset);
   drawPixelBubble(context, layout);
   drawBubbleText(context, layout);
   drawFooterSticker(context, footerText);
 
   context.restore();
+
+  return {
+    avatar: {
+      x: avatarPosition.x,
+      y: avatarY,
+      width: avatarWidth,
+      height: avatarHeight,
+    },
+    bubble: {
+      x: layout.x,
+      y: layout.top,
+      width: layout.width,
+      height: layout.height + BUBBLE.border * 4,
+    },
+  };
 }
 
 async function composeCanvas(
   canvas: HTMLCanvasElement,
   phrase: string,
   footerText: string,
-  avatarBottom: number,
-): Promise<void> {
+  avatarPosition: AvatarPosition,
+  bubbleOffset: Point,
+): Promise<RenderHitboxes> {
   await ensurePixelFont();
 
   const frame = document.createElement("canvas");
@@ -592,7 +632,13 @@ async function composeCanvas(
     throw new Error("Canvas is unavailable.");
   }
 
-  await drawComposition(frameContext, phrase, footerText, avatarBottom);
+  const hitboxes = await drawComposition(
+    frameContext,
+    phrase,
+    footerText,
+    avatarPosition,
+    bubbleOffset,
+  );
 
   if (canvas.width !== CANVAS_WIDTH) {
     canvas.width = CANVAS_WIDTH;
@@ -611,6 +657,8 @@ async function composeCanvas(
   context.imageSmoothingEnabled = false;
   context.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   context.drawImage(frame, 0, 0);
+
+  return hitboxes;
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -628,7 +676,8 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 async function downloadPNG(
   phrase: string,
   footerText: string,
-  avatarBottom: number,
+  avatarPosition: AvatarPosition,
+  bubbleOffset: Point,
 ): Promise<void> {
   await ensurePixelFont();
 
@@ -642,7 +691,13 @@ async function downloadPNG(
     throw new Error("Canvas is unavailable.");
   }
 
-  await drawComposition(sourceContext, phrase, footerText, avatarBottom);
+  await drawComposition(
+    sourceContext,
+    phrase,
+    footerText,
+    avatarPosition,
+    bubbleOffset,
+  );
 
   const exportCanvas = document.createElement("canvas");
   exportCanvas.width = CANVAS_WIDTH * EXPORT_SCALE;
@@ -688,9 +743,21 @@ function getReadableError(error: unknown): string {
 
 export default function SayItPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const hitboxesRef = useRef<RenderHitboxes | null>(null);
+  const dragRef = useRef<{
+    target: DragTarget;
+    pointerId: number;
+    lastPoint: Point;
+  } | null>(null);
+
   const [phrase, setPhrase] = useState("$OCH AUG 18th");
   const [footerText, setFooterText] = useState<FooterOption>(FOOTER_OPTIONS[0]);
-  const [avatarBottom, setAvatarBottom] = useState<number>(AVATAR.defaultBottom,);
+  const [avatarPosition, setAvatarPosition] = useState<AvatarPosition>({
+    x: AVATAR.defaultX,
+    bottom: AVATAR.defaultBottom,
+  });
+  const [bubbleOffset, setBubbleOffset] = useState<Point>({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState<DragTarget | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
 
@@ -699,22 +766,6 @@ export default function SayItPage() {
     () => Math.max(1, phrase.replace(/\r/g, "").split("\n").length),
     [phrase],
   );
-
-  const redraw = useCallback(async () => {
-    const canvas = canvasRef.current;
-
-    if (!canvas) {
-      return;
-    }
-
-    try {
-      setError("");
-      await composeCanvas(canvas, phrase, footerText, avatarBottom);
-    } catch (renderError) {
-      console.error(renderError);
-      setError(getReadableError(renderError));
-    }
-  }, [avatarBottom, footerText, phrase]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -725,23 +776,154 @@ export default function SayItPage() {
 
     let cancelled = false;
 
-    void composeCanvas(canvas, phrase, footerText, avatarBottom).catch((renderError) => {
-      if (cancelled) {
-        return;
-      }
+    void composeCanvas(
+      canvas,
+      phrase,
+      footerText,
+      avatarPosition,
+      bubbleOffset,
+    )
+      .then((hitboxes) => {
+        if (!cancelled) {
+          hitboxesRef.current = hitboxes;
+        }
+      })
+      .catch((renderError) => {
+        if (cancelled) {
+          return;
+        }
 
-      console.error(renderError);
-      setError(getReadableError(renderError));
-    });
+        console.error(renderError);
+        setError(getReadableError(renderError));
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [avatarBottom, footerText, phrase]);
+  }, [avatarPosition, bubbleOffset, footerText, phrase]);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void redraw();
+  function getCanvasPoint(
+    event: ReactPointerEvent<HTMLCanvasElement>,
+  ): Point {
+    const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return { x: 0, y: 0 };
+    }
+
+    const rect = canvas.getBoundingClientRect();
+
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * CANVAS_WIDTH,
+      y: ((event.clientY - rect.top) / rect.height) * CANVAS_HEIGHT,
+    };
+  }
+
+  function pointInRect(point: Point, rect: Rect): boolean {
+    return (
+      point.x >= rect.x &&
+      point.x <= rect.x + rect.width &&
+      point.y >= rect.y &&
+      point.y <= rect.y + rect.height
+    );
+  }
+
+  function handleCanvasPointerDown(
+    event: ReactPointerEvent<HTMLCanvasElement>,
+  ) {
+    const hitboxes = hitboxesRef.current;
+
+    if (!hitboxes) {
+      return;
+    }
+
+    const point = getCanvasPoint(event);
+
+    let target: DragTarget | null = null;
+
+    if (pointInRect(point, hitboxes.bubble)) {
+      target = "bubble";
+    } else if (pointInRect(point, hitboxes.avatar)) {
+      target = "avatar";
+    }
+
+    if (!target) {
+      return;
+    }
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    dragRef.current = {
+      target,
+      pointerId: event.pointerId,
+      lastPoint: point,
+    };
+
+    setDragging(target);
+  }
+
+  function handleCanvasPointerMove(
+    event: ReactPointerEvent<HTMLCanvasElement>,
+  ) {
+    const drag = dragRef.current;
+
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const point = getCanvasPoint(event);
+    const deltaX = point.x - drag.lastPoint.x;
+    const deltaY = point.y - drag.lastPoint.y;
+
+    drag.lastPoint = point;
+
+    if (drag.target === "avatar") {
+      setAvatarPosition((current) => ({
+        x: clamp(
+          current.x + deltaX,
+          -AVATAR.targetWidth + 40,
+          CANVAS_WIDTH - 40,
+        ),
+        bottom: clamp(
+          current.bottom + deltaY,
+          40,
+          CANVAS_HEIGHT + AVATAR.maxHeight - 40,
+        ),
+      }));
+    } else {
+      setBubbleOffset((current) => ({
+        x: clamp(
+          current.x + deltaX,
+          -BUBBLE.x + 20,
+          CANVAS_WIDTH - BUBBLE.x - 20,
+        ),
+        y: clamp(current.y + deltaY, -420, 420),
+      }));
+    }
+  }
+
+  function finishDrag(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const drag = dragRef.current;
+
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    dragRef.current = null;
+    setDragging(null);
+  }
+
+  function resetPositions() {
+    setAvatarPosition({
+      x: AVATAR.defaultX,
+      bottom: AVATAR.defaultBottom,
+    });
+    setBubbleOffset({ x: 0, y: 0 });
+    setError("");
   }
 
   async function handleDownload() {
@@ -753,7 +935,12 @@ export default function SayItPage() {
     setError("");
 
     try {
-      await downloadPNG(phrase, footerText, avatarBottom);
+      await downloadPNG(
+        phrase,
+        footerText,
+        avatarPosition,
+        bubbleOffset,
+      );
     } catch (downloadError) {
       console.error(downloadError);
       setError(getReadableError(downloadError));
@@ -782,7 +969,7 @@ export default function SayItPage() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="border-b-2 border-[#ccff00] py-8">
+          <section className="border-b-2 border-[#ccff00] py-8">
             <div className="flex items-center justify-between gap-4 text-left">
               <h2 className="text-[10px] uppercase tracking-[0.16em]">
                 Message
@@ -808,7 +995,7 @@ export default function SayItPage() {
               />
             </label>
 
-          </form>
+          </section>
 
           <section className="border-b-2 border-[#ccff00] py-8">
             <div className="flex items-center justify-between gap-4 text-left">
@@ -826,8 +1013,17 @@ export default function SayItPage() {
                 ref={canvasRef}
                 width={CANVAS_WIDTH}
                 height={CANVAS_HEIGHT}
-                className="block h-auto w-full bg-[#ccff00]"
-                style={{ imageRendering: "pixelated" }}
+                onPointerDown={handleCanvasPointerDown}
+                onPointerMove={handleCanvasPointerMove}
+                onPointerUp={finishDrag}
+                onPointerCancel={finishDrag}
+                className={`block h-auto w-full bg-[#ccff00] ${
+                  dragging ? "cursor-grabbing" : "cursor-grab"
+                }`}
+                style={{
+                  imageRendering: "pixelated",
+                  touchAction: "none",
+                }}
               />
             </div>
           </section>
@@ -835,33 +1031,31 @@ export default function SayItPage() {
           <section className="border-b-2 border-[#ccff00] py-8">
             <div className="flex items-center justify-between gap-4 text-left">
               <h2 className="text-[10px] uppercase tracking-[0.16em]">
-                Hoodie Position
+                Position
               </h2>
 
               <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
-                {avatarBottom} PX
+                Drag directly on canvas
               </p>
             </div>
 
-            <div className="mt-5 border-2 border-[#ccff00] p-5">
-              <input
-                type="range"
-                min={AVATAR.minBottom}
-                max={AVATAR.maxBottom}
-                step="1"
-                value={avatarBottom}
-                onChange={(event) => {
-                  setAvatarBottom(Number(event.target.value));
-                  setError("");
-                }}
-                className="w-full accent-[#ccff00]"
-                aria-label="Hoodie vertical position"
-              />
-
-              <div className="mt-3 flex justify-between text-[7px] uppercase tracking-[0.12em] opacity-55">
-                <span>Higher</span>
-                <span>Lower</span>
+            <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
+              <div className="border-2 border-[#ccff00] px-5 py-4 text-left">
+                <p className="text-[9px] uppercase leading-relaxed tracking-[0.12em]">
+                  Grab the Hoodie or speech bubble and move it freely.
+                </p>
+                <p className="mt-2 text-[7px] uppercase leading-relaxed tracking-[0.12em] opacity-55">
+                  Works with mouse, touch and pen. Export uses the exact positions shown.
+                </p>
               </div>
+
+              <button
+                type="button"
+                onClick={resetPositions}
+                className="min-h-14 border-2 border-[#ccff00] bg-black px-6 text-[8px] uppercase tracking-[0.14em] text-[#ccff00] transition-colors hover:bg-[#ccff00] hover:text-black"
+              >
+                Reset Positions
+              </button>
             </div>
           </section>
 
@@ -910,7 +1104,7 @@ export default function SayItPage() {
           </button>
 
           <p className="mt-4 text-[8px] uppercase leading-relaxed tracking-[0.12em] opacity-55">
-            The tail and bottom anchor stay fixed. The bubble grows right and upward as needed.
+            Drag the Hoodie and speech bubble directly on the preview. Bubble size still adapts automatically to the message.
           </p>
         </div>
       </section>
