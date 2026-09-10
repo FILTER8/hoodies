@@ -59,6 +59,146 @@
       "contract": "0xf42CA49CaD4F58d7e02429dc12b8b70a4578f47A",
       "name": "HoodieSwap",
       "symbol": "HOODIESWAP"
+    },
+    {
+      "contract": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+      "name": "SpaceX",
+      "symbol": "SPCX"
+    },
+    {
+      "contract": "0xC9a981FEE1F9DEc688bb123ccDeCc63D0deBFC4e",
+      "name": "SPDR Gold Trust",
+      "symbol": "GLD"
+    },
+    {
+      "contract": "0xF6589F11Bc40b669e584073F428B05562F568733",
+      "name": "Snap",
+      "symbol": "SNAP"
+    },
+    {
+      "contract": "0x58FfE4a942d3885bAa22D7520691F611EF09e7AA",
+      "name": "Taiwan Semiconductor Manufacturing",
+      "symbol": "TSM"
+    },
+    {
+      "contract": "0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35",
+      "name": "Meta Platforms",
+      "symbol": "META"
+    },
+    {
+      "contract": "0x05b37Fb53A299a1b874A619e1c4C404D52C36F4C",
+      "name": "Reddit",
+      "symbol": "RDDT"
+    },
+    {
+      "contract": "0xB90A19fF0Af67f7779afF50A882A9CfF42446400",
+      "name": "Sandisk",
+      "symbol": "SNDK"
+    },
+    {
+      "contract": "0x48E39E56aCdbA37b09020C0b734A613C9a2f100A",
+      "name": "Blackberry",
+      "symbol": "BB"
+    },
+    {
+      "contract": "0x92FD66527192E3e61d4DDd13322Aa222DE86F9B5",
+      "name": "iShares 0-3 Month Treasury Bond ETF",
+      "symbol": "SGOV"
+    },
+    {
+      "contract": "0x43b07D15Ce533bEc5476D70c22A78A1B2B662155",
+      "name": "Moderna",
+      "symbol": "MRNA"
+    },
+    {
+      "contract": "0xceF9027c7D6985b85F0BA431125073529a947A68",
+      "name": "Webull",
+      "symbol": "BULL"
+    },
+    {
+      "contract": "0xfF080c8ce2E5feadaCa0Da81314Ae59D232d4afD",
+      "name": "Micron Technology",
+      "symbol": "MU"
+    },
+    {
+      "contract": "0x59818904ab4cE163b3cE4FfB64f2D6Ca02c434B4",
+      "name": "Quantum Computing",
+      "symbol": "QUBT"
+    },
+    {
+      "contract": "0x6330D8C3178a418788dF01a47479c0ce7CCF450b",
+      "name": "Coinbase",
+      "symbol": "COIN"
+    },
+    {
+      "contract": "0x62fD0668E10d8B72339bE2DCf7643001688fF13B",
+      "name": "Marvell Technology",
+      "symbol": "MRVL"
+    },
+    {
+      "contract": "0x8005D266423c7eA827372c9C864491e5786600EA",
+      "name": "Eli Lilly",
+      "symbol": "LLY"
+    },
+    {
+      "contract": "0x05a3d1Cd21d0C88145E82600E62e7E496e0F222B",
+      "name": "AMC Entertainment",
+      "symbol": "AMC"
+    },
+    {
+      "contract": "0xec262a75e413fAfD0dF80480274532C79D42da09",
+      "name": "Strategy",
+      "symbol": "MSTR"
+    },
+    {
+      "contract": "0x822cc93fFD030293E9842C30bBD678F530701867",
+      "name": "Bloom Energy",
+      "symbol": "BE"
+    },
+    {
+      "contract": "0x1D11f0496982706C5e14A514D4E79F2e6BdE4516",
+      "name": "Trump Media",
+      "symbol": "DJT"
+    },
+    {
+      "contract": "0x411eFB0e7F985935DaEc3d4C3EBAEA0D0AD7D89F",
+      "name": "iShares Silver Trust",
+      "symbol": "SLV"
+    },
+    {
+      "contract": "0x4EA005168D7F09a7A0BA9d1DeF21A479950E44C2",
+      "name": "Costco",
+      "symbol": "COST"
+    },
+    {
+      "contract": "0xCceE82fE024c36fA15E1005edE3E9e4787e23D09",
+      "name": "Hims & Hers Health",
+      "symbol": "HIMS"
+    },
+    {
+      "contract": "0xf0C4Bf4c582Cb3836e98394b1D4e7B7281101be8",
+      "name": "Roblox",
+      "symbol": "RBLX"
+    },
+    {
+      "contract": "0xAceF2E09aDb47AD6aBeBAd9ff06689E60615c2B6",
+      "name": "iShares MSCI India",
+      "symbol": "INDA"
+    },
+    {
+      "contract": "0xc72F232a6869e6CF34dC06129AfFD07F8a2a246A",
+      "name": "Mancer",
+      "symbol": "MANCER"
+    },
+    {
+      "contract": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+      "name": "Cash Cat",
+      "symbol": "CASHCAT"
+    },
+    {
+      "contract": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+      "name": "Pons",
+      "symbol": "PONS"
     }
   ],
   "nfts": [

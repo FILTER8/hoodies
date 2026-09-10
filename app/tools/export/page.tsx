@@ -28,15 +28,18 @@ type GridShape = {
 };
 
 const outputSizes = [1200, 2400, 4800] as const;
+
 const MAX_SPACE_AROUND = 120;
 const MAX_SPACE_BETWEEN = 60;
 const REFERENCE_OUTPUT_SIZE = 1200;
+
 const GREEN = "#ccff00";
 const BLACK = "#000000";
+
 function artworkUrl(hoodie: Hoodie) {
   if (apiConfig.isMainnet) {
     return collectionApiUrl(
-      `/images/${encodeURIComponent(hoodie.tokenId)}.svg`,
+      `/images/${encodeURIComponent(hoodie.tokenId)}.svg`
     );
   }
 
@@ -47,37 +50,65 @@ function artworkUrl(hoodie: Hoodie) {
 }
 
 function getGridShape(count: number): GridShape {
-  if (count <= 0) return { columns: 1, rows: 1 };
+  if (count <= 0) {
+    return {
+      columns: 1,
+      rows: 1,
+    };
+  }
 
   const columns = Math.ceil(Math.sqrt(count));
   const rows = Math.ceil(count / columns);
 
-  return { columns, rows };
+  return {
+    columns,
+    rows,
+  };
 }
 
 function scaledSpacing(value: number, outputSize: number) {
   return Math.round((value / REFERENCE_OUTPUT_SIZE) * outputSize);
 }
 
+function isValidWalletAddress(value: string) {
+  return /^0x[a-fA-F0-9]{40}$/.test(value.trim());
+}
+
+function shortWallet(address: string) {
+  if (address.length <= 12) return address;
+
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
+
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
+
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 async function loadArtwork(source: string) {
   const image = new Image();
+
   image.decoding = "async";
   image.crossOrigin = "anonymous";
 
   await new Promise<void>((resolve, reject) => {
     image.onload = () => resolve();
-    image.onerror = () => reject(new Error("Artwork could not be loaded."));
+
+    image.onerror = () => {
+      reject(new Error("Artwork could not be loaded."));
+    };
+
     image.src = source;
   });
 
@@ -97,9 +128,11 @@ function drawTrackedText(
   context.textBaseline = "middle";
 
   const characters = Array.from(text);
+
   const widths = characters.map((character) =>
     context.measureText(character).width
   );
+
   const totalWidth =
     widths.reduce((sum, width) => sum + width, 0) +
     tracking * Math.max(0, characters.length - 1);
@@ -152,7 +185,9 @@ function CompactToggle({
       type="button"
       onClick={onChange}
       className={`flex min-h-9 items-center justify-between gap-3 border border-black px-3 py-2 text-left text-[9px] uppercase tracking-[0.13em] ${
-        checked ? "bg-black text-[#ccff00]" : "bg-[#ccff00] text-black"
+        checked
+          ? "bg-black text-[#ccff00]"
+          : "bg-[#ccff00] text-black"
       }`}
       aria-pressed={checked}
     >
@@ -177,7 +212,10 @@ function CompactOptions<T extends number>({
 }) {
   return (
     <div className="border border-black p-2.5">
-      <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">{label}</p>
+      <p className="text-[8px] uppercase tracking-[0.14em] opacity-60">
+        {label}
+      </p>
+
       <div className="mt-2 flex gap-1.5">
         {options.map((item) => (
           <button
@@ -196,7 +234,6 @@ function CompactOptions<T extends number>({
     </div>
   );
 }
-
 
 function ControlSlider({
   label,
@@ -219,6 +256,7 @@ function ControlSlider({
         <span className="text-[8px] uppercase tracking-[0.14em] opacity-60">
           {label}
         </span>
+
         <span className="text-[9px] uppercase tracking-[0.12em]">
           {value}
         </span>
@@ -230,7 +268,9 @@ function ControlSlider({
         max={max}
         step={step}
         value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onChange={(event) => {
+          onChange(Number(event.target.value));
+        }}
         className="pixel-slider"
       />
     </label>
@@ -239,43 +279,77 @@ function ControlSlider({
 
 export default function ExportPage() {
   const { address, connect } = useWallet();
+
+  const [walletInput, setWalletInput] = useState("");
+  const [viewedAddress, setViewedAddress] = useState<string | null>(null);
+
   const [hoodies, setHoodies] = useState<Hoodie[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [outputSize, setOutputSize] = useState<(typeof outputSizes)[number]>(2400);
+
+  const [outputSize, setOutputSize] =
+    useState<(typeof outputSizes)[number]>(2400);
+
   const [spaceAround, setSpaceAround] = useState(0);
   const [spaceBetween, setSpaceBetween] = useState(0);
+
   const [showTokenIds, setShowTokenIds] = useState(false);
   const [showBranding, setShowBranding] = useState(false);
+
   const [pickerOpen, setPickerOpen] = useState(true);
+
   const [loading, setLoading] = useState(false);
   const [ownershipChecked, setOwnershipChecked] = useState(false);
+
   const [exporting, setExporting] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState("");
   const [indexInfo, setIndexInfo] = useState("");
 
   const requestHoodies = useCallback(
     async (owner: string, signal?: AbortSignal) => {
-      const params = new URLSearchParams({ owner });
-      const response = await fetch(`/api/hoodies?${params.toString()}`, {
-        cache: "no-store",
-        signal,
+      const params = new URLSearchParams({
+        owner,
       });
+
+      const response = await fetch(
+        `/api/hoodies?${params.toString()}`,
+        {
+          cache: "no-store",
+          signal,
+        }
+      );
+
       const data = (await response.json()) as ApiResponse;
 
       if (!response.ok) {
-        throw new Error(data.error || "Unable to load your Hoodies.");
+        throw new Error(
+          data.error || "Unable to load Hoodies for this wallet."
+        );
       }
 
       const unique = Array.from(
-        new Map((data.items || []).map((item) => [item.tokenId, item])).values()
+        new Map(
+          (data.items || []).map((item) => [
+            item.tokenId,
+            item,
+          ])
+        ).values()
       ).sort((a, b) => {
         const left = BigInt(a.tokenId);
         const right = BigInt(b.tokenId);
-        return left < right ? -1 : left > right ? 1 : 0;
+
+        return left < right
+          ? -1
+          : left > right
+            ? 1
+            : 0;
       });
 
-      return { data, unique };
+      return {
+        data,
+        unique,
+      };
     },
     []
   );
@@ -283,7 +357,10 @@ export default function ExportPage() {
   const applyLoadedHoodies = useCallback(
     (data: ApiResponse, unique: Hoodie[]) => {
       setHoodies(unique);
-      setSelected(new Set(unique.map((item) => item.tokenId)));
+
+      setSelected(
+        new Set(unique.map((item) => item.tokenId))
+      );
 
       if (
         typeof data.indexedTotal === "number" &&
@@ -299,109 +376,96 @@ export default function ExportPage() {
     []
   );
 
-  const loadHoodies = useCallback(async () => {
-    if (!address) {
-      setHoodies([]);
-      setSelected(new Set());
-      setIndexInfo("");
-      setError(null);
-      setOwnershipChecked(false);
-      return;
-    }
-
-    setLoading(true);
-    setOwnershipChecked(false);
-    setError(null);
-    setIndexInfo("");
-
-    try {
-      const { data, unique } = await requestHoodies(address);
-      applyLoadedHoodies(data, unique);
-    } catch (loadError) {
-      setHoodies([]);
-      setSelected(new Set());
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Unable to load your Hoodies."
-      );
-    } finally {
-      setLoading(false);
-      setOwnershipChecked(true);
-    }
-  }, [address, applyLoadedHoodies, requestHoodies]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let active = true;
-
-    void Promise.resolve().then(async () => {
-      if (!active) return;
-
-      if (!address) {
-        setHoodies([]);
-        setSelected(new Set());
-        setIndexInfo("");
-        setError(null);
-        setLoading(false);
-        setOwnershipChecked(false);
-        return;
-      }
-
+  const loadAddress = useCallback(
+    async (
+      owner: string,
+      signal?: AbortSignal
+    ) => {
       setLoading(true);
       setOwnershipChecked(false);
       setError(null);
       setIndexInfo("");
+      setProgress("");
 
       try {
-        const { data, unique } = await requestHoodies(
-          address,
-          controller.signal
-        );
+        const { data, unique } =
+          await requestHoodies(owner, signal);
 
-        if (!active) return;
+        setViewedAddress(owner);
+
         applyLoadedHoodies(data, unique);
       } catch (loadError) {
-        if (!active || controller.signal.aborted) return;
+        if (signal?.aborted) return;
 
         setHoodies([]);
         setSelected(new Set());
+
         setError(
           loadError instanceof Error
             ? loadError.message
-            : "Unable to load your Hoodies."
+            : "Unable to load Hoodies for this wallet."
         );
       } finally {
-        if (active) {
+        if (!signal?.aborted) {
           setLoading(false);
           setOwnershipChecked(true);
         }
       }
-    });
+    },
+    [applyLoadedHoodies, requestHoodies]
+  );
+
+  /*
+   * Connected wallet:
+   * automatically becomes the currently viewed wallet.
+   */
+  useEffect(() => {
+    if (!address) return;
+
+    const controller = new AbortController();
+
+    setWalletInput(address);
+
+    void loadAddress(
+      address,
+      controller.signal
+    );
 
     return () => {
-      active = false;
       controller.abort();
     };
-  }, [address, applyLoadedHoodies, requestHoodies]);
+  }, [address, loadAddress]);
 
   const selectedHoodies = useMemo(
-    () => hoodies.filter((hoodie) => selected.has(hoodie.tokenId)),
+    () =>
+      hoodies.filter((hoodie) =>
+        selected.has(hoodie.tokenId)
+      ),
     [hoodies, selected]
   );
 
-  const isHolder = hoodies.length > 0;
+  const isHolder =
+    ownershipChecked &&
+    hoodies.length > 0;
 
   const gridShape = useMemo(
-    () => getGridShape(selectedHoodies.length),
+    () =>
+      getGridShape(
+        selectedHoodies.length
+      ),
     [selectedHoodies.length]
   );
 
   function toggleToken(tokenId: string) {
     setSelected((current) => {
       const next = new Set(current);
-      if (next.has(tokenId)) next.delete(tokenId);
-      else next.add(tokenId);
+
+      if (next.has(tokenId)) {
+        next.delete(tokenId);
+      } else {
+        next.add(tokenId);
+      }
+
       return next;
     });
   }
@@ -410,8 +474,52 @@ export default function ExportPage() {
     setSelected((current) =>
       current.size === hoodies.length
         ? new Set()
-        : new Set(hoodies.map((hoodie) => hoodie.tokenId))
+        : new Set(
+            hoodies.map(
+              (hoodie) => hoodie.tokenId
+            )
+          )
     );
+  }
+
+  async function loadPastedWallet() {
+    const value = walletInput.trim();
+
+    if (!value) {
+      setError(
+        "Enter a wallet address."
+      );
+      return;
+    }
+
+    if (!isValidWalletAddress(value)) {
+      setError(
+        "Enter a valid 0x wallet address."
+      );
+      return;
+    }
+
+    setViewedAddress(value);
+
+    await loadAddress(value);
+  }
+
+  async function refreshOwnership() {
+    if (!viewedAddress) return;
+
+    await loadAddress(viewedAddress);
+  }
+
+  function clearViewedWallet() {
+    setViewedAddress(null);
+    setWalletInput("");
+    setHoodies([]);
+    setSelected(new Set());
+    setOwnershipChecked(false);
+    setLoading(false);
+    setError(null);
+    setIndexInfo("");
+    setProgress("");
   }
 
   async function exportGrid() {
@@ -419,63 +527,169 @@ export default function ExportPage() {
 
     setExporting(true);
     setError(null);
-    setProgress("Preparing square");
+    setProgress(
+      "Preparing square"
+    );
 
     try {
       if (document.fonts?.ready) {
         await document.fonts.ready;
       }
 
-      const { columns, rows } = gridShape;
-      const canvas = document.createElement("canvas");
+      const {
+        columns,
+        rows,
+      } = gridShape;
+
+      const canvas =
+        document.createElement(
+          "canvas"
+        );
+
       canvas.width = outputSize;
       canvas.height = outputSize;
 
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Canvas is unavailable in this browser.");
+      const context =
+        canvas.getContext("2d");
+
+      if (!context) {
+        throw new Error(
+          "Canvas is unavailable in this browser."
+        );
+      }
 
       context.imageSmoothingEnabled = false;
-      context.fillStyle = GREEN;
-      context.fillRect(0, 0, outputSize, outputSize);
 
-      const outerPadding = scaledSpacing(spaceAround, outputSize);
-      const gap = scaledSpacing(spaceBetween, outputSize);
-      const brandFontSize = Math.max(18, Math.round(outputSize * 0.014));
-      const brandHeight = showBranding
-        ? Math.max(
-            Math.round(outputSize * 0.06),
-            Math.round(brandFontSize * 2.4)
+      context.fillStyle = GREEN;
+
+      context.fillRect(
+        0,
+        0,
+        outputSize,
+        outputSize
+      );
+
+      const outerPadding =
+        scaledSpacing(
+          spaceAround,
+          outputSize
+        );
+
+      const gap =
+        scaledSpacing(
+          spaceBetween,
+          outputSize
+        );
+
+      const brandFontSize =
+        Math.max(
+          18,
+          Math.round(
+            outputSize * 0.014
           )
-        : 0;
-      const brandingGap = showBranding
-        ? Math.max(8, Math.round(outputSize * 0.012))
-        : 0;
-      const idFontSize = showTokenIds
-        ? Math.max(9, Math.round(outputSize * 0.0105))
-        : 0;
-      const idGap = showTokenIds
-        ? Math.max(4, Math.round(outputSize * 0.0035))
-        : 0;
-      const idLineHeight = showTokenIds
-        ? Math.max(idFontSize + 4, Math.round(idFontSize * 1.4))
-        : 0;
-      const idHeight = idGap + idLineHeight;
+        );
+
+      const brandHeight =
+        showBranding
+          ? Math.max(
+              Math.round(
+                outputSize * 0.06
+              ),
+              Math.round(
+                brandFontSize * 2.4
+              )
+            )
+          : 0;
+
+      const brandingGap =
+        showBranding
+          ? Math.max(
+              8,
+              Math.round(
+                outputSize * 0.012
+              )
+            )
+          : 0;
+
+      const idFontSize =
+        showTokenIds
+          ? Math.max(
+              9,
+              Math.round(
+                outputSize * 0.0105
+              )
+            )
+          : 0;
+
+      const idGap =
+        showTokenIds
+          ? Math.max(
+              4,
+              Math.round(
+                outputSize * 0.0035
+              )
+            )
+          : 0;
+
+      const idLineHeight =
+        showTokenIds
+          ? Math.max(
+              idFontSize + 4,
+              Math.round(
+                idFontSize * 1.4
+              )
+            )
+          : 0;
+
+      const idHeight =
+        idGap + idLineHeight;
 
       const contentTop =
-        outerPadding + brandHeight + brandingGap;
-      const contentBottom = outputSize - outerPadding;
-      const contentHeight = contentBottom - contentTop;
+        outerPadding +
+        brandHeight +
+        brandingGap;
+
+      const contentBottom =
+        outputSize -
+        outerPadding;
+
+      const contentHeight =
+        contentBottom -
+        contentTop;
 
       const availableWidth =
-        outputSize - outerPadding * 2 - gap * Math.max(0, columns - 1);
-      const availableGridHeight =
-        contentHeight - gap * Math.max(0, rows - 1);
+        outputSize -
+        outerPadding * 2 -
+        gap *
+          Math.max(
+            0,
+            columns - 1
+          );
 
-      const cellByWidth = availableWidth / columns;
-      const cellByHeight = availableGridHeight / rows;
-      const artworkSize = Math.floor(
-        Math.min(cellByWidth, cellByHeight - idHeight)
-      );
+      const availableGridHeight =
+        contentHeight -
+        gap *
+          Math.max(
+            0,
+            rows - 1
+          );
+
+      const cellByWidth =
+        availableWidth /
+        columns;
+
+      const cellByHeight =
+        availableGridHeight /
+        rows;
+
+      const artworkSize =
+        Math.floor(
+          Math.min(
+            cellByWidth,
+            cellByHeight -
+              idHeight
+          )
+        );
 
       if (artworkSize < 8) {
         throw new Error(
@@ -483,57 +697,149 @@ export default function ExportPage() {
         );
       }
 
-      const cellHeight = artworkSize + idHeight;
-      const gridWidth = columns * artworkSize + gap * Math.max(0, columns - 1);
-      const gridHeight = rows * cellHeight + gap * Math.max(0, rows - 1);
-      const gridLeft = Math.round((outputSize - gridWidth) / 2);
-      const gridTop = Math.round(
-        contentTop + Math.max(0, (contentHeight - gridHeight) / 2)
-      );
+      const cellHeight =
+        artworkSize +
+        idHeight;
+
+      const gridWidth =
+        columns *
+          artworkSize +
+        gap *
+          Math.max(
+            0,
+            columns - 1
+          );
+
+      const gridHeight =
+        rows *
+          cellHeight +
+        gap *
+          Math.max(
+            0,
+            rows - 1
+          );
+
+      const gridLeft =
+        Math.round(
+          (outputSize -
+            gridWidth) /
+            2
+        );
+
+      const gridTop =
+        Math.round(
+          contentTop +
+            Math.max(
+              0,
+              (contentHeight -
+                gridHeight) /
+                2
+            )
+        );
 
       context.fillStyle = BLACK;
-      context.textAlign = "center";
-      context.textBaseline = "middle";
+      context.textAlign =
+        "center";
+      context.textBaseline =
+        "middle";
 
-      for (let index = 0; index < selectedHoodies.length; index += 1) {
-        const hoodie = selectedHoodies[index];
-        setProgress(`Loading ${index + 1} / ${selectedHoodies.length}`);
+      for (
+        let index = 0;
+        index <
+        selectedHoodies.length;
+        index += 1
+      ) {
+        const hoodie =
+          selectedHoodies[index];
 
-        const image = await loadArtwork(artworkUrl(hoodie));
-        const column = index % columns;
-        const row = Math.floor(index / columns);
-        const x = gridLeft + column * (artworkSize + gap);
-        const y = gridTop + row * (cellHeight + gap);
+        setProgress(
+          `Loading ${index + 1} / ${selectedHoodies.length}`
+        );
 
-        context.drawImage(image, x, y, artworkSize, artworkSize);
+        const image =
+          await loadArtwork(
+            artworkUrl(hoodie)
+          );
+
+        const column =
+          index % columns;
+
+        const row =
+          Math.floor(
+            index /
+              columns
+          );
+
+        const x =
+          gridLeft +
+          column *
+            (artworkSize +
+              gap);
+
+        const y =
+          gridTop +
+          row *
+            (cellHeight +
+              gap);
+
+        context.drawImage(
+          image,
+          x,
+          y,
+          artworkSize,
+          artworkSize
+        );
 
         if (showTokenIds) {
           context.save();
-          context.fillStyle = BLACK;
-          context.font = `${idFontSize}px DepartureMono, monospace`;
-          context.textAlign = "center";
-          context.textBaseline = "top";
+
+          context.fillStyle =
+            BLACK;
+
+          context.font =
+            `${idFontSize}px DepartureMono, monospace`;
+
+          context.textAlign =
+            "center";
+
+          context.textBaseline =
+            "top";
+
           context.fillText(
             `#${hoodie.tokenId}`,
-            x + artworkSize / 2,
-            y + artworkSize + idGap
+            x +
+              artworkSize /
+                2,
+            y +
+              artworkSize +
+              idGap
           );
+
           context.restore();
         }
       }
 
-      // Draw the branding last so artwork can never cover it.
       if (showBranding) {
         context.save();
-        context.fillStyle = BLACK;
 
-        const brandTracking = Math.max(2, Math.round(outputSize * 0.0035));
+        context.fillStyle =
+          BLACK;
+
+        const brandTracking =
+          Math.max(
+            2,
+            Math.round(
+              outputSize *
+                0.0035
+            )
+          );
 
         drawTrackedText(
           context,
           "ONCHAINHOODIES",
           outputSize / 2,
-          outerPadding + brandHeight / 2,
+          outerPadding +
+            brandHeight / 2,
           brandFontSize,
           brandTracking
         );
@@ -541,24 +847,50 @@ export default function ExportPage() {
         context.restore();
       }
 
-      setProgress("Creating PNG");
+      setProgress(
+        "Creating PNG"
+      );
 
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((result) => {
-          if (result) resolve(result);
-          else reject(new Error("Grid export failed."));
-        }, "image/png");
-      });
+      const blob =
+        await new Promise<Blob>(
+          (
+            resolve,
+            reject
+          ) => {
+            canvas.toBlob(
+              (result) => {
+                if (result) {
+                  resolve(
+                    result
+                  );
+                } else {
+                  reject(
+                    new Error(
+                      "Grid export failed."
+                    )
+                  );
+                }
+              },
+              "image/png"
+            );
+          }
+        );
 
       downloadBlob(
         blob,
         `onchainhoodies-${selectedHoodies.length}-${outputSize}x${outputSize}.png`
       );
-      setProgress("Export complete");
+
+      setProgress(
+        "Export complete"
+      );
     } catch (exportError) {
       setError(
-        exportError instanceof Error ? exportError.message : "Export failed."
+        exportError instanceof Error
+          ? exportError.message
+          : "Export failed."
       );
+
       setProgress("");
     } finally {
       setExporting(false);
@@ -607,28 +939,38 @@ export default function ExportPage() {
           border-radius: 0;
         }
       `}</style>
+
       <SiteHeader />
 
       <section className="mx-auto max-w-[1500px] px-4 pb-14 pt-20 md:px-6 md:pt-24">
         <div className="section-heading-row border-black">
-          <p>Build 01 / Live</p>
-          <Link href="/">Back to the Hood</Link>
+          <p>
+            Build 01 / Live
+          </p>
+
+          <Link href="/">
+            Back to the Hood
+          </Link>
         </div>
 
         <div className="mt-6 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
           <aside className="min-w-0 xl:sticky xl:top-20 xl:self-start">
-            <p className="text-[9px] uppercase tracking-[0.18em]">Holder tool</p>
+            <p className="text-[9px] uppercase tracking-[0.18em]">
+              Hoodie tool
+            </p>
+
             <h1 className="mt-3 text-5xl leading-[0.86] tracking-[-0.06em] md:text-6xl">
               GRID
               <br />
               EXPORTER
             </h1>
+
             <p className="mt-4 max-w-md text-sm leading-relaxed opacity-75">
-              Select your Hoodies and export one automatically arranged square
-              PNG.
+              Load any wallet holding OnChainHoodies, choose the Hoodies
+              and export them as one automatically arranged square PNG.
             </p>
 
-            {!address ? (
+            {!viewedAddress ? (
               <div className="mt-6">
                 <button
                   type="button"
@@ -638,34 +980,116 @@ export default function ExportPage() {
                   Connect wallet
                 </button>
 
-                <div className="mt-3 border border-black p-4">
+                <div className="my-3 flex items-center gap-3">
+                  <div className="h-px flex-1 bg-black/30" />
+
+                  <span className="text-[8px] uppercase tracking-[0.16em] opacity-60">
+                    or
+                  </span>
+
+                  <div className="h-px flex-1 bg-black/30" />
+                </div>
+
+                <div className="border border-black p-4">
                   <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
-                    Holder access
+                    Paste wallet address
                   </p>
-                  <p className="mt-3 text-sm leading-relaxed">
-                    Connect the wallet holding your OnChainHoodies. The tool only
-                    reads public ownership data and never asks for a signature,
-                    password, seed phrase or private key.
+
+                  <input
+                    type="text"
+                    value={walletInput}
+                    onChange={(event) => {
+                      setWalletInput(
+                        event.target.value
+                      );
+
+                      if (error) {
+                        setError(null);
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key ===
+                        "Enter"
+                      ) {
+                        void loadPastedWallet();
+                      }
+                    }}
+                    placeholder="0x..."
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="mt-3 w-full border border-black bg-transparent px-3 py-3 font-mono text-[10px] outline-none placeholder:text-black/40"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void loadPastedWallet();
+                    }}
+                    disabled={
+                      loading ||
+                      !walletInput.trim()
+                    }
+                    className="mt-2 w-full border border-black bg-black px-3 py-3 text-[9px] uppercase tracking-[0.13em] text-[#ccff00] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {loading
+                      ? "Loading Hoodies"
+                      : "Load Hoodies"}
+                  </button>
+
+                  <p className="mt-3 text-[9px] leading-relaxed opacity-60">
+                    No wallet login is required. Ownership is read from
+                    public on-chain data.
                   </p>
                 </div>
               </div>
             ) : loading ? (
-              <div className="mt-6 border border-black p-4 text-[9px] uppercase tracking-[0.14em]">
-                Reading ownership
+              <div className="mt-6 border border-black p-4">
+                <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
+                  Reading wallet
+                </p>
+
+                <p className="mt-2 font-mono text-[10px]">
+                  {shortWallet(
+                    viewedAddress
+                  )}
+                </p>
+
+                <p className="mt-4 text-[9px] uppercase tracking-[0.14em]">
+                  Loading ownership
+                </p>
               </div>
-            ) : ownershipChecked && !isHolder ? (
+            ) : ownershipChecked &&
+              !isHolder ? (
               <div className="mt-6 border border-black">
                 <div className="bg-black p-5 text-[#ccff00]">
                   <p className="text-[8px] uppercase tracking-[0.16em] opacity-65">
-                    Access locked
+                    No Hoodies found
                   </p>
+
                   <h2 className="mt-4 text-3xl leading-none tracking-[-0.04em]">
-                    You&apos;re not in the Hood yet.
+                    This wallet isn&apos;t in the Hood.
                   </h2>
+
+                  <p className="mt-4 break-all font-mono text-[10px] opacity-60">
+                    {viewedAddress}
+                  </p>
+
                   <p className="mt-4 text-sm leading-relaxed opacity-75">
-                    The Grid Exporter is reserved for OnChainHoodies holders.
+                    We couldn&apos;t find any OnChainHoodies owned by
+                    this wallet.
                   </p>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={clearViewedWallet}
+                  className="block w-full border-t border-black px-4 py-3 text-center text-[9px] uppercase tracking-[0.14em]"
+                >
+                  Check another wallet
+                </button>
 
                 <a
                   href={siteConfig.openSeaUrl}
@@ -679,15 +1103,48 @@ export default function ExportPage() {
             ) : isHolder ? (
               <>
                 <div className="mt-6 border border-black">
+                  <div className="border-b border-black p-3">
+                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">
+                      Viewing wallet
+                    </p>
+
+                    <p className="mt-2 break-all font-mono text-[9px]">
+                      {viewedAddress}
+                    </p>
+
+                    {address &&
+                      viewedAddress.toLowerCase() ===
+                        address.toLowerCase() && (
+                        <p className="mt-2 text-[8px] uppercase tracking-[0.14em] opacity-50">
+                          Connected wallet
+                        </p>
+                      )}
+                  </div>
+
                   <button
                     type="button"
-                    onClick={() => setPickerOpen((current) => !current)}
+                    onClick={() =>
+                      setPickerOpen(
+                        (current) =>
+                          !current
+                      )
+                    }
                     className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left text-[10px] uppercase tracking-[0.13em]"
                   >
                     <span>
-                      Your Hoodies / {selectedHoodies.length} of {hoodies.length}
+                      Hoodies /{" "}
+                      {
+                        selectedHoodies.length
+                      }{" "}
+                      of{" "}
+                      {hoodies.length}
                     </span>
-                    <span>{pickerOpen ? "−" : "+"}</span>
+
+                    <span>
+                      {pickerOpen
+                        ? "−"
+                        : "+"}
+                    </span>
                   </button>
 
                   {pickerOpen && (
@@ -695,56 +1152,100 @@ export default function ExportPage() {
                       <div className="flex items-center justify-between gap-3 border-b border-black px-3 py-2">
                         <button
                           type="button"
-                          onClick={toggleAll}
+                          onClick={
+                            toggleAll
+                          }
                           className="text-[9px] uppercase tracking-[0.12em] underline underline-offset-4"
                         >
-                          {selected.size === hoodies.length
+                          {selected.size ===
+                          hoodies.length
                             ? "Clear all"
                             : "Select all"}
                         </button>
+
                         <span className="text-[8px] uppercase tracking-[0.12em] opacity-55">
                           Scroll
                         </span>
                       </div>
 
                       <div className="max-h-[310px] overflow-y-auto overscroll-contain">
-                        {hoodies.map((hoodie) => {
-                          const isSelected = selected.has(hoodie.tokenId);
-                          return (
-                            <button
-                              key={hoodie.tokenId}
-                              type="button"
-                              onClick={() => toggleToken(hoodie.tokenId)}
-                              className={`flex w-full items-center gap-2 border-b border-black/25 p-1.5 text-left last:border-b-0 ${
-                                isSelected ? "bg-black text-[#ccff00]" : ""
-                              }`}
-                            >
-                              <div className="h-9 w-9 shrink-0 overflow-hidden bg-black">
-                                <HoodieArtwork hoodie={hoodie} />
-                              </div>
-                              <span className="min-w-0 flex-1 truncate text-[8px] uppercase tracking-[0.09em]">
-                                {hoodie.name ||
-                                  `OnChainHoodie #${hoodie.tokenId}`}
-                              </span>
-                              <span className="text-[10px]">
-                                {isSelected ? "■" : "□"}
-                              </span>
-                            </button>
-                          );
-                        })}
+                        {hoodies.map(
+                          (
+                            hoodie
+                          ) => {
+                            const isSelected =
+                              selected.has(
+                                hoodie.tokenId
+                              );
+
+                            return (
+                              <button
+                                key={
+                                  hoodie.tokenId
+                                }
+                                type="button"
+                                onClick={() =>
+                                  toggleToken(
+                                    hoodie.tokenId
+                                  )
+                                }
+                                className={`flex w-full items-center gap-2 border-b border-black/25 p-1.5 text-left last:border-b-0 ${
+                                  isSelected
+                                    ? "bg-black text-[#ccff00]"
+                                    : ""
+                                }`}
+                              >
+                                <div className="h-9 w-9 shrink-0 overflow-hidden bg-black">
+                                  <HoodieArtwork
+                                    hoodie={
+                                      hoodie
+                                    }
+                                  />
+                                </div>
+
+                                <span className="min-w-0 flex-1 truncate text-[8px] uppercase tracking-[0.09em]">
+                                  {hoodie.name ||
+                                    `OnChainHoodie #${hoodie.tokenId}`}
+                                </span>
+
+                                <span className="text-[10px]">
+                                  {isSelected
+                                    ? "■"
+                                    : "□"}
+                                </span>
+                              </button>
+                            );
+                          }
+                        )}
                       </div>
                     </div>
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => void loadHoodies()}
-                  disabled={loading}
-                  className="mt-2 w-full border border-black px-3 py-2.5 text-[9px] uppercase tracking-[0.13em] disabled:opacity-40"
-                >
-                  {loading ? "Loading ownership" : "Refresh ownership"}
-                </button>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void refreshOwnership();
+                    }}
+                    disabled={
+                      loading
+                    }
+                    className="border border-black px-3 py-2.5 text-[9px] uppercase tracking-[0.13em] disabled:opacity-40"
+                  >
+                    Refresh
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={
+                      clearViewedWallet
+                    }
+                    className="border border-black px-3 py-2.5 text-[9px] uppercase tracking-[0.13em]"
+                  >
+                    Change wallet
+                  </button>
+                </div>
               </>
             ) : null}
 
@@ -754,29 +1255,34 @@ export default function ExportPage() {
               </div>
             )}
 
-            {indexInfo && !error && (
-              <div className="mt-3 border border-black p-3 text-[10px] leading-relaxed opacity-70">
-                {indexInfo}
-              </div>
-            )}
+            {indexInfo &&
+              !error && (
+                <div className="mt-3 border border-black p-3 text-[10px] leading-relaxed opacity-70">
+                  {indexInfo}
+                </div>
+              )}
           </aside>
 
           <div className="min-w-0">
-            {!address ? (
+            {!viewedAddress ? (
               <div className="grid min-h-[680px] place-items-center border border-black p-6 text-center">
                 <div className="max-w-xl">
                   <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
-                    Private holder tool
+                    Public ownership tool
                   </p>
+
                   <h2 className="mt-6 text-5xl leading-[0.9] tracking-[-0.06em] md:text-7xl">
                     BUILD YOUR
                     <br />
                     HOOD GRID.
                   </h2>
+
                   <p className="mx-auto mt-6 max-w-md text-sm leading-relaxed opacity-75 md:text-base">
-                    Connect the wallet holding your OnChainHoodies to select
-                    your collection and create a high-resolution square PNG.
+                    Connect your wallet or paste any wallet address
+                    holding OnChainHoodies to create a high-resolution
+                    square PNG.
                   </p>
+
                   <button
                     type="button"
                     onClick={connect}
@@ -784,39 +1290,54 @@ export default function ExportPage() {
                   >
                     Connect wallet
                   </button>
+
                   <p className="mx-auto mt-4 max-w-md text-[9px] uppercase leading-relaxed tracking-[0.12em] opacity-55">
-                    Read-only ownership check. No transaction or signature is
-                    requested.
+                    No transaction or signature is required.
                   </p>
                 </div>
               </div>
             ) : loading ? (
-              <div className="grid min-h-[680px] place-items-center border border-black p-6 text-center text-[10px] uppercase tracking-[0.16em]">
-                Reading the Hood
+              <div className="grid min-h-[680px] place-items-center border border-black p-6 text-center">
+                <div>
+                  <p className="text-[9px] uppercase tracking-[0.16em] opacity-60">
+                    Reading the Hood
+                  </p>
+
+                  <p className="mt-4 font-mono text-[10px]">
+                    {shortWallet(
+                      viewedAddress
+                    )}
+                  </p>
+                </div>
               </div>
-            ) : ownershipChecked && !isHolder ? (
+            ) : ownershipChecked &&
+              !isHolder ? (
               <div className="grid min-h-[680px] place-items-center border border-black bg-black p-6 text-center text-[#ccff00]">
                 <div className="max-w-xl">
                   <p className="text-[9px] uppercase tracking-[0.18em] opacity-60">
-                    Holder access
+                    No Hoodies found
                   </p>
+
                   <h2 className="mt-6 text-5xl leading-[0.9] tracking-[-0.06em] md:text-7xl">
-                    GET IN
+                    NOTHING
                     <br />
-                    THE HOOD.
+                    HERE YET.
                   </h2>
+
                   <p className="mx-auto mt-6 max-w-md text-sm leading-relaxed opacity-75 md:text-base">
-                    One Hoodie unlocks the Grid Exporter for every Hoodie in
-                    your connected wallet.
+                    This wallet does not currently hold an
+                    OnChainHoodie.
                   </p>
-                  <a
-                    href={siteConfig.openSeaUrl}
-                    target="_blank"
-                    rel="noreferrer"
+
+                  <button
+                    type="button"
+                    onClick={
+                      clearViewedWallet
+                    }
                     className="pixel-cta mt-8 inline-block border-[#ccff00]"
                   >
-                    View on OpenSea
-                  </a>
+                    Check another wallet
+                  </button>
                 </div>
               </div>
             ) : (
@@ -824,65 +1345,125 @@ export default function ExportPage() {
                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   <ControlSlider
                     label="Space around"
-                    value={spaceAround}
+                    value={
+                      spaceAround
+                    }
                     min={0}
-                    max={MAX_SPACE_AROUND}
+                    max={
+                      MAX_SPACE_AROUND
+                    }
                     step={1}
-                    onChange={setSpaceAround}
+                    onChange={
+                      setSpaceAround
+                    }
                   />
+
                   <ControlSlider
                     label="Space between"
-                    value={spaceBetween}
+                    value={
+                      spaceBetween
+                    }
                     min={0}
-                    max={MAX_SPACE_BETWEEN}
+                    max={
+                      MAX_SPACE_BETWEEN
+                    }
                     step={1}
-                    onChange={setSpaceBetween}
+                    onChange={
+                      setSpaceBetween
+                    }
                   />
+
                   <CompactOptions
                     label="Output"
-                    options={outputSizes}
-                    value={outputSize}
+                    options={
+                      outputSizes
+                    }
+                    value={
+                      outputSize
+                    }
                     suffix=""
-                    onChange={setOutputSize}
+                    onChange={
+                      setOutputSize
+                    }
                   />
                 </div>
 
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   <CompactToggle
-                    checked={showTokenIds}
+                    checked={
+                      showTokenIds
+                    }
                     label="Token IDs"
                     onChange={() =>
-                      setShowTokenIds((current) => !current)
+                      setShowTokenIds(
+                        (
+                          current
+                        ) =>
+                          !current
+                      )
                     }
                   />
+
                   <CompactToggle
-                    checked={showBranding}
+                    checked={
+                      showBranding
+                    }
                     label="OnChainHoodies branding"
                     onChange={() =>
-                      setShowBranding((current) => !current)
+                      setShowBranding(
+                        (
+                          current
+                        ) =>
+                          !current
+                      )
                     }
                   />
                 </div>
 
                 <div className="mt-3 flex items-center justify-between gap-3 border-b border-black pb-2 text-[8px] uppercase tracking-[0.12em] opacity-65">
                   <span>
-                    Auto grid: {gridShape.columns} × {gridShape.rows}
+                    Auto grid:{" "}
+                    {
+                      gridShape.columns
+                    }{" "}
+                    ×{" "}
+                    {
+                      gridShape.rows
+                    }
                   </span>
-                  <span>Square output</span>
+
+                  <span>
+                    Square output
+                  </span>
                 </div>
 
                 <div className="mt-3 flex justify-center">
                   <div className="w-full max-w-[760px] border border-black bg-black p-1.5">
                     <div className="relative aspect-square overflow-hidden bg-[#ccff00]">
-                      {selectedHoodies.length > 0 ? (
+                      {selectedHoodies.length >
+                      0 ? (
                         <SquarePreview
-                          hoodies={selectedHoodies}
-                          columns={gridShape.columns}
-                          rows={gridShape.rows}
-                          spaceAround={spaceAround}
-                          spaceBetween={spaceBetween}
-                          showTokenIds={showTokenIds}
-                          showBranding={showBranding}
+                          hoodies={
+                            selectedHoodies
+                          }
+                          columns={
+                            gridShape.columns
+                          }
+                          rows={
+                            gridShape.rows
+                          }
+                          spaceAround={
+                            spaceAround
+                          }
+                          spaceBetween={
+                            spaceBetween
+                          }
+                          showTokenIds={
+                            showTokenIds
+                          }
+                          showBranding={
+                            showBranding
+                          }
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center px-6 text-center">
@@ -897,12 +1478,19 @@ export default function ExportPage() {
 
                 <button
                   type="button"
-                  onClick={exportGrid}
-                  disabled={exporting || selectedHoodies.length === 0}
+                  onClick={
+                    exportGrid
+                  }
+                  disabled={
+                    exporting ||
+                    selectedHoodies.length ===
+                      0
+                  }
                   className="mt-3 w-full max-w-[760px] border border-black px-4 py-3 text-[10px] uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-40 xl:mx-auto xl:block"
                 >
                   {exporting
-                    ? progress || "Exporting"
+                    ? progress ||
+                      "Exporting"
                     : `Export square / ${selectedHoodies.length} selected`}
                 </button>
               </>
@@ -933,23 +1521,34 @@ function SquarePreview({
   showTokenIds: boolean;
   showBranding: boolean;
 }) {
-  const previewPadding = `${(spaceAround / REFERENCE_OUTPUT_SIZE) * 100}%`;
-  const previewGap = `${(spaceBetween / REFERENCE_OUTPUT_SIZE) * 100}cqw`;
-  const brandFraction = showBranding ? 0.06 : 0;
-  const gridFraction = 1 - brandFraction;
+  const previewPadding =
+    `${(spaceAround / REFERENCE_OUTPUT_SIZE) * 100}%`;
+
+  const previewGap =
+    `${(spaceBetween / REFERENCE_OUTPUT_SIZE) * 100}cqw`;
+
+  const brandFraction =
+    showBranding ? 0.06 : 0;
+
+  const gridFraction =
+    1 - brandFraction;
 
   return (
     <div
       className="absolute inset-0 flex flex-col"
       style={{
-        padding: previewPadding,
-        containerType: "inline-size",
+        padding:
+          previewPadding,
+        containerType:
+          "inline-size",
       }}
     >
       {showBranding && (
         <div
           className="flex shrink-0 items-center justify-center text-[8px] uppercase tracking-[0.24em] md:text-[9px]"
-          style={{ height: `${brandFraction * 100}%` }}
+          style={{
+            height: `${brandFraction * 100}%`,
+          }}
         >
           OnChainHoodies
         </div>
@@ -959,28 +1558,42 @@ function SquarePreview({
         className="grid min-h-0 flex-1 place-content-center"
         style={{
           height: `${gridFraction * 100}%`,
-          gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-          gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+          gridTemplateColumns:
+            `repeat(${columns}, minmax(0, 1fr))`,
+          gridTemplateRows:
+            `repeat(${rows}, minmax(0, 1fr))`,
           gap: previewGap,
         }}
       >
-        {hoodies.map((hoodie) => (
-          <div
-            key={hoodie.tokenId}
-            className="flex min-h-0 min-w-0 flex-col items-center overflow-hidden"
-          >
-            <div className="flex min-h-0 w-full flex-1 items-center justify-center">
-              <div className="aspect-square h-full max-h-full max-w-full overflow-hidden bg-black">
-                <HoodieArtwork hoodie={hoodie} />
+        {hoodies.map(
+          (hoodie) => (
+            <div
+              key={
+                hoodie.tokenId
+              }
+              className="flex min-h-0 min-w-0 flex-col items-center overflow-hidden"
+            >
+              <div className="flex min-h-0 w-full flex-1 items-center justify-center">
+                <div className="aspect-square h-full max-h-full max-w-full overflow-hidden bg-black">
+                  <HoodieArtwork
+                    hoodie={
+                      hoodie
+                    }
+                  />
+                </div>
               </div>
+
+              {showTokenIds && (
+                <p className="shrink-0 pt-[0.5cqw] text-center text-[clamp(5px,0.9cqw,9px)] leading-none uppercase tracking-[0.08em]">
+                  #
+                  {
+                    hoodie.tokenId
+                  }
+                </p>
+              )}
             </div>
-            {showTokenIds && (
-              <p className="shrink-0 pt-[0.5cqw] text-center text-[clamp(5px,0.9cqw,9px)] leading-none uppercase tracking-[0.08em]">
-                #{hoodie.tokenId}
-              </p>
-            )}
-          </div>
-        ))}
+          )
+        )}
       </div>
     </div>
   );
