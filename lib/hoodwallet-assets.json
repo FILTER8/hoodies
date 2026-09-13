@@ -195,6 +195,18 @@
       "contract": "0x9ec6c5b9f572a9b02138e553bc5f5882da735f45",
       "name": "OnChainHoodies"
     },
+        {
+      "contract": "0x38e078f4d2dcd04f67240e0490a2e7ea2360477b",
+      "name": "Bottle The Hood"
+    },
+            {
+      "contract": "0x1947095c30e458a8dedf6bbd8e97c39e67256d51",
+      "name": "Hoodie Art"
+    },
+        {
+      "contract": "0x2bf9b2f4988d65bb54f9d9faff4a09af69c0ddd6",
+      "name": "HoodFrame"
+    },
     {
       "contract": "0x7A9AA55Ee6bA43A26bdfb5187D881eAeAA56e5F9",
       "name": "CRPT FACES"

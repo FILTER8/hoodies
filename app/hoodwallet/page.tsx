@@ -29,6 +29,7 @@ import type {
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
 import { useWallet } from "../../components/WalletProvider";
+import HoodieIdentityNav from "../../components/HoodieIdentityNav";
 
 import { siteConfig } from "../../lib/config";
 
@@ -1049,6 +1050,12 @@ export default function HoodWalletPage() {
     useState("");
 
   const [
+    publicHoodieInput,
+    setPublicHoodieInput,
+  ] =
+    useState("");
+
+  const [
     selectedWallet,
     setSelectedWallet,
   ] =
@@ -1296,28 +1303,125 @@ export default function HoodWalletPage() {
                          OWNERSHIP LOAD
   //////////////////////////////////////////////////////////////*/
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const hoodie =
+      new URLSearchParams(
+        window.location.search,
+      ).get("hoodie");
+
+    if (
+      !hoodie ||
+      !/^\d+$/.test(hoodie)
+    ) {
+      return;
+    }
+
+    const id =
+      Number(hoodie);
+
+    if (
+      !Number.isInteger(id) ||
+      id < 0 ||
+      id > 5999
+    ) {
+      return;
+    }
+
+    const value =
+      String(id);
+
+    const timeoutId =
+      window.setTimeout(
+        () => {
+          setSelectedTokenId(
+            value,
+          );
+
+          setPublicHoodieInput(
+            value,
+          );
+        },
+        0,
+      );
+
+    return () => {
+      window.clearTimeout(
+        timeoutId,
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      !selectedTokenId ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    const url =
+      new URL(
+        window.location.href,
+      );
+
+    url.searchParams.set(
+      "hoodie",
+      selectedTokenId,
+    );
+
+    window.history.replaceState(
+      {},
+      "",
+      `${url.pathname}?${url.searchParams.toString()}`,
+    );
+
+    const timeoutId =
+      window.setTimeout(
+        () => {
+          setPublicHoodieInput(
+            selectedTokenId,
+          );
+        },
+        0,
+      );
+
+    return () => {
+      window.clearTimeout(
+        timeoutId,
+      );
+    };
+  }, [selectedTokenId]);
+
+  const openPublicHoodie = useCallback(() => {
+    const value = publicHoodieInput.trim();
+    if (!/^\d+$/.test(value)) {
+      setError("Enter a Hoodie ID between 0 and 5999.");
+      return;
+    }
+    const id = Number(value);
+    if (!Number.isInteger(id) || id < 0 || id > 5999) {
+      setError("Enter a Hoodie ID between 0 and 5999.");
+      return;
+    }
+    setError(null);
+    setSelectedWallet(null);
+    setSelectedNftToSend(null);
+    setSendPanelOpen(false);
+    setSelectedTokenId(String(id));
+  }, [publicHoodieInput]);
+
   const loadOwnership =
     useCallback(
       async () => {
         if (
           !address
         ) {
-          setOwnedHoodies(
-            [],
-          );
-
-          setSelectedTokenId(
-            "",
-          );
-
-          setSelectedWallet(
-            null,
-          );
-
-          setOwnershipChecked(
-            false,
-          );
-
+          setOwnedHoodies([]);
+          setOwnershipChecked(false);
           return;
         }
 
@@ -1417,16 +1521,7 @@ export default function HoodWalletPage() {
             (
               current,
             ) => {
-              if (
-                current &&
-                unique.some(
-                  (
-                    hoodie,
-                  ) =>
-                    hoodie.tokenId ===
-                    current,
-                )
-              ) {
+              if (current) {
                 return current;
               }
 
@@ -1583,7 +1678,6 @@ export default function HoodWalletPage() {
           selectedTokenId;
 
         if (
-          !address ||
           !provider ||
           !tokenIdText
         ) {
@@ -1750,7 +1844,6 @@ export default function HoodWalletPage() {
         }
       },
       [
-        address,
         provider,
         refreshOwnerEconomy,
         selectedTokenId,
@@ -1764,8 +1857,7 @@ export default function HoodWalletPage() {
 
   useEffect(() => {
     if (
-      !selectedTokenId ||
-      !address
+      !selectedTokenId
     ) {
       return;
     }
@@ -1784,7 +1876,6 @@ export default function HoodWalletPage() {
       cancelled = true;
     };
   }, [
-    address,
     selectedTokenId,
     loadSelectedWallet,
   ]);
@@ -4236,11 +4327,33 @@ export default function HoodWalletPage() {
   //////////////////////////////////////////////////////////////*/
 
   const selectedHoodie =
-    ownedHoodies.find(
-      (hoodie) =>
-        hoodie.tokenId ===
+    useMemo(
+      () =>
+        ownedHoodies.find(
+          (hoodie) =>
+            hoodie.tokenId ===
+            selectedTokenId,
+        ) ||
+        (selectedTokenId
+          ? {
+              tokenId:
+                selectedTokenId,
+
+              name:
+                `OnChainHoodie #${selectedTokenId}`,
+            }
+          : null),
+      [
+        ownedHoodies,
         selectedTokenId,
-    ) || null;
+      ],
+    );
+
+  const canManageSelected = Boolean(
+    address &&
+    selectedWallet &&
+    sameAddress(address, selectedWallet.owner),
+  );
 
   const ownerHasEnough =
     ownerOCHBalance >=
@@ -4356,9 +4469,12 @@ export default function HoodWalletPage() {
       (
         asset: HoodWalletAsset,
       ) =>
+        canManageSelected &&
         asset.balanceRaw >
         BigInt(0),
-      [],
+      [
+        canManageSelected,
+      ],
     );
 
   const chooseAssetToSend =
@@ -4958,6 +5074,12 @@ export default function HoodWalletPage() {
           </Link>
         </div>
 
+        <HoodieIdentityNav
+          tokenId={selectedTokenId}
+          active="wallet"
+          className="mt-5"
+        />
+
         <div className="mt-5 grid gap-5 lg:grid-cols-[250px_minmax(0,1fr)]">
 
           {/* SIDEBAR */}
@@ -4983,113 +5105,95 @@ export default function HoodWalletPage() {
               </div>
             </div>
 
+            <div className="mt-5 border border-[var(--hood-fg)] p-3">
+              <p className="text-[7px] uppercase tracking-[0.12em] opacity-55">
+                Browse any HoodWallet
+              </p>
+              <div className="mt-2 flex">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={publicHoodieInput}
+                  onChange={(event) =>
+                    setPublicHoodieInput(event.target.value.replace(/\D/g, "").slice(0, 4))
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") openPublicHoodie();
+                  }}
+                  placeholder="Hoodie ID"
+                  className="min-w-0 flex-1 border border-[var(--hood-fg)] bg-[var(--hood-bg)] px-3 py-3 text-[9px] text-[var(--hood-fg)] outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={openPublicHoodie}
+                  className="border border-l-0 border-[var(--hood-fg)] bg-[var(--hood-fg)] px-3 text-[8px] uppercase text-[var(--hood-bg)]"
+                >
+                  Open
+                </button>
+              </div>
+              <p className="mt-2 text-[6px] uppercase leading-relaxed opacity-45">
+                Public read-only view · Hoodie IDs 0–5999
+              </p>
+            </div>
+
             {!address ? (
               <button
                 type="button"
-                onClick={() =>
-                  void connect()
-                }
-                className="mt-5 w-full bg-[var(--hood-fg)] px-4 py-4 text-[var(--hood-bg)] text-[9px] uppercase tracking-[0.14em]"
+                onClick={() => void connect()}
+                className="mt-3 w-full bg-[var(--hood-fg)] px-4 py-4 text-[var(--hood-bg)] text-[9px] uppercase tracking-[0.14em]"
               >
-                Connect wallet
+                Connect to manage your Hoodies
               </button>
             ) : (
               <>
-                <div className="mt-5 border border-[var(--hood-fg)]">
+                <div className="mt-3 border border-[var(--hood-fg)]">
                   <div className="border-b border-[var(--hood-fg)] px-3 py-2">
-                    <p className="text-[7px] uppercase tracking-[0.12em] opacity-55">
-                      Connected EVM wallet
-                    </p>
+                    <p className="text-[7px] uppercase tracking-[0.12em] opacity-55">Connected EVM wallet</p>
                   </div>
-
                   <div className="p-3">
-                    <p className="text-[10px]">
-                      {shortAddress(
-                        address,
-                      )}
-                    </p>
-
-                    <p className="mt-3 text-[7px] uppercase opacity-55">
-                      OCH balance
-                    </p>
-
-                    <p className="mt-1 text-xl">
-                      {formatBalance(
-                        ownerOCHBalance,
-                      )}
-                    </p>
+                    <p className="text-[10px]">{shortAddress(address)}</p>
+                    <p className="mt-3 text-[7px] uppercase opacity-55">OCH balance</p>
+                    <p className="mt-1 text-xl">{formatBalance(ownerOCHBalance)}</p>
                   </div>
                 </div>
 
-                <div className="mt-3 border border-[var(--hood-fg)] p-3">
-                  <p className="text-[7px] uppercase tracking-[0.12em] opacity-55">
-                    Hoodie
-                  </p>
+                {ownedHoodies.length > 0 && (
+                  <div className="mt-3 border border-[var(--hood-fg)] p-3">
+                    <p className="text-[7px] uppercase tracking-[0.12em] opacity-55">My Hoodies</p>
+                    <select
+                      value={ownedHoodies.some((hoodie) => hoodie.tokenId === selectedTokenId) ? selectedTokenId : ""}
+                      onChange={(event) => {
+                        if (!event.target.value) return;
+                        setSelectedWallet(null);
+                        setSelectedNftToSend(null);
+                        setSendPanelOpen(false);
+                        setSelectedTokenId(event.target.value);
+                      }}
+                      className="mt-2 w-full border border-[var(--hood-fg)] bg-[var(--hood-bg)] px-3 py-3 text-[9px] uppercase text-[var(--hood-fg)] outline-none"
+                    >
+                      <option value="">Select owned Hoodie</option>
+                      {ownedHoodies.map((hoodie) => (
+                        <option key={hoodie.tokenId} value={hoodie.tokenId}>Hoodie #{hoodie.tokenId}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
-                  <select
-                    value={
-                      selectedTokenId
-                    }
-                    onChange={(
-                      event,
-                    ) => {
-                      setSelectedWallet(
-                        null,
-                      );
-
-                      setSelectedNftToSend(
-                        null,
-                      );
-
-                      setSendPanelOpen(
-                        false,
-                      );
-
-                      setSelectedTokenId(
-                        event.target.value,
-                      );
-                    }}
-                    className="mt-2 w-full border border-[var(--hood-fg)] bg-[var(--hood-bg)] px-3 py-3 text-[9px] uppercase text-[var(--hood-fg)] outline-none"
-                  >
-                    {ownedHoodies.map(
-                      (hoodie) => (
-                        <option
-                          key={
-                            hoodie.tokenId
-                          }
-                          value={
-                            hoodie.tokenId
-                          }
-                        >
-                          Hoodie #{hoodie.tokenId}
-                        </option>
-                      ),
-                    )}
-                  </select>
-
-                  {selectedWallet && (
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <span className="text-[7px] uppercase opacity-55">
-                        {selectedWallet.active
-                          ? "● Active"
-                          : "○ Inactive"}
-                      </span>
-
-                      <button
-                        type="button"
-                        disabled={
-                          stateLoading
-                        }
-                        onClick={() =>
-                          void loadSelectedWallet()
-                        }
-                        className="text-[11px] uppercase underline underline-offset-4 disabled:opacity-30"
-                      >
-                        Refresh
-                      </button>
-                    </div>
-                  )}
-                </div>
+                {selectedWallet && (
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-[7px] uppercase opacity-55">
+                      {canManageSelected ? "● You own this Hoodie" : "○ Public read-only view"}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={stateLoading}
+                      onClick={() => void loadSelectedWallet()}
+                      className="text-[11px] uppercase underline underline-offset-4 disabled:opacity-30"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                )}
               </>
             )}
 
@@ -5105,27 +5209,24 @@ export default function HoodWalletPage() {
           {/* MAIN CONTENT */}
 
           <section className="min-w-0">
-            {!address ? (
+            {!selectedTokenId ? (
               <div className="grid min-h-[460px] place-items-center border border-[var(--hood-fg)] p-8 text-center">
                 <div>
-                  <h2 className="text-4xl uppercase">
-                    Connect your wallet
-                  </h2>
-
+                  <h2 className="text-4xl uppercase">Open a HoodWallet</h2>
                   <p className="mt-4 text-[9px] uppercase leading-relaxed opacity-55">
-                    Connect the wallet holding your OnChainHoodie.
+                    Search any Hoodie ID to browse its public HoodWallet. Connect only when you want to manage a Hoodie you own.
                   </p>
                 </div>
               </div>
-            ) : ownershipLoading ? (
+            ) : address && ownershipLoading && !selectedWallet ? (
               <div className="border border-[var(--hood-fg)] p-8 text-center">
                 <p className="text-[9px] uppercase tracking-[0.14em]">
                   Reading Hoodie ownership…
                 </p>
               </div>
-            ) : ownershipChecked &&
-              ownedHoodies.length ===
-                0 ? (
+            ) : address && ownershipChecked &&
+              ownedHoodies.length === 0 &&
+              !selectedTokenId ? (
               <div className="border border-[var(--hood-fg)] p-8 text-center">
                 <h2 className="text-3xl uppercase">
                   No Hoodies
@@ -5275,6 +5376,13 @@ export default function HoodWalletPage() {
                         </p>
                       </div>
                     </div>
+                  ) : !canManageSelected ? (
+                    <div className="p-4">
+                      <p className="text-[9px] uppercase">HoodWallet inactive</p>
+                      <p className="mt-2 text-[7px] uppercase leading-relaxed opacity-55">
+                        Connect the current Hoodie owner to activate this wallet.
+                      </p>
+                    </div>
                   ) : !activationEnabled ? (
                     <div className="p-4">
                       <p className="text-[9px] uppercase">
@@ -5361,7 +5469,7 @@ export default function HoodWalletPage() {
                         ✓ Activated
                       </span>
                     </div>
-                  ) : selectedWallet.pingCanClaim ? (
+                  ) : selectedWallet.pingCanClaim && canManageSelected ? (
                     <button
                       type="button"
                       disabled={
@@ -5382,7 +5490,9 @@ export default function HoodWalletPage() {
                   ) : (
                     <div className="p-4">
                       <p className="text-[8px] uppercase opacity-55">
-                        Ping is not currently claimable.
+                        {selectedWallet.pingCanClaim
+                          ? "Ping is ready for the Hoodie owner to activate."
+                          : "Ping is not currently claimable."}
                       </p>
                     </div>
                   )}
@@ -5529,6 +5639,7 @@ export default function HoodWalletPage() {
                               <button
                                 type="button"
                                 disabled={
+                                  !canManageSelected ||
                                   !selectedWallet.active ||
                                   !sendEnabled
                                 }
@@ -5625,6 +5736,7 @@ export default function HoodWalletPage() {
                             type="button"
                             disabled={
                               processing ||
+                              !canManageSelected ||
                               !sendRecipient ||
                               !sendAmount
                             }
@@ -5697,6 +5809,7 @@ export default function HoodWalletPage() {
                                     type="button"
                                     disabled={
                                       processing ||
+                                      !canManageSelected ||
                                       !selectedWallet.active
                                     }
                                     onClick={() => {
@@ -5809,6 +5922,7 @@ export default function HoodWalletPage() {
                           type="button"
                           disabled={
                             processing ||
+                            !canManageSelected ||
                             !nftRecipient
                           }
                           onClick={() =>

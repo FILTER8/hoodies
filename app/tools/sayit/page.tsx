@@ -40,7 +40,6 @@ const BUBBLE = {
   bottomFiveLines: 470,
 
   minWidth: 330,
-  maxWidth: 585,
   minHeight: 116,
   paddingX: 34,
   paddingTop: 26,
@@ -309,11 +308,11 @@ function getBubbleLayout(
   context.font = getCanvasFont(BUBBLE.fontSize);
   context.textBaseline = "alphabetic";
 
-  const maxTextWidth = BUBBLE.maxWidth - BUBBLE.paddingX * 2;
-  const explicitParagraphs = text.replace(/\r/g, "").split("\n");
-  const lines = explicitParagraphs.flatMap((paragraph) =>
-    wrapParagraph(context, paragraph, maxTextWidth),
-  );
+const explicitParagraphs = text.replace(/\r/g, "").split("\n");
+
+const lines = explicitParagraphs.length
+  ? explicitParagraphs
+  : [""];
 
   const safeLines = lines.length ? lines : [""];
   const measuredTextWidth = safeLines.reduce(
@@ -321,11 +320,13 @@ function getBubbleLayout(
     0,
   );
 
-  const width = clamp(
-    roundUp(measuredTextWidth + BUBBLE.paddingX * 2, BUBBLE.step),
-    BUBBLE.minWidth,
-    BUBBLE.maxWidth,
-  );
+  const width = Math.max(
+  BUBBLE.minWidth,
+  roundUp(
+    measuredTextWidth + BUBBLE.paddingX * 2,
+    BUBBLE.step,
+  ),
+);
 
   const contentHeight = safeLines.length * BUBBLE.lineHeight;
   const height = Math.max(

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import SiteHeader from "../../../components/SiteHeader";
@@ -97,7 +98,7 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 async function loadArtwork(source: string) {
-  const image = new Image();
+  const image = new window.Image();
 
   image.decoding = "async";
   image.crossOrigin = "anonymous";
@@ -158,14 +159,14 @@ function HoodieArtwork({ hoodie }: { hoodie: Hoodie }) {
 
   return (
     <div className="relative h-full w-full">
-      <img
+      <Image
         src={artworkUrl(hoodie)}
         alt={hoodie.name || `OnChainHoodie #${hoodie.tokenId}`}
-        loading="lazy"
-        decoding="async"
-        crossOrigin="anonymous"
+        fill
+        sizes="(max-width: 640px) 36px, 100px"
+        unoptimized
         onError={() => setFailed(true)}
-        className="image-render-pixel h-full w-full object-cover"
+        className="image-render-pixel object-cover"
       />
     </div>
   );
@@ -423,15 +424,15 @@ export default function ExportPage() {
     if (!address) return;
 
     const controller = new AbortController();
-
-    setWalletInput(address);
-
-    void loadAddress(
-      address,
-      controller.signal
-    );
+    const timeoutId = window.setTimeout(() => {
+      void loadAddress(
+        address,
+        controller.signal
+      );
+    }, 0);
 
     return () => {
+      window.clearTimeout(timeoutId);
       controller.abort();
     };
   }, [address, loadAddress]);

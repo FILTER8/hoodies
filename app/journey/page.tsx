@@ -16,6 +16,7 @@ import {
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
 import { useWallet } from "../../components/WalletProvider";
+import HoodieIdentityNav from "../../components/HoodieIdentityNav";
 import { apiConfig, collectionApiUrl } from "../../lib/api";
 import { siteConfig } from "../../lib/config";
 
@@ -1002,6 +1003,15 @@ async function makeShareCard({
     215,
   );
 
+  try {
+    const journeyIcon = await loadCanvasImage(
+      "https://unpkg.com/pixelarticons@latest/svg/flag.svg",
+    );
+    ctx.drawImage(journeyIcon, 1072, 78, 56, 56);
+  } catch (iconError) {
+    console.debug("Journey export icon unavailable.", iconError);
+  }
+
   /*
    * Use the exact same icon language as the page.
    *
@@ -1291,6 +1301,7 @@ function JourneyRow({
   checkedIn,
   checkingIn,
   sharing,
+  canManage,
   onHoodIt,
   onShare,
 }: {
@@ -1309,6 +1320,9 @@ function JourneyRow({
   sharing:
     boolean;
 
+  canManage:
+    boolean;
+
   onHoodIt:
     (
       m:
@@ -1322,7 +1336,11 @@ function JourneyRow({
     ) => void;
 }) {
   const t = task(milestone, journey);
-  const canHoodIt = milestone.completed && journey.hoodWallet.active && !checkedIn;
+  const canHoodIt =
+    canManage &&
+    milestone.completed &&
+    journey.hoodWallet.active &&
+    !checkedIn;
 
   return (
     <article className={`border border-[var(--hood-fg)] transition-colors ${checkedIn ? "bg-[var(--hood-fg)] text-[var(--hood-bg)]" : ""}`}>
@@ -2528,11 +2546,61 @@ export default function JourneyPage() {
     setActiveHoodies(result);
   }, [provider]);
 
+useEffect(() => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const params =
+    new URLSearchParams(
+      window.location.search,
+    );
+
+  const hoodie =
+    params.get("hoodie");
+
+  if (!hoodie) {
+    return;
+  }
+
+  const id =
+    Number(hoodie);
+
+  if (
+    !Number.isInteger(id) ||
+    id < 0 ||
+    id > 5999
+  ) {
+    return;
+  }
+
+  const timeoutId =
+    window.setTimeout(
+      () => {
+        setSelectedTokenId(
+          String(id),
+        );
+      },
+      0,
+    );
+
+  return () => {
+    window.clearTimeout(
+      timeoutId,
+    );
+  };
+}, []);
+
+  useEffect(() => {
+    if (!selectedTokenId || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("hoodie", selectedTokenId);
+    window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}`);
+  }, [selectedTokenId]);
+
   const loadOwnership = useCallback(async () => {
     if (!address) {
       setOwnedHoodies([]);
-      setSelectedTokenId("");
-      setJourney(null);
       setActiveHoodies({});
       setOwnershipChecked(false);
       return;
@@ -2553,7 +2621,7 @@ export default function JourneyPage() {
       ])).values()).sort((a, b) => BigInt(a.tokenId) < BigInt(b.tokenId) ? -1 : 1);
 
       setOwnedHoodies(unique);
-      setSelectedTokenId(current => current && unique.some(h => h.tokenId === current) ? current : unique[0]?.tokenId || "");
+      setSelectedTokenId(current => current || unique[0]?.tokenId || "");
       void loadActiveBadges(unique);
     } catch (e) {
       setOwnedHoodies([]);
@@ -3173,6 +3241,12 @@ export default function JourneyPage() {
           </div>
         </div>
 
+        <HoodieIdentityNav
+          tokenId={selectedTokenId}
+          active="journey"
+          className="mt-5"
+        />
+
         <div className="mt-6 flex flex-col gap-4 border-b border-[var(--hood-fg)] pb-4 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-[10px] uppercase tracking-[0.18em] opacity-55">
@@ -3250,7 +3324,7 @@ export default function JourneyPage() {
               onExport={() => void exportLeaderboard()}
             />
           </div>
-        ) : !address ? (
+        ) : !address && !selectedTokenId ? (
           <div className="mt-6 border border-[var(--hood-fg)] p-10 text-center">
             <h2 className="text-4xl tracking-[-0.04em]">
               START YOUR JOURNEY
@@ -3283,7 +3357,7 @@ export default function JourneyPage() {
           <div className="mt-6 border border-[var(--hood-fg)] p-8 text-center text-[9px] uppercase">
             Reading Hoodie ownership…
           </div>
-        ) : ownershipChecked && ownedHoodies.length === 0 ? (
+        ) : address && ownershipChecked && ownedHoodies.length === 0 && !selectedTokenId ? (
           <div className="mt-6 border border-[var(--hood-fg)] p-10 text-center">
             <h2 className="text-4xl">
               START YOUR JOURNEY
@@ -3295,6 +3369,7 @@ export default function JourneyPage() {
           </div>
         ) : (
           <>
+            {address && (
             <section className="mt-7">
               <div className="flex items-end justify-between">
                 <h2 className="text-3xl tracking-[-0.04em]">
@@ -3331,6 +3406,7 @@ export default function JourneyPage() {
                 ))}
               </div>
             </section>
+            )}
 
             <section className="mt-10">
               <div className="flex flex-col gap-4 border-b border-[var(--hood-fg)] pb-4 md:flex-row md:items-end md:justify-between">
@@ -3353,6 +3429,12 @@ export default function JourneyPage() {
                         ● Wallet active
                       </span>
                     )}
+
+                    {!address || !ownedHoodies.some(hoodie => hoodie.tokenId === selectedTokenId) ? (
+                      <span className="border border-[var(--hood-fg)] px-3 py-2 text-[8px] uppercase tracking-[0.12em] opacity-60">
+                        Public view
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -3389,6 +3471,10 @@ export default function JourneyPage() {
                           sharing={
                             sharingKey === m.key
                           }
+                          canManage={Boolean(
+                            address &&
+                            ownedHoodies.some(hoodie => hoodie.tokenId === selectedTokenId)
+                          )}
                           onHoodIt={() => {}}
                           onShare={item =>
                             void shareMilestone(
@@ -3434,6 +3520,10 @@ export default function JourneyPage() {
                             m.key
                           }
                           sharing={false}
+                          canManage={Boolean(
+                            address &&
+                            ownedHoodies.some(hoodie => hoodie.tokenId === selectedTokenId)
+                          )}
                           onHoodIt={item =>
                             void hoodIt(
                               item,

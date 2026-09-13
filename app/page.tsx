@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Wallet, Flag, BookOpen } from "pixelarticons/react";
 import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
 import {
@@ -102,7 +103,7 @@ const faqs: Faq[] = [
   {
     question: "What are OnChainHoodies?",
     answer:
-      "OnChainHoodies is a collection of 6,000 1-bit Hoodies living as a fully on-chain neighborhood on Robinhood Chain. Each Hoodie has its own artwork, traits and identity inside a growing ecosystem of wallets, apps, tools and community builds.",
+      "OnChainHoodies is a collection of 6,000 persistent on-chain characters living on Robinhood Chain. The PFP is the beginning: each Hoodie can have its own HoodWallet, voice, permanent Journey, assets, experiences and a Passport that brings its evolving identity together.",
     href: "/tools/explorer",
     linkLabel: "Explore the Hoodies",
   },
@@ -116,7 +117,7 @@ const faqs: Faq[] = [
   {
     question: "What can I do with my Hoodie?",
     answer:
-      "Start with Hoodie Journey. It shows what your Hoodie has already done, what it can do next and which ecosystem actions can become part of its on-chain history. From there your Hoodie can speak through Hood Talk, own assets through HoodWallet, unlock Ping and use apps through HoodOS and community builds.",
+      "Explore the Hoodie as a persistent character. HoodWallet shows what it owns, Journey shows what it has done and Passport shows what it has become. From there it can speak through Hood Talk, unlock assets like Ping and use experiences through HoodOS and builder apps.",
     href: "/journey",
     linkLabel: "Start your Journey",
   },
@@ -169,7 +170,7 @@ const faqs: Faq[] = [
   {
     question: "What is $OCH?",
     answer:
-      "$OCH is the fixed-supply currency of the Hood. It is live on Robinhood Chain, powers HoodWallet activation and is designed to grow alongside real utility across HoodOS, community integrations and the wider Hoodie economy. Season 01 is complete and Season 02 focuses on builders extending HoodOS or creating meaningful $OCH utility.",
+      "$OCH is the economic rail connecting the Hood: persistent characters, builders, apps, games, experiences and the actions Hoodies take through them. It has a fixed supply of 100M and is designed to have a job wherever meaningful economic activity develops around a Hoodie.",
     href: "/och",
     linkLabel: "Explore the Hood Economy",
   },
@@ -1061,8 +1062,15 @@ export default function Home() {
           THE HOOD
         </h1>
 
-        <p className="mt-10 max-w-xl text-lg leading-relaxed md:text-2xl">
-          Fully on-chain characters. They talk. Own. Remember.
+        <p className="mt-10 max-w-2xl text-lg leading-relaxed md:text-2xl">
+          <span className="block text-[10px] uppercase tracking-[0.2em] opacity-60 md:text-xs">
+            6,000 persistent on-chain characters
+          </span>
+          <span className="mt-4 block">
+            They own. They act. They talk. They remember.
+            <br />
+            And they keep evolving on-chain.
+          </span>
         </p>
 
         <div className="mt-10 flex flex-wrap justify-center gap-3">
@@ -1209,12 +1217,106 @@ export default function Home() {
       </section>
 
       <section
+        id="character"
+        className="px-6 py-20 md:py-24"
+      >
+        <div className="mx-auto max-w-[1440px]">
+          <div className="section-heading-row border-black">
+            <p>02 / Persistent Character</p>
+            <p>The PFP was the beginning</p>
+          </div>
+
+          <div className="mt-12 grid gap-10 lg:grid-cols-[0.72fr_1.28fr] lg:items-end">
+            <div>
+              <p className="text-[9px] uppercase tracking-[0.18em] opacity-50">
+                One Hoodie. One evolving identity.
+              </p>
+
+              <h2 className="section-title mt-5">
+                MORE THAN
+                <br />
+                A PFP.
+              </h2>
+
+              <p className="mt-7 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
+                A persistent on-chain character that can own, act, remember and evolve.
+              </p>
+
+              <p className="mt-7 text-lg uppercase tracking-[-0.02em] md:text-xl">
+                OWN → ACT → REMEMBER → EVOLVE
+              </p>
+            </div>
+
+            <div className="grid border-l-2 border-t-2 border-black md:grid-cols-3">
+              {[
+                {
+                  icon: Wallet,
+                  eyebrow: "Own",
+                  title: "HoodWallet",
+                  copy: "What it owns.",
+                  href: "/hoodwallet",
+                },
+                {
+                  icon: Flag,
+                  eyebrow: "Remember",
+                  title: "Journey",
+                  copy: "What it has done.",
+                  href: "/journey",
+                },
+                {
+                  icon: BookOpen,
+                  eyebrow: "Become",
+                  title: "Passport",
+                  copy: "What it becomes.",
+                  href: "/passport",
+                },
+              ].map((layer) => {
+                const Icon = layer.icon;
+
+                return (
+                  <Link
+                    key={layer.title}
+                    href={layer.href}
+                    className="group flex min-h-[230px] flex-col justify-between border-b-2 border-r-2 border-black p-5 transition-opacity hover:opacity-60 md:p-6"
+                  >
+                    <div>
+                      <Icon
+                        width={42}
+                        height={42}
+                        aria-hidden="true"
+                      />
+
+                      <p className="mt-8 text-[8px] uppercase tracking-[0.16em] opacity-45">
+                        {layer.eyebrow}
+                      </p>
+
+                      <h3 className="mt-2 text-3xl leading-none tracking-[-0.05em]">
+                        {layer.title}
+                      </h3>
+
+                      <p className="mt-3 text-sm opacity-65">
+                        {layer.copy}
+                      </p>
+                    </div>
+
+                    <span className="mt-6 text-[9px] uppercase tracking-[0.15em] underline-offset-4 group-hover:underline">
+                      Open →
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
         id="market"
         className="bg-[#ccff00] px-6 py-24 text-black"
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>02 / Market</p>
+            <p>08 / Market</p>
             <p>Track the Hood</p>
           </div>
 
@@ -1549,7 +1651,7 @@ export default function Home() {
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
-            <p>03 / The Hood Economy</p>
+            <p>04 / The Hood Economy</p>
             <p>$OCH / Live Economy</p>
           </div>
 
@@ -1562,19 +1664,19 @@ export default function Home() {
               />
 
               <p className="mt-8 text-[10px] uppercase tracking-[0.18em] opacity-60">
-                The Currency of the Hood
+                The Economic Rail of the Hood
               </p>
 
               <h2 className="section-title mt-4">
                 $OCH
                 <br />
-                Built for the Hood.
+                CONNECTS THE HOOD.
               </h2>
 
               <p className="mt-8 max-w-xl text-lg leading-relaxed opacity-75 md:text-xl">
-                A fixed-supply ERC-20 powering HoodWallet activation,
-                on-chain participation and a growing economy of apps,
-                integrations and builders around the Hood.
+                A fixed-supply economic rail connecting Hoodies, builders,
+                apps, games, experiences and the actions persistent characters
+                take through them.
               </p>
 
               <div className="mt-8 grid max-w-xl grid-cols-2 border-l border-t border-[#ccff00] text-[9px] uppercase tracking-[0.14em] sm:grid-cols-4">
@@ -1798,7 +1900,7 @@ export default function Home() {
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>04 / Ping</p>
+            <p>05 / Ping</p>
             <p>The first HoodWallet asset</p>
           </div>
 
@@ -1892,7 +1994,7 @@ export default function Home() {
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>05 / Journey</p>
+            <p>06 / Journey</p>
             <p>Use your Hoodie</p>
           </div>
 
@@ -1916,8 +2018,8 @@ export default function Home() {
                 </p>
 
                 <p className="mt-5 max-w-xl text-sm leading-relaxed opacity-60 md:text-base">
-                  Activate. Talk. Claim Ping. Use builder apps. Hood it into the
-                  Journey.
+                  The season can end. The Hoodie keeps its history. Talk, collect,
+                  use apps and turn meaningful actions into part of the character.
                 </p>
               </div>
 
@@ -2002,7 +2104,7 @@ export default function Home() {
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
-            <p>06 / HoodOS</p>
+            <p>03 / Character Layer</p>
             <p>What can your Hoodie do?</p>
           </div>
 
@@ -2117,9 +2219,9 @@ export default function Home() {
               </h2>
 
               <p className="mt-6 max-w-lg text-base leading-relaxed opacity-70 md:text-lg">
-                Build apps, games, tools and protocols for the Hood. Use the
-                open CC0 collection, public infrastructure, HoodWallet and $OCH
-                to give Hoodies new things to do on-chain.
+                Give persistent characters new capabilities, possessions and
+                experiences. Use the open CC0 collection, public infrastructure,
+                HoodWallet and $OCH to expand what a Hoodie can become on-chain.
               </p>
             </div>
 
@@ -2194,7 +2296,7 @@ export default function Home() {
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
-            <p>08 / On-chain</p>
+            <p>09 / On-chain</p>
             <p>Verify everything</p>
           </div>
 
@@ -2272,7 +2374,7 @@ export default function Home() {
       >
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>09 / FAQ</p>
+            <p>10 / FAQ</p>
             <p>Read the Hood</p>
           </div>
 
