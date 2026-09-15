@@ -32,6 +32,7 @@ const IDS = {
   pingClaimed: "0xb08fecf851d41fdd453731545fe282b0e49a7d8efd63cc4b7a66550141a910d4",
   hooneySwap: "0xefd09bd70e8788d1c1b30fa785e6b4441d016d4e4e27b01a4bb4b3768f8c0d41",
   hoodlitaireWon: "0xfacfe3851303ecdff4bc5657ee1306973651205e0da2789aa31ef299a16f21ec",
+  hoodieStudioArtwork: "0x6e814e6963127c0d9f4ae95920380e487152783ea6d8fe7c9824f6ee85e8be48",
 } as const;
 
 const HOOD_OS_ABI = ["function isActive(uint256 tokenId) view returns (bool)"] as const;
@@ -122,6 +123,21 @@ type JourneyMilestone = {
 
     countedAsBee?:
       boolean | null;
+
+    artworkId?:
+      string | null;
+
+    artist?:
+      string | null;
+
+    approvedBy?:
+      string | null;
+
+    addedPixels?:
+      string | null;
+
+    ochBurned?:
+      string | null;
   };
 };
 
@@ -271,6 +287,7 @@ function milestoneId(m: JourneyMilestone) {
   if (m.key === "pingClaimed") return IDS.pingClaimed;
   if (m.key === "hooneySwap") return IDS.hooneySwap;
   if (m.key === "hoodlitaireWon") return IDS.hoodlitaireWon;
+  if (m.key === "hoodieStudioArtwork") return IDS.hoodieStudioArtwork;
   return m.milestoneId;
 }
 
@@ -325,6 +342,24 @@ function task(m: JourneyMilestone, j: JourneyResponse) {
       text: "Win one game of Hoodlitaire with your Hoodie.",
       href: "https://hoodlab.xyz/hoodlitaire",
       cta: "PLAY HOODLITAIRE",
+    };
+  }
+
+  if (m.key === "hoodieStudioArtwork") {
+    if (m.completed) {
+      return {
+        status: "● ART CREATED ONCHAIN",
+        text: "A HoodieStudio artwork was verified onchain and is ready for Journey.",
+        href: "https://hoodiestudio.xyz/",
+        cta: "OPEN HOODIESTUDIO",
+      };
+    }
+
+    return {
+      status: "○ CREATE ONCHAIN ART",
+      text: "Create an onchain artwork in HoodieStudio. Verification can take up to 1 hour.",
+      href: "https://hoodiestudio.xyz/",
+      cta: "OPEN HOODIESTUDIO",
     };
   }
 
@@ -419,6 +454,22 @@ function MilestoneVisual({
     );
   }
 
+  if (
+  milestone.key ===
+  "hoodieStudioArtwork"
+) {
+  return (
+    <Image
+      unoptimized
+      src="/journey/hoodiestudio.png"
+      alt="HoodieStudio"
+      width={64}
+      height={64}
+      className="h-16 w-16 object-contain"
+    />
+  );
+}
+
   return (
     <Flag
       width={56}
@@ -478,6 +529,13 @@ function shareIconSource(
     "hoodlitaireWon"
   ) {
     return "/journey/hoodlitaire.png";
+  }
+
+  if (
+    milestone.key ===
+    "hoodieStudioArtwork"
+  ) {
+    return "/journey/hoodiestudio.png";
   }
 
   return null;
@@ -1211,6 +1269,14 @@ async function makeShareCard({
       "WON HOODLITAIRE.";
   }
 
+  if (
+    milestone.key ===
+    "hoodieStudioArtwork"
+  ) {
+    personalCopy =
+      "CREATED ONCHAIN ART.";
+  }
+
 if (
   milestone.season2
 ) {
@@ -1391,7 +1457,25 @@ function JourneyRow({
     ? `${milestone.name} is in Hoodie #${journey.tokenId}'s Journey.`
     : t.text}
 </p>
-          {!checkedIn && <Link href={t.href} className="mt-3 inline-block text-[10px] uppercase underline underline-offset-4">{t.cta} →</Link>}
+          {!checkedIn && (
+            t.href.startsWith("http") ? (
+              <a
+                href={t.href}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-block text-[10px] uppercase underline underline-offset-4"
+              >
+                {t.cta} →
+              </a>
+            ) : (
+              <Link
+                href={t.href}
+                className="mt-3 inline-block text-[10px] uppercase underline underline-offset-4"
+              >
+                {t.cta} →
+              </Link>
+            )
+          )}
         </div>
         <div className="md:text-right">
           {checkedIn ? (
