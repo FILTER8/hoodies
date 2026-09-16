@@ -183,6 +183,19 @@ type JourneyLite = {
     active?: boolean;
     everActivated?: boolean;
   };
+  milestones?: Array<{
+    key: string;
+    completed?: boolean;
+    recorded?: boolean;
+    completedAt?: number | null;
+    qualification?: {
+      artworkId?: string | null;
+      artist?: string | null;
+      approvedBy?: string | null;
+      addedPixels?: string | null;
+      ochBurned?: string | null;
+    };
+  }>;
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -1877,6 +1890,18 @@ export default function PassportPage() {
       identity?.hoodWallet,
     );
 
+  const hoodieStudioMilestone =
+    journeyState?.milestones?.find(
+      milestone => milestone.key === "hoodieStudioArtwork",
+    ) || null;
+
+  const hoodieStudioArtworkId =
+    hoodieStudioMilestone?.qualification?.artworkId || null;
+
+  const hoodieStudioCreated =
+    hoodieStudioMilestone?.completed === true ||
+    hoodieStudioMilestone?.recorded === true;
+
 
   const openJourney =
     useCallback(
@@ -2286,6 +2311,17 @@ export default function PassportPage() {
                           0,
                         )} OCH spent`}
                       />
+                      <Stat
+                        label="HoodieStudio"
+                        value={
+                          hoodieStudioCreated
+                            ? hoodieStudioArtworkId
+                              ? `ART #${hoodieStudioArtworkId}`
+                              : "CREATED"
+                            : "—"
+                        }
+                        note="Season 2 · Onchain art"
+                      />
                     </div>
 
                     <div className="mt-4">
@@ -2502,6 +2538,10 @@ export default function PassportPage() {
 
                     <span className="border border-black px-3 py-2">
                       Journey
+                    </span>
+
+                    <span className="border border-black px-3 py-2">
+                      Creation
                     </span>
 
                     <span className="border border-black px-3 py-2">
