@@ -24,6 +24,7 @@ const API = "https://api.onchainhoodies.xyz";
 const OPENSEA = "https://opensea.io/collection/onchainhoodies-";
 const JOURNEY = "0x93513A0e4d0E016ccf296C4c2888b59c06708ea7";
 const PING_CONTRACT = "0xc7fe67AC39a6EDD78d5B842c6f42e11Da37eb17D";
+const HOODIESTUDIO_CONTRACT = "0x1947095c30e458a8dedf6bbd8e97c39e67256d51";
 const CALL = 0;
 
 const IDS = {
@@ -1110,12 +1111,15 @@ async function makeShareCard({
   /*
    * Main artwork.
    *
-   * HoodWallet + Hood Talk:
+   * HoodWallet + Hood Talk + Hooney + Hoodlitaire:
    *   Hoodie artwork.
    *
    * Ping:
-   *   the ACTUAL matching Ping NFT artwork from
-   *   Ping.tokenURI(tokenId) over RPC.
+   *   the actual matching Ping NFT artwork.
+   *
+   * HoodieStudio:
+   *   the actual onchain HoodieStudio artwork identified by the
+   *   qualifying PixelsPublished evidence stored by Journey.
    */
   let mainArtworkSource =
     art(
@@ -1136,14 +1140,38 @@ async function makeShareCard({
         ),
       );
 
-    /*
-     * Ping is fully onchain and normally returns:
-     *
-     * data:image/svg+xml;base64,...
-     *
-     * Load that directly through loadCanvasImage().
-     * For a normal remote URL, use the existing image proxy.
-     */
+    mainArtworkSource =
+      onchainImage.startsWith(
+        "data:image/",
+      )
+        ? onchainImage
+        : `/api/nft-image?url=${encodeURIComponent(
+            onchainImage,
+          )}`;
+  }
+
+  if (
+    milestone.key ===
+    "hoodieStudioArtwork"
+  ) {
+    const artworkId =
+      milestone.qualification?.artworkId;
+
+    if (
+      !artworkId
+    ) {
+      throw new Error(
+        "HoodieStudio artwork ID is not available yet.",
+      );
+    }
+
+    const onchainImage =
+      await resolveTokenImageFromChain(
+        provider,
+        HOODIESTUDIO_CONTRACT,
+        artworkId,
+      );
+
     mainArtworkSource =
       onchainImage.startsWith(
         "data:image/",
@@ -1183,8 +1211,15 @@ async function makeShareCard({
   ctx.font =
     `700 28px ${font}`;
 
+  const artworkCaption =
+    milestone.key ===
+      "hoodieStudioArtwork" &&
+    milestone.qualification?.artworkId
+      ? `HOODIESTUDIO ART #${milestone.qualification.artworkId} · HOODIE #${tokenId}`
+      : `ONCHAINHOODIES #${tokenId}`;
+
   ctx.fillText(
-    `ONCHAINHOODIES #${tokenId}`,
+    artworkCaption,
     72,
     1035,
   );
