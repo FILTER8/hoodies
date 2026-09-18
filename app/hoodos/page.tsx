@@ -1,4 +1,4 @@
-"use client";
+ƒ"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -101,7 +101,7 @@ const apps: HoodOSApp[] = [
     "Community-built creation platform for creating fully-chain artworks with your Hoodie. Currently available on testnet.",
 
   href:
-    "https://testnet.hoodiestudio.xyz/",
+    "https://hoodiestudio.xyz/",
 
   icon:
     "/hoodos/hoodiestudio.png",
