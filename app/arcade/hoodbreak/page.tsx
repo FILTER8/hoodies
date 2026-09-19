@@ -763,6 +763,26 @@ export default function HoodBreakPage() {
       ]
     );
 
+  /*
+   * Load the four current test assets automatically after mount.
+   *
+   * The zero-delay timer is intentional: it moves the state-changing
+   * async loader out of the synchronous effect body, avoiding
+   * react-hooks/set-state-in-effect while preserving the agreed UX.
+   *
+   * There is NO manual 1/2/3/4 stage selector. The run is:
+   * Hoodie first -> mystery Stage Select -> remaining assets.
+   */
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadRunAssets();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [loadRunAssets]);
+
   useEffect(() => {
     const canvas =
       canvasRef.current;
@@ -4006,9 +4026,9 @@ export default function HoodBreakPage() {
             Stage 1 is always the Hoodie. After each clear, the remaining
             assets become identical 3×3 mystery blocks. Hit one with the ball
             to reveal and enter the next stage. Their mapping is reshuffled
-            every select room. Catch falling S / M / L pixels for temporary
-            Speed, Multiball and Laser. SPACE fires Laser while active. BREAK
-            is available once per run when the HoodWallet has at least 5,000 OCH.
+            every select room. Catch falling pixels to reveal temporary Speed,
+            Multiball or Laser. SPACE fires Laser while active. BREAK is available
+            once per run when the HoodWallet has at least 5,000 OCH.
           </p>
         </div>
 
