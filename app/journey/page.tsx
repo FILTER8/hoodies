@@ -2584,6 +2584,7 @@ export default function JourneyPage() {
   const [ownedHoodies, setOwnedHoodies] = useState<OwnedHoodie[]>([]);
   const [activeHoodies, setActiveHoodies] = useState<Record<string, boolean>>({});
   const [selectedTokenId, setSelectedTokenId] = useState("");
+  const [publicJourneySearch, setPublicJourneySearch] = useState("");
   const [journey, setJourney] = useState<JourneyResponse | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardResponse | null>(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -3372,7 +3373,7 @@ useEffect(() => {
               Explore the Journey
             </p>
             <p className="mt-2 max-w-xl text-[11px] uppercase leading-relaxed opacity-70">
-              Journey requires your Hoodie. Stats and leaderboard are public.
+              Every Journey is public. Connect your wallet to HOOD IT.
             </p>
           </div>
 
@@ -3444,32 +3445,71 @@ useEffect(() => {
             />
           </div>
         ) : !address && !selectedTokenId ? (
-          <div className="mt-6 border border-[var(--hood-fg)] p-10 text-center">
-            <h2 className="text-4xl tracking-[-0.04em]">
-              START YOUR JOURNEY
-            </h2>
+          <div className="mt-6 border border-[var(--hood-fg)] p-6 md:p-10">
+            <div className="mx-auto max-w-[760px] text-center">
+              <p className="text-[9px] uppercase tracking-[0.18em] opacity-55">
+                Public onchain history
+              </p>
 
-            <p className="mt-4 text-[9px] uppercase opacity-60">
-              Connect the wallet holding your Hoodie.
-            </p>
+              <h2 className="mt-4 text-4xl tracking-[-0.04em] md:text-5xl">
+                EXPLORE A HOODIE&apos;S JOURNEY
+              </h2>
 
-            <button
-              type="button"
-              onClick={() => void connect()}
-              className="mt-6 bg-[var(--hood-fg)] px-8 py-4 text-[9px] uppercase tracking-[0.15em] text-[var(--hood-bg)]"
-            >
-              Connect wallet
-            </button>
+              <p className="mx-auto mt-4 max-w-xl text-[9px] uppercase leading-relaxed opacity-60">
+                Every Hoodie has a public Journey. Enter any Hoodie ID to see its history, milestones and what comes next.
+              </p>
 
-            <div className="mt-7">
-              <a
-                href={OPENSEA}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[8px] uppercase underline underline-offset-4"
+              <form
+                className="mx-auto mt-7 flex max-w-[560px] border border-[var(--hood-fg)]"
+                onSubmit={event => {
+                  event.preventDefault();
+                  const tokenId = Number(publicJourneySearch);
+                  if (!Number.isInteger(tokenId) || tokenId < 0 || tokenId > 5999) {
+                    setError("Enter a Hoodie ID between 0 and 5999.");
+                    return;
+                  }
+                  setError(null);
+                  setSelectedTokenId(String(tokenId));
+                }}
               >
-                Buy secondary on OpenSea →
-              </a>
+                <input
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={publicJourneySearch}
+                  onChange={event => setPublicJourneySearch(event.target.value.replace(/\D/g, ""))}
+                  placeholder="ENTER HOODIE ID"
+                  aria-label="Enter Hoodie ID"
+                  className="min-h-[58px] min-w-0 flex-1 bg-transparent px-4 text-[11px] uppercase outline-none placeholder:text-[var(--hood-fg)] placeholder:opacity-40"
+                />
+
+                <button
+                  type="submit"
+                  disabled={!publicJourneySearch}
+                  className="min-h-[58px] border-l border-[var(--hood-fg)] bg-[var(--hood-fg)] px-5 text-[9px] uppercase tracking-[0.14em] text-[var(--hood-bg)] disabled:cursor-not-allowed disabled:opacity-40 md:px-7"
+                >
+                  Open Journey
+                </button>
+              </form>
+
+              <div className="mx-auto mt-9 max-w-[560px] border-t border-[var(--hood-fg)] pt-7">
+                <p className="text-[9px] uppercase tracking-[0.14em] opacity-55">Own a Hoodie?</p>
+                <p className="mt-3 text-[9px] uppercase leading-relaxed opacity-70">
+                  Connect your wallet to see your Hoodies and HOOD IT onchain.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void connect()}
+                  className="mt-5 bg-[var(--hood-fg)] px-8 py-4 text-[9px] uppercase tracking-[0.15em] text-[var(--hood-bg)]"
+                >
+                  Connect wallet
+                </button>
+              </div>
+
+              <div className="mt-7">
+                <a href={OPENSEA} target="_blank" rel="noreferrer" className="text-[8px] uppercase underline underline-offset-4">
+                  Buy secondary on OpenSea →
+                </a>
+              </div>
             </div>
           </div>
         ) : ownershipLoading ? (

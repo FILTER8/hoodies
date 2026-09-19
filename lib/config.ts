@@ -100,6 +100,28 @@ const testnetPingAddress =
   process.env.NEXT_PUBLIC_PING_TESTNET_ADDRESS?.trim() || "";
 
 /* -------------------------------------------------------------------------- */
+/* HoodFrame */
+/* -------------------------------------------------------------------------- */
+
+const mainnetHoodFrameAddress =
+  process.env.NEXT_PUBLIC_HOODFRAME_MAINNET_ADDRESS?.trim() ||
+  "0x2bf9b2f4988d65bb54f9d9faff4a09af69c0ddd6";
+
+const testnetHoodFrameAddress =
+  process.env.NEXT_PUBLIC_HOODFRAME_TESTNET_ADDRESS?.trim() || "";
+
+/* -------------------------------------------------------------------------- */
+/* Hoodie Art */
+/* -------------------------------------------------------------------------- */
+
+const mainnetHoodieArtAddress =
+  process.env.NEXT_PUBLIC_HOODIE_ART_MAINNET_ADDRESS?.trim() ||
+  "0x1947095c30E458a8DEDF6BbD8E97C39e67256d51";
+
+const testnetHoodieArtAddress =
+  process.env.NEXT_PUBLIC_HOODIE_ART_TESTNET_ADDRESS?.trim() || "";
+
+/* -------------------------------------------------------------------------- */
 /* Ping Activation Rewards */
 /* -------------------------------------------------------------------------- */
 
@@ -321,6 +343,21 @@ export const siteConfig = {
     appNetwork === "mainnet"
       ? mainnetOCHProtocolMultisigAddress
       : testnetOCHProtocolMultisigAddress,
+
+/* -------------------------------------------------------------------------- */
+/* COMMUNITY BUILDS */
+/* -------------------------------------------------------------------------- */
+
+  hoodFrameAddress:
+    appNetwork === "mainnet"
+      ? mainnetHoodFrameAddress
+      : testnetHoodFrameAddress,
+
+
+  hoodieArtAddress:
+    appNetwork === "mainnet"
+      ? mainnetHoodieArtAddress
+      : testnetHoodieArtAddress,
 };
 
 /* -------------------------------------------------------------------------- */
