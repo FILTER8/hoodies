@@ -25,6 +25,7 @@ const OPENSEA = "https://opensea.io/collection/onchainhoodies-";
 const JOURNEY = "0x93513A0e4d0E016ccf296C4c2888b59c06708ea7";
 const PING_CONTRACT = "0xc7fe67AC39a6EDD78d5B842c6f42e11Da37eb17D";
 const HOODIESTUDIO_CONTRACT = "0x1947095c30e458a8dedf6bbd8e97c39e67256d51";
+const HOODFRAME_CONTRACT = "0x2Bf9b2f4988d65Bb54F9D9fAff4a09Af69c0Ddd6";
 const CALL = 0;
 
 const IDS = {
@@ -34,6 +35,7 @@ const IDS = {
   hooneySwap: "0xefd09bd70e8788d1c1b30fa785e6b4441d016d4e4e27b01a4bb4b3768f8c0d41",
   hoodlitaireWon: "0xfacfe3851303ecdff4bc5657ee1306973651205e0da2789aa31ef299a16f21ec",
   hoodieStudioArtwork: "0x6e814e6963127c0d9f4ae95920380e487152783ea6d8fe7c9824f6ee85e8be48",
+  hoodFrameSealed: "0x8fd200940bb7b62cabc8e2f6023bb63798a58b4a0220114353e9182760f7dd16",
 } as const;
 
 const HOOD_OS_ABI = ["function isActive(uint256 tokenId) view returns (bool)"] as const;
@@ -289,6 +291,7 @@ function milestoneId(m: JourneyMilestone) {
   if (m.key === "hooneySwap") return IDS.hooneySwap;
   if (m.key === "hoodlitaireWon") return IDS.hoodlitaireWon;
   if (m.key === "hoodieStudioArtwork") return IDS.hoodieStudioArtwork;
+  if (m.key === "hoodFrameSealed") return IDS.hoodFrameSealed;
   return m.milestoneId;
 }
 
@@ -361,6 +364,24 @@ function task(m: JourneyMilestone, j: JourneyResponse) {
       text: "Create an onchain artwork in HoodieStudio. Verification can take up to 1 hour.",
       href: "https://hoodiestudio.xyz/",
       cta: "OPEN HOODIESTUDIO",
+    };
+  }
+
+  if (m.key === "hoodFrameSealed") {
+    if (m.completed) {
+      return {
+        status: "● HOODFRAME SEALED",
+        text: "Your sealed HoodFrame is verified onchain and ready for Journey.",
+        href: "https://hoodframe.filter8.xyz/",
+        cta: "OPEN HOODFRAME",
+      };
+    }
+
+    return {
+      status: "○ SEAL A HOODFRAME",
+      text: "Seal an 8x8 piece of your Hoodie onchain.",
+      href: "https://hoodframe.filter8.xyz/",
+      cta: "OPEN HOODFRAME",
     };
   }
 
@@ -471,6 +492,22 @@ function MilestoneVisual({
   );
 }
 
+  if (
+    milestone.key ===
+    "hoodFrameSealed"
+  ) {
+    return (
+      <Image
+        unoptimized
+        src="/journey/hoodframe.png"
+        alt="HoodFrame"
+        width={64}
+        height={64}
+        className="h-16 w-16 object-contain"
+      />
+    );
+  }
+
   return (
     <Flag
       width={56}
@@ -537,6 +574,13 @@ function shareIconSource(
     "hoodieStudioArtwork"
   ) {
     return "/journey/hoodiestudio.png";
+  }
+
+  if (
+    milestone.key ===
+    "hoodFrameSealed"
+  ) {
+    return "/journey/hoodframe.png";
   }
 
   return null;
@@ -1182,6 +1226,31 @@ async function makeShareCard({
           )}`;
   }
 
+  if (
+    milestone.key ===
+    "hoodFrameSealed"
+  ) {
+    /*
+     * HoodFrame token ID equals the originating Hoodie token ID.
+     * The HoodFrame NFT tokenURI renders the actual sealed 8x8 frame.
+     */
+    const onchainImage =
+      await resolveTokenImageFromChain(
+        provider,
+        HOODFRAME_CONTRACT,
+        tokenId,
+      );
+
+    mainArtworkSource =
+      onchainImage.startsWith(
+        "data:image/",
+      )
+        ? onchainImage
+        : `/api/nft-image?url=${encodeURIComponent(
+            onchainImage,
+          )}`;
+  }
+
   const mainArtwork =
     await loadCanvasImage(
       mainArtworkSource,
@@ -1216,7 +1285,10 @@ async function makeShareCard({
       "hoodieStudioArtwork" &&
     milestone.qualification?.artworkId
       ? `HOODIESTUDIO ART #${milestone.qualification.artworkId} · HOODIE #${tokenId}`
-      : `ONCHAINHOODIES #${tokenId}`;
+      : milestone.key ===
+          "hoodFrameSealed"
+        ? `HOODFRAME #${tokenId} · HOODIE #${tokenId}`
+        : `ONCHAINHOODIES #${tokenId}`;
 
   ctx.fillText(
     artworkCaption,
@@ -1310,6 +1382,14 @@ async function makeShareCard({
   ) {
     personalCopy =
       "CREATED ONCHAIN ART.";
+  }
+
+  if (
+    milestone.key ===
+    "hoodFrameSealed"
+  ) {
+    personalCopy =
+      "SEALED A HOODFRAME.";
   }
 
 if (
