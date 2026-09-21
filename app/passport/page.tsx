@@ -1,16 +1,30 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Contract, JsonRpcProvider } from "ethers";
 import Link from "next/link";
 import Image from "next/image";
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
 import { useWallet } from "../../components/WalletProvider";
 import HoodieIdentityNav from "../../components/HoodieIdentityNav";
+import { siteConfig } from "../../lib/config";
 
 const API = "https://api.onchainhoodies.xyz";
 const COLLECTION =
   "0x9ec6c5b9f572a9b02138e553bc5f5882da735f45";
+const PING_NFT =
+  "0xc7fe67AC39a6EDD78d5B842c6f42e11Da37eb17D";
+
+const HOODIESTUDIO_NFT =
+  "0x1947095c30e458a8dedf6bbd8e97c39e67256d51";
+
+const HOODFRAME_NFT =
+  "0x2Bf9b2f4988d65Bb54F9D9fAff4a09Af69c0Ddd6";
+
+const ERC721_METADATA_ABI = [
+  "function tokenURI(uint256 tokenId) view returns (string)",
+] as const;
 
 type OwnedHoodie = {
   tokenId: string;
@@ -630,6 +644,50 @@ async function loadCanvasImage(
   }
 }
 
+
+function decodeBase64Utf8(value: string) {
+  const binary = window.atob(value);
+  const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function decodeJsonDataUri(uri: string) {
+  const comma = uri.indexOf(",");
+  if (comma === -1) throw new Error("Invalid tokenURI data URI.");
+  const header = uri.slice(0, comma);
+  const body = uri.slice(comma + 1);
+  return header.includes(";base64") ? decodeBase64Utf8(body) : decodeURIComponent(body);
+}
+
+async function resolveTokenImageFromChain(
+  provider: JsonRpcProvider,
+  contractAddress: string,
+  tokenId: string | number,
+) {
+  const contract = new Contract(contractAddress, ERC721_METADATA_ABI, provider);
+  const tokenUri = String(await contract.tokenURI(BigInt(tokenId)));
+
+  let metadata: Record<string, unknown>;
+
+  if (tokenUri.startsWith("data:application/json")) {
+    metadata = JSON.parse(decodeJsonDataUri(tokenUri)) as Record<string, unknown>;
+  } else {
+    const response = await fetch(tokenUri, { cache: "no-store" });
+    if (!response.ok) throw new Error("Unable to load HoodFrame metadata.");
+    metadata = await response.json() as Record<string, unknown>;
+  }
+
+  const image =
+    typeof metadata.image_data === "string"
+      ? metadata.image_data
+      : typeof metadata.image === "string"
+        ? metadata.image
+        : null;
+
+  if (!image) throw new Error("HoodFrame metadata has no image.");
+  return image;
+}
+
 function Stat({
   label,
   value,
@@ -902,12 +960,22 @@ async function makePassportPng({
   archetype,
   traits,
   active,
+  hoodieStudioLabel,
+  pingArtwork,
+  hoodieStudioArtwork,
+  hoodFrameSealed,
+  hoodFrameArtwork,
 }: {
   memory: MemoryResponse;
   artwork: string;
   archetype: string;
   traits: Array<{ label: string; value: string }>;
   active: boolean | null;
+  hoodieStudioLabel: string;
+  pingArtwork: string | null;
+  hoodieStudioArtwork: string | null;
+  hoodFrameSealed: boolean;
+  hoodFrameArtwork: string | null;
 }) {
   await document.fonts.ready;
 
@@ -975,7 +1043,6 @@ async function makePassportPng({
     214,
   );
 
-
   ctx.font = `400 11px ${font}`;
   ctx.fillText("TRAITS", 48, 392);
 
@@ -997,47 +1064,104 @@ async function makePassportPng({
 
   ctx.font = `400 11px ${font}`;
   ctx.fillText("CHARACTER HISTORY", 516, 112);
-  ctx.font = `700 44px ${font}`;
-  ctx.fillText(String(memory.summary.totalMemories), 516, 164);
+
+  ctx.font = `700 40px ${font}`;
+  ctx.fillText(String(memory.summary.totalMemories), 516, 158);
+
   ctx.font = `400 10px ${font}`;
-  ctx.fillText("MEMORIES", 590, 162);
+  ctx.fillText("MEMORIES", 586, 156);
+
+  /*
+   * Render the Hoodie-connected onchain objects directly inside
+   * the Passport: Ping, HoodieStudio artwork and HoodFrame.
+   */
+  ctx.font = `400 10px ${font}`;
+  ctx.fillText("ONCHAIN OBJECTS", 516, 192);
+
+  const passportObjects = [
+    {
+      label: "PING",
+      value:
+        memory.ping.home === true
+          ? "HOME"
+          : memory.ping.claimed
+            ? `#${memory.ping.tokenId}`
+            : "—",
+      artwork: pingArtwork,
+    },
+    {
+      label: "HOODIESTUDIO",
+      value: hoodieStudioLabel,
+      artwork: hoodieStudioArtwork,
+    },
+    {
+      label: "HOODFRAME",
+      value: hoodFrameSealed ? "SEALED" : "—",
+      artwork: hoodFrameArtwork,
+    },
+  ];
+
+  for (let index = 0; index < passportObjects.length; index += 1) {
+    const item = passportObjects[index];
+    const x = 516 + index * 132;
+    const y = 208;
+
+    ctx.strokeRect(x, y, 120, 148);
+
+    ctx.font = `400 8px ${font}`;
+    ctx.fillText(item.label, x + 8, y + 17);
+
+    if (item.artwork) {
+      try {
+        const objectImage = await loadCanvasImage(item.artwork);
+
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(objectImage, x + 10, y + 26, 100, 100);
+      } catch (objectError) {
+        console.debug(
+          `${item.label} Passport artwork unavailable.`,
+          objectError,
+        );
+        ctx.strokeRect(x + 10, y + 26, 100, 100);
+      }
+    } else {
+      ctx.strokeRect(x + 10, y + 26, 100, 100);
+    }
+
+    ctx.font = `700 10px ${font}`;
+    ctx.fillText(
+      String(item.value).toUpperCase().slice(0, 16),
+      x + 8,
+      y + 141,
+    );
+  }
 
   const stats = [
     ["HOOD ITS", memory.summary.hoodIts],
-    ["HOOD TALKS", memory.summary.hoodTalks],
+    ["TALKS", memory.summary.hoodTalks],
     ["GAMES", memory.hoodlitaire.games],
-    ["HIVE SWAPS", memory.hooney.swaps],
-    [
-      "PING",
-      memory.ping.home === true
-        ? "HOME"
-        : memory.ping.home === false
-          ? "AWAY"
-          : memory.ping.claimed
-            ? "CLAIMED"
-            : "—",
-    ],
+    ["SWAPS", memory.hooney.swaps],
     ["ACTIVATIONS", memory.hoodWallet.activationCount],
   ] as const;
 
   stats.forEach(([label, value], index) => {
-    const column = index % 3;
-    const row = Math.floor(index / 3);
-    const x = 516 + column * 132;
-    const y = 194 + row * 84;
+    const x = 516 + index * 79;
+    const y = 374;
 
-    ctx.strokeRect(x, y, 120, 68);
-    ctx.font = `400 8px ${font}`;
-    ctx.fillText(label, x + 8, y + 17);
-    ctx.font = `700 22px ${font}`;
-    ctx.fillText(String(value), x + 8, y + 49);
+    ctx.strokeRect(x, y, 72, 50);
+
+    ctx.font = `400 6px ${font}`;
+    ctx.fillText(label, x + 5, y + 13);
+
+    ctx.font = `700 15px ${font}`;
+    ctx.fillText(String(value), x + 5, y + 37);
   });
 
-  ctx.font = `400 10px ${font}`;
-  ctx.fillText("LATEST HOOD TALK", 516, 390);
+  ctx.font = `400 9px ${font}`;
+  ctx.fillText("LATEST HOOD TALK", 516, 452);
 
   const hoodTalkPhrase = memory.hoodTalk.latestQuote?.trim();
-  ctx.font = `700 18px ${font}`;
+  ctx.font = `700 14px ${font}`;
 
   const talkText = hoodTalkPhrase
     ? `“${hoodTalkPhrase}”`
@@ -1050,6 +1174,7 @@ async function makePassportPng({
 
   for (const word of talkWords) {
     const candidate = talkLine ? `${talkLine} ${word}` : word;
+
     if (ctx.measureText(candidate).width > maxTalkWidth && talkLine) {
       talkLines.push(talkLine);
       talkLine = word;
@@ -1060,12 +1185,12 @@ async function makePassportPng({
 
   if (talkLine) talkLines.push(talkLine);
 
-  talkLines.slice(0, 3).forEach((line, index) => {
-    ctx.fillText(line, 516, 422 + index * 26);
+  talkLines.slice(0, 2).forEach((line, index) => {
+    ctx.fillText(line, 516, 476 + index * 20);
   });
 
-  ctx.font = `400 10px ${font}`;
-  ctx.fillText("RECENT HISTORY", 516, 520);
+  ctx.font = `400 9px ${font}`;
+  ctx.fillText("RECENT HISTORY", 516, 532);
 
   memory.timeline.events
     .filter(event => event.countsAsMemory)
@@ -1073,21 +1198,21 @@ async function makePassportPng({
     .forEach((event, index) => {
       const x = index === 0 ? 516 : 716;
 
-      ctx.font = `400 9px ${font}`;
-      ctx.fillText(dateLabel(event.timestamp), x, 548);
+      ctx.font = `400 8px ${font}`;
+      ctx.fillText(dateLabel(event.timestamp), x, 554);
 
-      ctx.font = `700 13px ${font}`;
+      ctx.font = `700 11px ${font}`;
       ctx.fillText(
         eventTitle(event).toUpperCase().slice(0, 22),
         x,
-        570,
+        574,
       );
 
-      ctx.font = `400 9px ${font}`;
+      ctx.font = `400 8px ${font}`;
       ctx.fillText(
-        eventDetail(event).toUpperCase().slice(0, 30),
+        eventDetail(event).toUpperCase().slice(0, 28),
         x,
-        589,
+        592,
       );
     });
 
@@ -1117,6 +1242,19 @@ export default function PassportPage() {
     connect,
   } =
     useWallet();
+
+  const provider =
+    useMemo(
+      () => {
+        if (!siteConfig.rpcUrl) return null;
+        return new JsonRpcProvider(
+          siteConfig.rpcUrl,
+          Number(siteConfig.chainId),
+          { staticNetwork: true },
+        );
+      },
+      [],
+    );
 
   const [
     tokenInput,
@@ -1817,6 +1955,27 @@ export default function PassportPage() {
       ],
     );
 
+  const hoodieStudioMilestone =
+    journeyState?.milestones?.find(
+      milestone => milestone.key === "hoodieStudioArtwork",
+    ) || null;
+
+  const hoodieStudioArtworkId =
+    hoodieStudioMilestone?.qualification?.artworkId || null;
+
+  const hoodieStudioCreated =
+    hoodieStudioMilestone?.completed === true ||
+    hoodieStudioMilestone?.recorded === true;
+
+  const hoodFrameMilestone =
+    journeyState?.milestones?.find(
+      milestone => milestone.key === "hoodFrameSealed",
+    ) || null;
+
+  const hoodFrameSealed =
+    hoodFrameMilestone?.completed === true ||
+    hoodFrameMilestone?.recorded === true;
+
   const exportPassport =
     useCallback(
       async () => {
@@ -1836,6 +1995,69 @@ export default function PassportPage() {
             null,
           );
 
+          let pingArtwork: string | null = null;
+          let hoodieStudioArtwork: string | null = null;
+          let hoodFrameArtwork: string | null = null;
+
+          if (provider) {
+            if (memory.ping.claimed) {
+              try {
+                const resolved = await resolveTokenImageFromChain(
+                  provider,
+                  PING_NFT,
+                  memory.ping.tokenId || identity.tokenId,
+                );
+
+                pingArtwork = resolved.startsWith("data:image/")
+                  ? resolved
+                  : `/api/nft-image?url=${encodeURIComponent(resolved)}`;
+              } catch (pingError) {
+                console.debug(
+                  "Unable to resolve Ping artwork for Passport export.",
+                  pingError,
+                );
+              }
+            }
+
+            if (hoodieStudioCreated && hoodieStudioArtworkId) {
+              try {
+                const resolved = await resolveTokenImageFromChain(
+                  provider,
+                  HOODIESTUDIO_NFT,
+                  hoodieStudioArtworkId,
+                );
+
+                hoodieStudioArtwork = resolved.startsWith("data:image/")
+                  ? resolved
+                  : `/api/nft-image?url=${encodeURIComponent(resolved)}`;
+              } catch (studioError) {
+                console.debug(
+                  "Unable to resolve HoodieStudio artwork for Passport export.",
+                  studioError,
+                );
+              }
+            }
+
+            if (hoodFrameSealed) {
+              try {
+                const resolved = await resolveTokenImageFromChain(
+                  provider,
+                  HOODFRAME_NFT,
+                  identity.tokenId,
+                );
+
+                hoodFrameArtwork = resolved.startsWith("data:image/")
+                  ? resolved
+                  : `/api/nft-image?url=${encodeURIComponent(resolved)}`;
+              } catch (frameError) {
+                console.debug(
+                  "Unable to resolve HoodFrame artwork for Passport export.",
+                  frameError,
+                );
+              }
+            }
+          }
+
           const card =
             await makePassportPng({
               memory,
@@ -1854,6 +2076,16 @@ export default function PassportPage() {
                 ),
               active:
                 identity.active,
+              hoodieStudioLabel:
+                hoodieStudioCreated
+                  ? hoodieStudioArtworkId
+                    ? `ART #${hoodieStudioArtworkId}`
+                    : "CREATED"
+                  : "—",
+              pingArtwork,
+              hoodieStudioArtwork,
+              hoodFrameSealed,
+              hoodFrameArtwork,
             });
 
           saveObjectUrl(
@@ -1879,8 +2111,12 @@ export default function PassportPage() {
         }
       },
       [
+        hoodFrameSealed,
+        hoodieStudioArtworkId,
+        hoodieStudioCreated,
         identity,
         memory,
+        provider,
       ],
     );
 
@@ -1889,18 +2125,6 @@ export default function PassportPage() {
     openSeaWalletUrl(
       identity?.hoodWallet,
     );
-
-  const hoodieStudioMilestone =
-    journeyState?.milestones?.find(
-      milestone => milestone.key === "hoodieStudioArtwork",
-    ) || null;
-
-  const hoodieStudioArtworkId =
-    hoodieStudioMilestone?.qualification?.artworkId || null;
-
-  const hoodieStudioCreated =
-    hoodieStudioMilestone?.completed === true ||
-    hoodieStudioMilestone?.recorded === true;
 
 
   const openJourney =
@@ -2321,6 +2545,11 @@ export default function PassportPage() {
                             : "—"
                         }
                         note="Season 2 · Onchain art"
+                      />
+                      <Stat
+                        label="HoodFrame"
+                        value={hoodFrameSealed ? "SEALED" : "—"}
+                        note="Season 2 · 8x8 frame"
                       />
                     </div>
 

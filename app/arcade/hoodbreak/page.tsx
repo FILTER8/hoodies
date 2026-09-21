@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import {
-  FormEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -10,8 +9,15 @@ import {
   useState,
 } from "react";
 
+import {
+  Contract,
+  JsonRpcProvider,
+} from "ethers";
+
 import SiteHeader from "../../../components/SiteHeader";
 import SiteFooter from "../../../components/SiteFooter";
+import { useWallet } from "../../../components/WalletProvider";
+import { siteConfig } from "../../../lib/config";
 
 const GREEN = "#ccff00";
 const BLACK = "#000000";
@@ -42,54 +48,703 @@ const DROP_EVERY_N_BRICKS = 6;
 const LASER_SPEED = 90;
 const LASER_COOLDOWN_MS = 180;
 const BREAK_OCH_THRESHOLD = 5_000;
+const MAX_SELECTED_LEVELS = 8;
+
+const DEMO_IDS = {
+  hoodie: "125",
+  ping: "1",
+  studio: "488",
+  frame: "120",
+} as const;
+
+const HOOD_OS_ABI = [
+  "function hoodInfo(uint256 tokenId) view returns (" +
+    "tuple(" +
+      "uint256 tokenId," +
+      "address owner," +
+      "address wallet," +
+      "bool walletDeployed," +
+      "bool active," +
+      "address activationOwner," +
+      "uint64 activatedAt," +
+      "uint256 walletState," +
+      "uint256 nativeBalance," +
+      "uint256 paymentTokenBalance" +
+    ") info" +
+  ")",
+] as const;
+
+const PING_OWNER_ABI = [
+  "function ownerOf(uint256 tokenId) view returns (address)",
+] as const;
+
+const OCH_DECIMALS =
+  BigInt("1000000000000000000");
 
 const FONT_SPACING = 2;
 
-const FONT_5X7: Record<string, string[]> = {
-  "0": [" xxx ", "x   x", "x   x", "x   x", "x   x", "x   x", " xxx "],
-  "1": ["  x  ", " xx  ", "  x  ", "  x  ", "  x  ", "  x  ", " xxx "],
-  "2": ["xxxx ", "    x", "    x", " xxx ", "x    ", "x    ", " xxxx"],
-  "3": ["xxxx ", "    x", "    x", "xxxx ", "    x", "    x", "xxxx "],
-  "4": ["   xx", "  x x", " x  x", "xxxxx", "    x", "    x", "    x"],
-  "5": ["xxxxx", "x    ", "x    ", "xxxx ", "    x", "    x", "xxxx "],
-  "6": [" xxxx", "x    ", "x    ", "xxxx ", "x   x", "x   x", " xxx "],
-  "7": ["xxxxx", "    x", "    x", "    x", "    x", "    x", "    x"],
-  "8": [" xxx ", "x   x", "x   x", " xxx ", "x   x", "x   x", " xxx "],
-  "9": [" xxx ", "x   x", "x   x", " xxxx", "    x", "    x", "    x"],
-
-  A: [" xxx ", "x   x", "xxxxx", "x   x", "x   x", "x   x", "x   x"],
-  B: ["xxxx ", "x   x", "x   x", "xxxx ", "x   x", "x   x", "xxxx "],
-  C: [" xxxx", "x    ", "x    ", "x    ", "x    ", "x    ", " xxxx"],
-  D: ["xxxx ", "x   x", "x   x", "x   x", "x   x", "x   x", "xxxx "],
-  E: ["xxxxx", "x    ", "x    ", "xxxxx", "x    ", "x    ", "xxxxx"],
-  F: ["xxxxx", "x    ", "x    ", "xxxxx", "x    ", "x    ", "x    "],
-  G: [" xxxx", "x    ", "x    ", "x xxx", "x   x", "x   x", " xxx "],
-  H: ["x   x", "x   x", "x   x", "xxxxx", "x   x", "x   x", "x   x"],
-  I: ["xxxxx", "  x  ", "  x  ", "  x  ", "  x  ", "  x  ", "xxxxx"],
-  J: ["xxxxx", "   x ", "   x ", "   x ", "   x ", "   x ", "xxxx "],
-  K: ["x   x", "x  x ", "x x  ", "xx   ", "x x  ", "x  x ", "x   x"],
-  L: ["x    ", "x    ", "x    ", "x    ", "x    ", "x    ", "xxxxx"],
-  M: ["x   x", "x   x", "xx xx", "x x x", "x   x", "x   x", "x   x"],
-  N: ["x   x", "x   x", "xx  x", "x x x", "x  xx", "x   x", "x   x"],
-  O: [" xxx ", "x   x", "x   x", "x   x", "x   x", "x   x", " xxx "],
-  P: ["xxxx ", "x   x", "x   x", "xxxx ", "x    ", "x    ", "x    "],
-  Q: ["xxxxx", "x   x", "x   x", "x   x", "x   x", "x  x ", "xxx x"],
-  R: ["xxxx ", "x   x", "x   x", "xxxx ", "x   x", "x   x", "x   x"],
-  S: [" xxxx", "x    ", "x    ", "xxxxx", "    x", "    x", "xxxxx"],
-  T: ["xxxxx", "  x  ", "  x  ", "  x  ", "  x  ", "  x  ", "  x  "],
-  U: ["x   x", "x   x", "x   x", "x   x", "x   x", "x   x", " xxx "],
-  V: ["x   x", "x   x", "x   x", " x x ", " x x ", " x x ", "  x  "],
-  W: ["x x x", "x x x", "x x x", "x x x", "x x x", "x x x", " x x "],
-  X: ["x   x", "x   x", " x x ", "  x  ", " x x ", "x   x", "x   x"],
-  Y: ["x   x", "x   x", " x x ", "  x  ", "  x  ", "  x  ", "  x  "],
-  Z: ["xxxxx", "    x", "   x ", "  x  ", " x   ", "x    ", "xxxxx"],
-
-  " ": ["   "],
-  ":": [" ", " ", "x", " ", " ", " ", "x"],
-  ".": [" ", " ", " ", " ", " ", " ", "x"],
-  "#": [" x x ", " x x ", "xxxxx", " x x ", "xxxxx", " x x ", " x x "],
-  "/": ["  x", "  x", " x ", " x ", " x ", "x  ", "x  "],
-  "?": [" xxx ", "x   x", "   x ", "  x  ", "  x  ", "     ", "  x  "],
+// 3x5 in-game typeface supplied for Hood Break.
+const FONT_3X5: Record<string, string[]> = {
+  "0": [
+    "xxx",
+    "x x",
+    "x x",
+    "x x",
+    "xxx"
+  ],
+  "1": [
+    " x ",
+    "xx ",
+    " x ",
+    " x ",
+    " x "
+  ],
+  "2": [
+    "xxx",
+    "  x",
+    "xxx",
+    "x  ",
+    "xxx"
+  ],
+  "3": [
+    "xxx",
+    "  x",
+    "xxx",
+    "  x",
+    "xxx"
+  ],
+  "4": [
+    "x x",
+    "x x",
+    "xxx",
+    "  x",
+    "  x"
+  ],
+  "5": [
+    "xxx",
+    "x  ",
+    "xxx",
+    "  x",
+    "xx "
+  ],
+  "6": [
+    "xxx",
+    "x  ",
+    "xxx",
+    "x x",
+    "xxx"
+  ],
+  "7": [
+    "xxx",
+    "  x",
+    "  x",
+    "  x",
+    "  x"
+  ],
+  "8": [
+    "xxx",
+    "x x",
+    "xxx",
+    "x x",
+    "xxx"
+  ],
+  "9": [
+    "xxx",
+    "x x",
+    "xxx",
+    "  x",
+    "  x"
+  ],
+  "A": [
+    "xxx",
+    "x x",
+    "xxx",
+    "x x",
+    "x x"
+  ],
+  "B": [
+    "xxx",
+    "x x",
+    "xx ",
+    "x x",
+    "xxx"
+  ],
+  "C": [
+    "xxx",
+    "x  ",
+    "x  ",
+    "x  ",
+    "xxx"
+  ],
+  "D": [
+    "xx ",
+    "x x",
+    "x x",
+    "x x",
+    "xx "
+  ],
+  "E": [
+    "xxx",
+    "x  ",
+    "xxx",
+    "x  ",
+    "xxx"
+  ],
+  "F": [
+    "xxx",
+    "x  ",
+    "xxx",
+    "x  ",
+    "x  "
+  ],
+  "G": [
+    "xxx",
+    "x  ",
+    "x x",
+    "x x",
+    "xxx"
+  ],
+  "H": [
+    "x x",
+    "x x",
+    "xxx",
+    "x x",
+    "x x"
+  ],
+  "I": [
+    "xxx",
+    " x ",
+    " x ",
+    " x ",
+    "xxx"
+  ],
+  "J": [
+    "xxx",
+    " x ",
+    " x ",
+    " x ",
+    "xx "
+  ],
+  "K": [
+    "x x",
+    "x x",
+    "xx ",
+    "x x",
+    "x x"
+  ],
+  "L": [
+    "x  ",
+    "x  ",
+    "x  ",
+    "x  ",
+    "xxx"
+  ],
+  "M": [
+    "x x",
+    "xxx",
+    "xxx",
+    "x x",
+    "x x"
+  ],
+  "N": [
+    "xxx",
+    "x x",
+    "x x",
+    "x x",
+    "x x"
+  ],
+  "O": [
+    "xxx",
+    "x x",
+    "x x",
+    "x x",
+    "xxx"
+  ],
+  "P": [
+    "xxx",
+    "x x",
+    "xxx",
+    "x  ",
+    "x  "
+  ],
+  "Q": [
+    " x ",
+    "x x",
+    "x x",
+    "xxx",
+    " xx"
+  ],
+  "R": [
+    "xxx",
+    "x x",
+    "xx ",
+    "x x",
+    "x x"
+  ],
+  "S": [
+    "xxx",
+    "x  ",
+    "xxx",
+    "  x",
+    "xxx"
+  ],
+  "T": [
+    "xxx",
+    " x ",
+    " x ",
+    " x ",
+    " x "
+  ],
+  "U": [
+    "x x",
+    "x x",
+    "x x",
+    "x x",
+    "xxx"
+  ],
+  "V": [
+    "x x",
+    "x x",
+    "x x",
+    "x x",
+    " x "
+  ],
+  "W": [
+    "x x",
+    "x x",
+    "xxx",
+    "xxx",
+    "x x"
+  ],
+  "X": [
+    "x x",
+    "x x",
+    " x ",
+    "x x",
+    "x x"
+  ],
+  "Y": [
+    "x x",
+    "x x",
+    " x ",
+    " x ",
+    " x "
+  ],
+  "Z": [
+    "xxx",
+    "  x",
+    " x ",
+    "x  ",
+    "xxx"
+  ],
+  "a": [
+    "   ",
+    "   ",
+    " xx",
+    "x x",
+    "xxx"
+  ],
+  "b": [
+    "x  ",
+    "x  ",
+    "xxx",
+    "x x",
+    "xxx"
+  ],
+  "c": [
+    "   ",
+    "   ",
+    "xxx",
+    "x  ",
+    "xxx"
+  ],
+  "d": [
+    "  x",
+    "  x",
+    "xxx",
+    "x x",
+    "xxx"
+  ],
+  "e": [
+    "   ",
+    "   ",
+    "xxx",
+    "xxx",
+    " xx"
+  ],
+  "f": [
+    " xx",
+    "x  ",
+    "xxx",
+    "x  ",
+    "x  "
+  ],
+  "g": [
+    "   ",
+    "   ",
+    "xxx",
+    "x x",
+    "xxx",
+    "  x",
+    "xxx"
+  ],
+  "h": [
+    "x  ",
+    "x  ",
+    "xxx",
+    "x x",
+    "x x"
+  ],
+  "i": [
+    "   ",
+    " x ",
+    "   ",
+    " x ",
+    " x "
+  ],
+  "j": [
+    "   ",
+    " x ",
+    "   ",
+    " x ",
+    " x ",
+    "xx "
+  ],
+  "k": [
+    "x  ",
+    "x  ",
+    "x x",
+    "xx ",
+    "x x"
+  ],
+  "l": [
+    " x ",
+    " x ",
+    " x ",
+    " x ",
+    " x "
+  ],
+  "m": [
+    "   ",
+    "   ",
+    "xxx",
+    "xxx",
+    "x x"
+  ],
+  "n": [
+    "   ",
+    "   ",
+    "xxx",
+    "x x",
+    "x x"
+  ],
+  "o": [
+    "   ",
+    "   ",
+    "xxx",
+    "x x",
+    "xxx"
+  ],
+  "p": [
+    "   ",
+    "   ",
+    "xxx",
+    "x x",
+    "xxx",
+    "x  ",
+    "x  "
+  ],
+  "q": [
+    "   ",
+    "   ",
+    "xxx",
+    "x x",
+    "xxx",
+    "  x",
+    "  x"
+  ],
+  "r": [
+    "   ",
+    "   ",
+    "xxx",
+    "x  ",
+    "x  "
+  ],
+  "s": [
+    "   ",
+    "   ",
+    " xx",
+    " x ",
+    "xx "
+  ],
+  "t": [
+    " x ",
+    " x ",
+    "xxx",
+    " x ",
+    " xx"
+  ],
+  "u": [
+    "   ",
+    "   ",
+    "x x",
+    "x x",
+    "xxx"
+  ],
+  "v": [
+    "   ",
+    "   ",
+    "x x",
+    "x x",
+    " x "
+  ],
+  "w": [
+    "   ",
+    "   ",
+    "x x",
+    "xxx",
+    "xxx"
+  ],
+  "x": [
+    "   ",
+    "   ",
+    "x x",
+    " x ",
+    "x x"
+  ],
+  "y": [
+    "   ",
+    "   ",
+    "x x",
+    "x x",
+    " xx",
+    " x ",
+    "x  "
+  ],
+  "z": [
+    "   ",
+    "   ",
+    "xx ",
+    " x ",
+    " xx"
+  ],
+  " ": [
+    " "
+  ],
+  ",": [
+    " ",
+    " ",
+    " ",
+    " ",
+    "x",
+    "x"
+  ],
+  ".": [
+    " ",
+    " ",
+    " ",
+    " ",
+    "x"
+  ],
+  "!": [
+    "x",
+    "x",
+    "x",
+    " ",
+    "x"
+  ],
+  "?": [
+    "xxx",
+    "  x",
+    " x ",
+    "   ",
+    " x "
+  ],
+  "&": [
+    " x ",
+    "x x",
+    " x ",
+    "x x",
+    " xx"
+  ],
+  "(": [
+    " x ",
+    "x  ",
+    "x  ",
+    "x  ",
+    " x "
+  ],
+  ")": [
+    " x ",
+    "  x",
+    "  x",
+    "  x",
+    " x "
+  ],
+  "'": [
+    " x ",
+    " x "
+  ],
+  "+": [
+    "   ",
+    " x ",
+    "xxx",
+    " x ",
+    "   "
+  ],
+  "-": [
+    "   ",
+    "   ",
+    "xxx",
+    "   ",
+    "   "
+  ],
+  "_": [
+    "   ",
+    "   ",
+    "   ",
+    "   ",
+    "xxx"
+  ],
+  "=": [
+    "   ",
+    "xxx",
+    "   ",
+    "xxx",
+    "   "
+  ],
+  "*": [
+    "   ",
+    "x x",
+    " x ",
+    "x x",
+    "   "
+  ],
+  "/": [
+    "  x",
+    "  x",
+    " x ",
+    "x  ",
+    "x  "
+  ],
+  "\\": [
+    "x  ",
+    "x  ",
+    " x ",
+    "  x",
+    "  x"
+  ],
+  "[": [
+    "xx ",
+    "x  ",
+    "x  ",
+    "x  ",
+    "xx "
+  ],
+  "]": [
+    " xx",
+    "  x",
+    "  x",
+    "  x",
+    " xx"
+  ],
+  "<": [
+    "   ",
+    " x ",
+    "x  ",
+    " x ",
+    "   "
+  ],
+  ">": [
+    "   ",
+    " x ",
+    "  x",
+    " x ",
+    "   "
+  ],
+  "$": [
+    " xx",
+    "xx ",
+    " xx",
+    "xx ",
+    " x "
+  ],
+  "%": [
+    "x x",
+    "  x",
+    " x ",
+    "x  ",
+    "x x"
+  ],
+  ":": [
+    " ",
+    " ",
+    "x",
+    " ",
+    "x"
+  ],
+  ";": [
+    " ",
+    " ",
+    "x",
+    " ",
+    "x",
+    "x"
+  ],
+  "\"": [
+    "x x",
+    "x x"
+  ],
+  "#": [
+    " x x ",
+    "xxxxx",
+    " x x ",
+    "xxxxx",
+    " x x "
+  ],
+  "^": [
+    " x ",
+    "x x"
+  ],
+  "{": [
+    " xx",
+    " x ",
+    "x  ",
+    " x ",
+    " xx"
+  ],
+  "}": [
+    "xx ",
+    " x ",
+    "  x",
+    " x ",
+    "xx "
+  ],
+  "|": [
+    " x ",
+    " x ",
+    " x ",
+    " x ",
+    " x "
+  ],
+  "`": [
+    "x  ",
+    " x "
+  ],
+  "~": [
+    "   ",
+    "   ",
+    " xx",
+    "xx ",
+    "   "
+  ],
+  "@": [
+    " xx ",
+    "x  x",
+    "  xx",
+    " x x",
+    " xxx"
+  ]
 };
 
 type Archetype =
@@ -175,6 +830,39 @@ type PlayableAsset = {
   sprite: SpriteData;
 };
 
+type OwnedHoodie = {
+  tokenId: string;
+  name: string;
+};
+
+type OwnershipResponse = {
+  items?: OwnedHoodie[];
+  error?: string;
+};
+
+type InventoryNft = {
+  contract: string;
+  tokenId: string;
+  name?: string;
+};
+
+type InventoryResponse = {
+  nfts?: InventoryNft[];
+  error?: string;
+};
+
+type SetupMode =
+  | "demo"
+  | "loading"
+  | "hoodie-select"
+  | "asset-select"
+  | "game";
+
+type SetupPreview = {
+  asset: PlayableAsset;
+  selected: boolean;
+};
+
 type GamePhase =
   | "start"
   | "playing"
@@ -223,6 +911,7 @@ type GameStatus = {
   lives: number;
   bricks: number;
   currentAsset: string;
+  breakAvailable: boolean;
 };
 
 const FALLBACK_HOODIE: PlayableAsset = {
@@ -272,15 +961,6 @@ const FALLBACK_HOODIE: PlayableAsset = {
     ],
   },
 };
-
-function isValidNumericId(
-  value: string
-) {
-  return (
-    /^\d+$/.test(value) &&
-    BigInt(value) >= BigInt(0)
-  );
-}
 
 function normalizeArchetype(
   value: Archetype
@@ -374,6 +1054,54 @@ function assetLabel(
   return "FRAME";
 }
 
+function sameAddress(
+  a?: string | null,
+  b?: string | null,
+) {
+  return (
+    !!a &&
+    !!b &&
+    a.toLowerCase() === b.toLowerCase()
+  );
+}
+
+function arcadeRouteFor(
+  kind: AssetKind,
+  tokenId: string,
+) {
+  if (kind === "hoodie") {
+    return `/api/arcade/hoodie/${encodeURIComponent(tokenId)}`;
+  }
+
+  if (kind === "ping") {
+    return `/api/arcade/ping/${encodeURIComponent(tokenId)}`;
+  }
+
+  if (kind === "studio") {
+    return `/api/arcade/studio/${encodeURIComponent(tokenId)}`;
+  }
+
+  return `/api/arcade/hoodframe/${encodeURIComponent(tokenId)}`;
+}
+
+function supportedKindForContract(
+  contract: string,
+): AssetKind | null {
+  if (sameAddress(contract, siteConfig.pingAddress)) {
+    return "ping";
+  }
+
+  if (sameAddress(contract, siteConfig.hoodieArtAddress)) {
+    return "studio";
+  }
+
+  if (sameAddress(contract, siteConfig.hoodFrameAddress)) {
+    return "hoodframe";
+  }
+
+  return null;
+}
+
 function shuffle<T>(
   input: T[]
 ) {
@@ -406,6 +1134,11 @@ function shuffle<T>(
 }
 
 export default function HoodBreakPage() {
+  const {
+    address,
+    connect,
+  } = useWallet();
+
   const canvasRef =
     useRef<HTMLCanvasElement | null>(
       null
@@ -431,46 +1164,78 @@ export default function HoodBreakPage() {
       null
     );
 
-  const [
-    hoodieId,
-    setHoodieId,
-  ] =
-    useState("125");
+  const provider =
+    useMemo(() => {
+      if (!siteConfig.rpcUrl) {
+        return null;
+      }
+
+      return new JsonRpcProvider(
+        siteConfig.rpcUrl,
+        Number(siteConfig.chainId),
+        {
+          staticNetwork: true,
+        },
+      );
+    }, []);
 
   const [
-    pingId,
-    setPingId,
+    setupMode,
+    setSetupMode,
   ] =
-    useState("1");
+    useState<SetupMode>(
+      address
+        ? "loading"
+        : "demo"
+    );
 
   const [
-    studioId,
-    setStudioId,
+    ownedHoodies,
+    setOwnedHoodies,
   ] =
-    useState("488");
+    useState<PlayableAsset[]>([]);
 
   const [
-    frameId,
-    setFrameId,
+    selectedHoodie,
+    setSelectedHoodie,
   ] =
-    useState("120");
+    useState<PlayableAsset | null>(
+      null
+    );
 
-  // Temporary test value until the HoodWallet balance route is wired in.
-  // 5000+ grants one BREAK charge per run.
   const [
-    ochBalance,
-    setOchBalance,
-  ] = useState("5000");
+    availableAssets,
+    setAvailableAssets,
+  ] =
+    useState<PlayableAsset[]>([]);
+
+  const [
+    selectedAssetKeys,
+    setSelectedAssetKeys,
+  ] =
+    useState<Set<string>>(
+      new Set()
+    );
+
+  const [
+    setupPage,
+    setSetupPage,
+  ] =
+    useState(0);
 
   const [
     assets,
     setAssets,
   ] =
-    useState<
-      PlayableAsset[]
-    >([
+    useState<PlayableAsset[]>([
       FALLBACK_HOODIE,
     ]);
+
+  const [
+    ochBalance,
+    setOchBalance,
+  ] =
+    useState("5000");
 
   const [
     loading,
@@ -482,9 +1247,9 @@ export default function HoodBreakPage() {
     loadError,
     setLoadError,
   ] =
-    useState<
-      string | null
-    >(null);
+    useState<string | null>(
+      null
+    );
 
   const [
     runRevision,
@@ -508,6 +1273,8 @@ export default function HoodBreakPage() {
           .visiblePixelCount,
       currentAsset:
         "HOODIE",
+      breakAvailable:
+        true,
     });
 
   const hoodieAsset =
@@ -522,268 +1289,1624 @@ export default function HoodBreakPage() {
       [assets]
     );
 
-  const loadRunAssets =
-    useCallback(
-      async () => {
-        const ids = {
-          hoodie:
-            hoodieId.trim(),
-          ping:
-            pingId.trim(),
-          studio:
-            studioId.trim(),
-          frame:
-            frameId.trim(),
-        };
+  const breakUnlocked =
+    Number(ochBalance) >=
+    BREAK_OCH_THRESHOLD;
 
-        if (
-          !Object.values(
-            ids
-          ).every(
-            isValidNumericId
-          )
-        ) {
-          setLoadError(
-            "All four test IDs must be valid non-negative numbers."
+  const assetKey =
+    useCallback(
+      (
+        asset:
+          PlayableAsset
+      ) =>
+        `${asset.kind}:${asset.tokenId}`,
+      []
+    );
+
+  const loadArcadeAsset =
+    useCallback(
+      async (
+        kind: AssetKind,
+        tokenId: string,
+        archetype: Archetype = null,
+      ): Promise<PlayableAsset> => {
+        const response =
+          await fetch(
+            arcadeRouteFor(
+              kind,
+              tokenId
+            ),
+            {
+              cache:
+                "no-store",
+            }
           );
 
-          return;
+        const data =
+          (await response.json()) as
+            | HoodieResponse
+            | PingResponse
+            | StudioResponse
+            | HoodFrameResponse;
+
+        if (!response.ok) {
+          throw new Error(
+            "error" in data &&
+            data.error
+              ? data.error
+              : `Unable to load ${assetLabel(kind)} #${tokenId}.`
+          );
         }
 
+        const resolvedArchetype =
+          kind === "hoodie"
+            ? (
+                data as HoodieResponse
+              ).archetype
+            : archetype;
+
+        return {
+          kind,
+          tokenId:
+            String(
+              data.tokenId
+            ),
+          name:
+            data.name,
+          archetype:
+            resolvedArchetype,
+          sprite: {
+            ...data.sprite,
+            gameScale:
+              data.sprite.gameScale ??
+              (
+                kind === "ping"
+                  ? 2
+                  : kind === "hoodframe"
+                    ? 5
+                    : 3
+              ),
+          },
+        };
+      },
+      []
+    );
+
+  const loadDemo =
+    useCallback(
+      async () => {
         setLoading(true);
         setLoadError(null);
 
         try {
+          const hoodie =
+            await loadArcadeAsset(
+              "hoodie",
+              DEMO_IDS.hoodie
+            );
+
           const [
-            hoodieResponse,
-            pingResponse,
-            studioResponse,
-            frameResponse,
+            ping,
+            studio,
+            frame,
           ] =
             await Promise.all([
-              fetch(
-                `/api/arcade/hoodie/${encodeURIComponent(
-                  ids.hoodie
-                )}`,
-                {
-                  cache:
-                    "no-store",
-                }
+              loadArcadeAsset(
+                "ping",
+                DEMO_IDS.ping,
+                hoodie.archetype
               ),
-
-              fetch(
-                `/api/arcade/ping/${encodeURIComponent(
-                  ids.ping
-                )}`,
-                {
-                  cache:
-                    "no-store",
-                }
+              loadArcadeAsset(
+                "studio",
+                DEMO_IDS.studio,
+                hoodie.archetype
               ),
-
-              fetch(
-                `/api/arcade/studio/${encodeURIComponent(
-                  ids.studio
-                )}`,
-                {
-                  cache:
-                    "no-store",
-                }
-              ),
-
-              fetch(
-                `/api/arcade/hoodframe/${encodeURIComponent(
-                  ids.frame
-                )}`,
-                {
-                  cache:
-                    "no-store",
-                }
+              loadArcadeAsset(
+                "hoodframe",
+                DEMO_IDS.frame,
+                hoodie.archetype
               ),
             ]);
 
-          const [
-            hoodieData,
-            pingData,
-            studioData,
-            frameData,
-          ] =
-            (await Promise.all([
-              hoodieResponse.json(),
-              pingResponse.json(),
-              studioResponse.json(),
-              frameResponse.json(),
-            ])) as [
-              HoodieResponse,
-              PingResponse,
-              StudioResponse,
-              HoodFrameResponse,
-            ];
+          setAssets([
+            hoodie,
+            ping,
+            studio,
+            frame,
+          ]);
 
-          if (
-            !hoodieResponse.ok
-          ) {
-            throw new Error(
-              hoodieData.error ||
-                "Unable to load Hoodie."
-            );
-          }
-
-          if (
-            !pingResponse.ok
-          ) {
-            throw new Error(
-              pingData.error ||
-                "Unable to load Ping."
-            );
-          }
-
-          if (
-            !studioResponse.ok
-          ) {
-            throw new Error(
-              studioData.error ||
-                "Unable to load Studio."
-            );
-          }
-
-          if (
-            !frameResponse.ok
-          ) {
-            throw new Error(
-              frameData.error ||
-                "Unable to load HoodFrame."
-            );
-          }
-
-          const archetype =
-            hoodieData.archetype;
-
-          const nextAssets: PlayableAsset[] =
-            [
-              {
-                kind:
-                  "hoodie",
-                tokenId:
-                  hoodieData.tokenId,
-                name:
-                  hoodieData.name,
-                archetype,
-                sprite: {
-                  ...hoodieData.sprite,
-                  gameScale:
-                    hoodieData
-                      .sprite
-                      .gameScale ??
-                    3,
-                },
-              },
-
-              {
-                kind:
-                  "ping",
-                tokenId:
-                  pingData.tokenId,
-                name:
-                  pingData.name,
-                archetype,
-                sprite: {
-                  ...pingData.sprite,
-                  gameScale:
-                    pingData
-                      .sprite
-                      .gameScale ??
-                    2,
-                },
-              },
-
-              {
-                kind:
-                  "studio",
-                tokenId:
-                  studioData.tokenId,
-                name:
-                  studioData.name,
-                archetype,
-                sprite: {
-                  ...studioData.sprite,
-                  gameScale:
-                    studioData
-                      .sprite
-                      .gameScale ??
-                    3,
-                },
-              },
-
-              {
-                kind:
-                  "hoodframe",
-                tokenId:
-                  frameData.tokenId,
-                name:
-                  frameData.name,
-                archetype,
-                sprite: {
-                  ...frameData.sprite,
-                  gameScale:
-                    frameData
-                      .sprite
-                      .gameScale ??
-                    5,
-                },
-              },
-            ];
-
-          setAssets(
-            nextAssets
+          setOchBalance(
+            "5000"
           );
 
           setRunRevision(
             (value) =>
               value + 1
           );
-        } catch (
-          error
-        ) {
+
+          setSetupMode(
+            "game"
+          );
+        } catch (error) {
           setLoadError(
-            error instanceof
-              Error
+            error instanceof Error
               ? error.message
-              : "Unable to load the run assets."
+              : "Unable to load demo run."
           );
         } finally {
           setLoading(false);
         }
       },
       [
-        hoodieId,
-        pingId,
-        studioId,
-        frameId,
+        loadArcadeAsset,
       ]
     );
 
-  /*
-   * Load the four current test assets automatically after mount.
-   *
-   * The zero-delay timer is intentional: it moves the state-changing
-   * async loader out of the synchronous effect body, avoiding
-   * react-hooks/set-state-in-effect while preserving the agreed UX.
-   *
-   * There is NO manual 1/2/3/4 stage selector. The run is:
-   * Hoodie first -> mystery Stage Select -> remaining assets.
-   */
+  const loadWalletHoodies =
+    useCallback(
+      async () => {
+        if (!address) {
+          return;
+        }
+
+        setSetupMode(
+          "loading"
+        );
+        setLoading(true);
+        setLoadError(null);
+
+        try {
+          const params =
+            new URLSearchParams({
+              owner:
+                address,
+            });
+
+          const response =
+            await fetch(
+              `/api/hoodies?${params.toString()}`,
+              {
+                cache:
+                  "no-store",
+              }
+            );
+
+          const payload =
+            (await response.json()) as
+              OwnershipResponse;
+
+          if (!response.ok) {
+            throw new Error(
+              payload.error ||
+                "Unable to load Hoodie ownership."
+            );
+          }
+
+          const ids =
+            Array.from(
+              new Set(
+                (
+                  payload.items ||
+                  []
+                ).map(
+                  (item) =>
+                    String(
+                      item.tokenId
+                    )
+                )
+              )
+            );
+
+          const loaded =
+            await Promise.allSettled(
+              ids.map(
+                (tokenId) =>
+                  loadArcadeAsset(
+                    "hoodie",
+                    tokenId
+                  )
+              )
+            );
+
+          const hoodies =
+            loaded
+              .filter(
+                (
+                  result
+                ): result is PromiseFulfilledResult<PlayableAsset> =>
+                  result.status ===
+                  "fulfilled"
+              )
+              .map(
+                (result) =>
+                  result.value
+              );
+
+          setOwnedHoodies(
+            hoodies
+          );
+
+          setSelectedHoodie(
+            null
+          );
+
+          setAvailableAssets(
+            []
+          );
+
+          setSelectedAssetKeys(
+            new Set()
+          );
+
+          setSetupPage(0);
+
+          setSetupMode(
+            hoodies.length > 0
+              ? "hoodie-select"
+              : "demo"
+          );
+
+          if (
+            hoodies.length === 0
+          ) {
+            await loadDemo();
+          }
+        } catch (error) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load wallet Hoodies."
+          );
+
+          await loadDemo();
+        } finally {
+          setLoading(false);
+        }
+      },
+      [
+        address,
+        loadArcadeAsset,
+        loadDemo,
+      ]
+    );
+
+  const loadHoodWalletAssets =
+    useCallback(
+      async (
+        hoodie:
+          PlayableAsset
+      ) => {
+        if (!provider) {
+          throw new Error(
+            "RPC provider unavailable."
+          );
+        }
+
+        setSetupMode(
+          "loading"
+        );
+        setLoading(true);
+        setLoadError(null);
+
+        try {
+          const hoodOS =
+            new Contract(
+              siteConfig.hoodOSAddress,
+              HOOD_OS_ABI,
+              provider
+            );
+
+          const info =
+            await hoodOS.hoodInfo(
+              BigInt(
+                hoodie.tokenId
+              )
+            );
+
+          const walletAddress =
+            String(
+              info.wallet
+            );
+
+          const walletOchBalance =
+            BigInt(
+              info.paymentTokenBalance
+            );
+
+          setOchBalance(
+            (
+              walletOchBalance /
+              OCH_DECIMALS
+            ).toString()
+          );
+
+          const params =
+            new URLSearchParams({
+              address:
+                walletAddress,
+            });
+
+          const response =
+            await fetch(
+              `/api/hoodwallet/assets?${params.toString()}`,
+              {
+                cache:
+                  "no-store",
+                headers: {
+                  accept:
+                    "application/json",
+                },
+              }
+            );
+
+          const payload =
+            (await response.json()) as
+              InventoryResponse;
+
+          if (!response.ok) {
+            throw new Error(
+              payload.error ||
+                "Unable to load HoodWallet inventory."
+            );
+          }
+
+          const inventoryNfts =
+            [
+              ...(
+                payload.nfts ||
+                []
+              ),
+            ];
+
+          /*
+           * Match HoodWallet's existing direct Ping ownership fallback.
+           * Ping #N normally belongs to HoodWallet #N, and the indexer may
+           * occasionally lag. This ensures the selected Hoodie can still
+           * see its Ping in Hood Break when ownership is already on-chain.
+           */
+          try {
+            const ping =
+              new Contract(
+                siteConfig.pingAddress,
+                PING_OWNER_ABI,
+                provider
+              );
+
+            const pingOwner =
+              String(
+                await ping.ownerOf(
+                  BigInt(
+                    hoodie.tokenId
+                  )
+                )
+              );
+
+            const alreadyPresent =
+              inventoryNfts.some(
+                (nft) =>
+                  sameAddress(
+                    nft.contract,
+                    siteConfig.pingAddress
+                  ) &&
+                  String(
+                    nft.tokenId
+                  ) ===
+                    hoodie.tokenId
+              );
+
+            if (
+              sameAddress(
+                pingOwner,
+                walletAddress
+              ) &&
+              !alreadyPresent
+            ) {
+              inventoryNfts.unshift({
+                contract:
+                  siteConfig.pingAddress,
+                tokenId:
+                  hoodie.tokenId,
+                name:
+                  `Ping #${hoodie.tokenId}`,
+              });
+            }
+          } catch {
+            // The inventory route remains the primary source.
+          }
+
+          const supported =
+            inventoryNfts
+              .map(
+                (nft) => ({
+                  nft,
+                  kind:
+                    supportedKindForContract(
+                      nft.contract
+                    ),
+                })
+              )
+              .filter(
+                (
+                  item
+                ): item is {
+                  nft: InventoryNft;
+                  kind:
+                    | "ping"
+                    | "studio"
+                    | "hoodframe";
+                } =>
+                  item.kind !==
+                  null &&
+                  item.kind !==
+                  "hoodie"
+              );
+
+          const loaded =
+            await Promise.allSettled(
+              supported.map(
+                ({
+                  nft,
+                  kind,
+                }) =>
+                  loadArcadeAsset(
+                    kind,
+                    String(
+                      nft.tokenId
+                    ),
+                    hoodie.archetype
+                  )
+              )
+            );
+
+          const playable =
+            loaded
+              .filter(
+                (
+                  result
+                ): result is PromiseFulfilledResult<PlayableAsset> =>
+                  result.status ===
+                  "fulfilled"
+              )
+              .map(
+                (result) =>
+                  result.value
+              );
+
+          setSelectedHoodie(
+            hoodie
+          );
+
+          setAvailableAssets(
+            playable
+          );
+
+          setSelectedAssetKeys(
+            new Set()
+          );
+
+          setSetupPage(0);
+
+          setSetupMode(
+            "asset-select"
+          );
+        } finally {
+          setLoading(false);
+        }
+      },
+      [
+        loadArcadeAsset,
+        provider,
+      ]
+    );
+
+  const startSelectedRun =
+    useCallback(
+      () => {
+        if (!selectedHoodie) {
+          return;
+        }
+
+        const selected =
+          availableAssets.filter(
+            (asset) =>
+              selectedAssetKeys.has(
+                assetKey(
+                  asset
+                )
+              )
+          );
+
+        setAssets([
+          selectedHoodie,
+          ...selected,
+        ]);
+
+        setRunRevision(
+          (value) =>
+            value + 1
+        );
+
+        setSetupMode(
+          "game"
+        );
+      },
+      [
+        assetKey,
+        availableAssets,
+        selectedAssetKeys,
+        selectedHoodie,
+      ]
+    );
+
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadRunAssets();
-    }, 0);
+    const timer =
+      window.setTimeout(
+        () => {
+          if (address) {
+            void loadWalletHoodies();
+          } else {
+            void loadDemo();
+          }
+        },
+        0
+      );
 
     return () => {
-      window.clearTimeout(timer);
+      window.clearTimeout(
+        timer
+      );
     };
-  }, [loadRunAssets]);
+  }, [
+    address,
+    loadDemo,
+    loadWalletHoodies,
+  ]);
+
+  /*
+   * Native 120x120 setup UI.
+   *
+   * The same 3x5 bitmap typeface used by the game is used here too.
+   * Selection is arcade-native: move the small paddle and fire a 1px
+   * setup laser at a Hoodie / level preview. Pointer selection remains as
+   * a convenient fallback, but the laser is the primary controller path.
+   */
+  useEffect(() => {
+    if (
+      setupMode === "game"
+    ) {
+      return;
+    }
+
+    const canvas =
+      canvasRef.current;
+
+    const leftButton =
+      leftButtonRef.current;
+
+    const rightButton =
+      rightButtonRef.current;
+
+    const launchButton =
+      launchButtonRef.current;
+
+    if (
+      !canvas ||
+      !leftButton ||
+      !rightButton ||
+      !launchButton
+    ) {
+      return;
+    }
+
+    const context =
+      canvas.getContext(
+        "2d"
+      );
+
+    if (!context) {
+      return;
+    }
+
+    const setupCanvas =
+      canvas;
+
+    const setupContext =
+      context;
+
+    const leftControl =
+      leftButton;
+
+    const rightControl =
+      rightButton;
+
+    const launchControl =
+      launchButton;
+
+    setupContext.imageSmoothingEnabled =
+      false;
+
+    const SETUP_PADDLE_W = 15;
+    const SETUP_PADDLE_Y = 117;
+    const SETUP_LASER_SPEED = 92;
+
+    let paddleX =
+      Math.floor(
+        (W - SETUP_PADDLE_W) / 2
+      );
+
+    let laser:
+      | {
+          x: number;
+          y: number;
+        }
+      | null =
+      null;
+
+    let animationFrameId = 0;
+    let lastFrame = performance.now();
+
+    const keys = {
+      left: false,
+      right: false,
+    };
+
+    function glyphForSetup(
+      character: string
+    ) {
+      return (
+        FONT_3X5[
+          character
+        ] ??
+        FONT_3X5[
+          character.toUpperCase()
+        ] ??
+        FONT_3X5[" "]
+      );
+    }
+
+    function setupTextWidth(
+      value: string,
+      scale = 1
+    ) {
+      const characters =
+        Array.from(
+          value
+        );
+
+      if (
+        characters.length === 0
+      ) {
+        return 0;
+      }
+
+      let width = 0;
+
+      characters.forEach(
+        (
+          character,
+          index
+        ) => {
+          const glyph =
+            glyphForSetup(
+              character
+            );
+
+          const glyphWidth =
+            Math.max(
+              ...glyph.map(
+                (row) =>
+                  row.length
+              )
+            );
+
+          width +=
+            glyphWidth *
+            scale;
+
+          if (
+            index <
+            characters.length - 1
+          ) {
+            width +=
+              FONT_SPACING *
+              scale;
+          }
+        }
+      );
+
+      return width;
+    }
+
+    function drawText(
+      textValue: string,
+      x: number,
+      y: number,
+      scale = 1,
+      align:
+        | "left"
+        | "center"
+        | "right" =
+        "left"
+    ) {
+      const value =
+        textValue.toUpperCase();
+
+      const width =
+        setupTextWidth(
+          value,
+          scale
+        );
+
+      let cursorX = x;
+
+      if (
+        align === "center"
+      ) {
+        cursorX -=
+          Math.floor(
+            width / 2
+          );
+      }
+
+      if (
+        align === "right"
+      ) {
+        cursorX -= width;
+      }
+
+      setupContext.fillStyle =
+        GREEN;
+
+      for (
+        const character of
+        Array.from(value)
+      ) {
+        const glyph =
+          glyphForSetup(
+            character
+          );
+
+        const glyphWidth =
+          Math.max(
+            ...glyph.map(
+              (row) =>
+                row.length
+            )
+          );
+
+        glyph.forEach(
+          (
+            row,
+            rowIndex
+          ) => {
+            Array.from(
+              row
+            ).forEach(
+              (
+                pixel,
+                columnIndex
+              ) => {
+                if (
+                  pixel !== "x"
+                ) {
+                  return;
+                }
+
+                setupContext.fillRect(
+                  cursorX +
+                    columnIndex *
+                      scale,
+                  y +
+                    rowIndex *
+                      scale,
+                  scale,
+                  scale
+                );
+              }
+            );
+          }
+        );
+
+        cursorX +=
+          (glyphWidth +
+            FONT_SPACING) *
+          scale;
+      }
+    }
+
+    const drawSpritePreview =
+      (
+        asset:
+          PlayableAsset,
+        centerX:
+          number,
+        centerY:
+          number,
+        selected:
+          boolean
+      ) => {
+        const maxSize =
+          asset.sprite.width ===
+          30
+            ? 27
+            : 24;
+
+        const scale =
+          Math.max(
+            1,
+            Math.floor(
+              maxSize /
+                Math.max(
+                  asset.sprite.width,
+                  asset.sprite.height
+                )
+            )
+          );
+
+        const width =
+          asset.sprite.width *
+          scale;
+
+        const height =
+          asset.sprite.height *
+          scale;
+
+        const startX =
+          Math.round(
+            centerX -
+              width / 2
+          );
+
+        const startY =
+          Math.round(
+            centerY -
+              height / 2
+          );
+
+        setupContext.fillStyle =
+          GREEN;
+
+        asset.sprite.pixels.forEach(
+          (
+            row,
+            y
+          ) => {
+            Array.from(
+              row
+            ).forEach(
+              (
+                pixel,
+                x
+              ) => {
+                if (
+                  pixel !== "1"
+                ) {
+                  return;
+                }
+
+                setupContext.fillRect(
+                  startX +
+                    x *
+                      scale,
+                  startY +
+                    y *
+                      scale,
+                  scale,
+                  scale
+                );
+              }
+            );
+          }
+        );
+
+        if (selected) {
+          setupContext.strokeStyle =
+            GREEN;
+
+          setupContext.lineWidth =
+            1;
+
+          setupContext.strokeRect(
+            centerX - 15,
+            centerY - 15,
+            30,
+            30
+          );
+        }
+      };
+
+    const pageSize = 6;
+
+    const source =
+      setupMode ===
+      "hoodie-select"
+        ? ownedHoodies
+        : availableAssets;
+
+    const maxPage =
+      Math.max(
+        0,
+        Math.ceil(
+          source.length /
+            pageSize
+        ) - 1
+      );
+
+    const page =
+      Math.min(
+        setupPage,
+        maxPage
+      );
+
+    const visible =
+      source.slice(
+        page * pageSize,
+        page * pageSize +
+          pageSize
+      );
+
+    const slots = [
+      { x: 20, y: 31 },
+      { x: 60, y: 31 },
+      { x: 100, y: 31 },
+      { x: 20, y: 68 },
+      { x: 60, y: 68 },
+      { x: 100, y: 68 },
+    ];
+
+    function toggleOrOpenAsset(
+      asset:
+        PlayableAsset
+    ) {
+      if (
+        setupMode ===
+        "hoodie-select"
+      ) {
+        void loadHoodWalletAssets(
+          asset
+        ).catch(
+          (
+            error
+          ) => {
+            setLoadError(
+              error instanceof Error
+                ? error.message
+                : "Unable to load HoodWallet."
+            );
+
+            setSetupMode(
+              "hoodie-select"
+            );
+          }
+        );
+
+        return;
+      }
+
+      const key =
+        assetKey(
+          asset
+        );
+
+      setSelectedAssetKeys(
+        (
+          current
+        ) => {
+          const next =
+            new Set(
+              current
+            );
+
+          if (
+            next.has(key)
+          ) {
+            next.delete(key);
+            return next;
+          }
+
+          if (
+            next.size >=
+            MAX_SELECTED_LEVELS
+          ) {
+            return current;
+          }
+
+          next.add(key);
+          return next;
+        }
+      );
+    }
+
+    function hitPreview(
+      x: number,
+      y: number
+    ) {
+      const index =
+        slots.findIndex(
+          (
+            slot
+          ) =>
+            Math.abs(
+              x - slot.x
+            ) <= 16 &&
+            Math.abs(
+              y - slot.y
+            ) <= 16
+        );
+
+      if (
+        index < 0
+      ) {
+        return false;
+      }
+
+      const asset =
+        visible[index];
+
+      if (!asset) {
+        return false;
+      }
+
+      toggleOrOpenAsset(
+        asset
+      );
+
+      return true;
+    }
+
+    function fireSetupLaser() {
+      if (
+        setupMode ===
+          "loading" ||
+        laser
+      ) {
+        return;
+      }
+
+      laser = {
+        x:
+          paddleX +
+          Math.floor(
+            SETUP_PADDLE_W / 2
+          ),
+        y:
+          SETUP_PADDLE_Y - 1,
+      };
+    }
+
+    function update(
+      deltaTime: number
+    ) {
+      const paddleSpeed =
+        68;
+
+      if (keys.left) {
+        paddleX -=
+          paddleSpeed *
+          deltaTime;
+      }
+
+      if (keys.right) {
+        paddleX +=
+          paddleSpeed *
+          deltaTime;
+      }
+
+      paddleX =
+        Math.max(
+          0,
+          Math.min(
+            W -
+              SETUP_PADDLE_W,
+            paddleX
+          )
+        );
+
+      if (!laser) {
+        return;
+      }
+
+      laser.y -=
+        SETUP_LASER_SPEED *
+        deltaTime;
+
+      if (
+        hitPreview(
+          laser.x,
+          laser.y
+        )
+      ) {
+        laser = null;
+        return;
+      }
+
+      if (
+        laser.y < 8
+      ) {
+        laser = null;
+      }
+    }
+
+    function drawSetup() {
+      setupContext.fillStyle =
+        BLACK;
+
+      setupContext.fillRect(
+        0,
+        0,
+        W,
+        H
+      );
+
+      if (
+        setupMode ===
+        "loading"
+      ) {
+        drawText(
+          "LOADING",
+          W / 2,
+          56,
+          1,
+          "center"
+        );
+
+        return;
+      }
+
+      if (
+        setupMode ===
+        "hoodie-select"
+      ) {
+        drawText(
+          "SELECT HOODIE",
+          W / 2,
+          3,
+          1,
+          "center"
+        );
+      } else {
+        drawText(
+          `LEVELS ${selectedAssetKeys.size}/${MAX_SELECTED_LEVELS}`,
+          W / 2,
+          3,
+          1,
+          "center"
+        );
+      }
+
+      visible.forEach(
+        (
+          asset,
+          index
+        ) => {
+          const slot =
+            slots[index];
+
+          if (!slot) {
+            return;
+          }
+
+          const selected =
+            setupMode ===
+              "asset-select" &&
+            selectedAssetKeys.has(
+              assetKey(
+                asset
+              )
+            );
+
+          drawSpritePreview(
+            asset,
+            slot.x,
+            slot.y,
+            selected
+          );
+
+          drawText(
+            `#${asset.tokenId}`,
+            slot.x,
+            slot.y + 16,
+            1,
+            "center"
+          );
+        }
+      );
+
+      if (page > 0) {
+        drawText(
+          "<",
+          3,
+          98
+        );
+      }
+
+      if (
+        page < maxPage
+      ) {
+        drawText(
+          ">",
+          117,
+          98,
+          1,
+          "right"
+        );
+      }
+
+      drawText(
+        `${page + 1}/${maxPage + 1}`,
+        W / 2,
+        98,
+        1,
+        "center"
+      );
+
+      if (
+        setupMode ===
+        "asset-select"
+      ) {
+        drawText(
+          "TAP START",
+          W / 2,
+          106,
+          1,
+          "center"
+        );
+      } else {
+        drawText(
+          "FIRE TO SELECT",
+          W / 2,
+          106,
+          1,
+          "center"
+        );
+      }
+
+      setupContext.fillStyle =
+        GREEN;
+
+      setupContext.fillRect(
+        Math.round(
+          paddleX
+        ),
+        SETUP_PADDLE_Y,
+        SETUP_PADDLE_W,
+        1
+      );
+
+      if (laser) {
+        setupContext.fillRect(
+          Math.round(
+            laser.x
+          ),
+          Math.round(
+            laser.y
+          ),
+          1,
+          2
+        );
+      }
+    }
+
+    function frame(
+      now: number
+    ) {
+      const deltaTime =
+        Math.min(
+          (now - lastFrame) /
+            1000,
+          1 / 30
+        );
+
+      lastFrame = now;
+
+      update(
+        deltaTime
+      );
+
+      drawSetup();
+
+      animationFrameId =
+        requestAnimationFrame(
+          frame
+        );
+    }
+
+    function setKey(
+      key: string,
+      value: boolean
+    ) {
+      const lower =
+        key.toLowerCase();
+
+      if (
+        key ===
+          "ArrowLeft" ||
+        lower === "a"
+      ) {
+        keys.left = value;
+      }
+
+      if (
+        key ===
+          "ArrowRight" ||
+        lower === "d"
+      ) {
+        keys.right = value;
+      }
+    }
+
+    function handleKeyDown(
+      event:
+        KeyboardEvent
+    ) {
+      if (
+        [
+          "ArrowLeft",
+          "ArrowRight",
+          " ",
+        ].includes(
+          event.key
+        )
+      ) {
+        event.preventDefault();
+      }
+
+      setKey(
+        event.key,
+        true
+      );
+
+      if (
+        event.code ===
+          "Space" &&
+        !event.repeat
+      ) {
+        fireSetupLaser();
+      }
+
+      if (
+        event.key ===
+          "Enter" &&
+        setupMode ===
+          "asset-select"
+      ) {
+        startSelectedRun();
+      }
+    }
+
+    function handleKeyUp(
+      event:
+        KeyboardEvent
+    ) {
+      setKey(
+        event.key,
+        false
+      );
+    }
+
+    function bindHold(
+      button:
+        HTMLButtonElement,
+      side:
+        "left" | "right"
+    ) {
+      const down =
+        (
+          event:
+            PointerEvent
+        ) => {
+          event.preventDefault();
+          keys[side] = true;
+          button.setPointerCapture(
+            event.pointerId
+          );
+        };
+
+      const up =
+        (
+          event:
+            PointerEvent
+        ) => {
+          event.preventDefault();
+          keys[side] = false;
+
+          if (
+            button.hasPointerCapture(
+              event.pointerId
+            )
+          ) {
+            button.releasePointerCapture(
+              event.pointerId
+            );
+          }
+        };
+
+      button.addEventListener(
+        "pointerdown",
+        down
+      );
+
+      button.addEventListener(
+        "pointerup",
+        up
+      );
+
+      button.addEventListener(
+        "pointercancel",
+        up
+      );
+
+      return () => {
+        button.removeEventListener(
+          "pointerdown",
+          down
+        );
+
+        button.removeEventListener(
+          "pointerup",
+          up
+        );
+
+        button.removeEventListener(
+          "pointercancel",
+          up
+        );
+      };
+    }
+
+    const unbindLeft =
+      bindHold(
+        leftControl,
+        "left"
+      );
+
+    const unbindRight =
+      bindHold(
+        rightControl,
+        "right"
+      );
+
+    function handleLaunch(
+      event:
+        PointerEvent
+    ) {
+      event.preventDefault();
+      fireSetupLaser();
+    }
+
+    function handleSetupPointer(
+      event:
+        PointerEvent
+    ) {
+      const rect =
+        setupCanvas.getBoundingClientRect();
+
+      const x =
+        ((event.clientX -
+          rect.left) /
+          rect.width) *
+        W;
+
+      const y =
+        ((event.clientY -
+          rect.top) /
+          rect.height) *
+        H;
+
+      if (
+        y >= 94 &&
+        x < 24 &&
+        page > 0
+      ) {
+        setSetupPage(
+          page - 1
+        );
+        return;
+      }
+
+      if (
+        y >= 94 &&
+        x > 96 &&
+        page < maxPage
+      ) {
+        setSetupPage(
+          page + 1
+        );
+        return;
+      }
+
+      if (
+        setupMode ===
+          "asset-select" &&
+        y >= 102 &&
+        y <= 114 &&
+        x >= 35 &&
+        x <= 85
+      ) {
+        startSelectedRun();
+        return;
+      }
+
+      hitPreview(
+        x,
+        y
+      );
+    }
+
+    window.addEventListener(
+      "keydown",
+      handleKeyDown,
+      {
+        passive: false,
+      }
+    );
+
+    window.addEventListener(
+      "keyup",
+      handleKeyUp
+    );
+
+    launchControl.addEventListener(
+      "pointerdown",
+      handleLaunch
+    );
+
+    setupCanvas.addEventListener(
+      "pointerdown",
+      handleSetupPointer
+    );
+
+    animationFrameId =
+      requestAnimationFrame(
+        frame
+      );
+
+    return () => {
+      cancelAnimationFrame(
+        animationFrameId
+      );
+
+      window.removeEventListener(
+        "keydown",
+        handleKeyDown
+      );
+
+      window.removeEventListener(
+        "keyup",
+        handleKeyUp
+      );
+
+      launchControl.removeEventListener(
+        "pointerdown",
+        handleLaunch
+      );
+
+      setupCanvas.removeEventListener(
+        "pointerdown",
+        handleSetupPointer
+      );
+
+      unbindLeft();
+      unbindRight();
+    };
+  }, [
+    assetKey,
+    availableAssets,
+    loadHoodWalletAssets,
+    ownedHoodies,
+    selectedAssetKeys,
+    setupMode,
+    setupPage,
+    startSelectedRun,
+  ]);
 
   useEffect(() => {
+    if (
+      setupMode !== "game"
+    ) {
+      return;
+    }
+
     const canvas =
       canvasRef.current;
 
@@ -921,6 +3044,9 @@ export default function HoodBreakPage() {
     let selectorBlocks:
       SelectorBlock[] = [];
 
+    let selectorShots:
+      LaserShot[] = [];
+
     let pickups: Pickup[] = [];
 
     let laserShots: LaserShot[] = [];
@@ -1007,6 +3133,8 @@ export default function HoodBreakPage() {
             : assetLabel(
                 currentAsset.kind
               ),
+        breakAvailable:
+          breakCharges > 0,
       });
     }
 
@@ -1109,10 +3237,10 @@ export default function HoodBreakPage() {
         string
     ) {
       return (
-        FONT_5X7[
+        FONT_3X5[
           character
         ] ??
-        FONT_5X7[" "]
+        FONT_3X5[" "]
       );
     }
 
@@ -1520,30 +3648,14 @@ export default function HoodBreakPage() {
     function createSelectorBlocks() {
       const slots =
         shuffle([
-          {
-            x: 25,
-            y: 35,
-          },
-          {
-            x: 58,
-            y: 27,
-          },
-          {
-            x: 91,
-            y: 38,
-          },
-          {
-            x: 42,
-            y: 60,
-          },
-          {
-            x: 76,
-            y: 62,
-          },
-          {
-            x: 59,
-            y: 82,
-          },
+          { x: 18, y: 30 },
+          { x: 45, y: 24 },
+          { x: 73, y: 28 },
+          { x: 101, y: 34 },
+          { x: 29, y: 58 },
+          { x: 57, y: 54 },
+          { x: 86, y: 61 },
+          { x: 59, y: 82 },
         ]);
 
       const shuffledAssets =
@@ -1600,6 +3712,9 @@ export default function HoodBreakPage() {
         "start";
 
       selectorBlocks =
+        [];
+
+      selectorShots =
         [];
 
       loadCurrentStageBricks();
@@ -1735,10 +3850,20 @@ export default function HoodBreakPage() {
 
     function enterSelectRoom() {
       phase =
-        "select-ready";
+        "select";
 
       createSelectorBlocks();
-      resetBallToPaddle();
+
+      // Stage selection is a selector, not gameplay.
+      // No ball is active here, so the player can never lose a life.
+      balls = [];
+      selectorShots = [];
+      paddleX =
+        Math.floor(
+          (W -
+            paddleWidth) /
+            2
+        );
 
       publishStatus(
         "Select"
@@ -1797,6 +3922,16 @@ export default function HoodBreakPage() {
       enterSelectRoom();
     }
 
+    function hasActivePowerUp(
+      now = performance.now()
+    ) {
+      return (
+        now < speedUntil ||
+        now < laserUntil ||
+        balls.length > 1
+      );
+    }
+
     function destroyBrick(
       gridX: number,
       gridY: number
@@ -1827,46 +3962,55 @@ export default function HoodBreakPage() {
 
       if (
         destroyedSinceDrop >= DROP_EVERY_N_BRICKS &&
-        remainingBricks > 0 &&
-        pickups.length === 0
+        remainingBricks > 0
       ) {
+        /*
+         * One power-up at a time.
+         *
+         * If SPEED / LASER / MULTI is currently active, or a pickup pixel
+         * is already falling, this drop opportunity is deliberately skipped.
+         * The deck is not consumed, so the next eligible check still has the
+         * same deterministic power-up order. There is no queued falling pixel.
+         */
         destroyedSinceDrop = 0;
 
-        const nextDrop =
-          dropDeck[0] ?? null;
+        if (
+          pickups.length === 0 &&
+          !hasActivePowerUp()
+        ) {
+          const nextDrop =
+            dropDeck[0] ?? null;
 
-        // Only consume the deck entry when we are actually allowed
-        // to resolve a drop check. While a pickup is already falling,
-        // the counter and deck are preserved for the next destroyed brick.
-        dropDeck.shift();
+          dropDeck.shift();
 
-        if (dropDeck.length === 0) {
-          dropDeck = shuffle([
-            "speed",
-            null,
-            null,
-            "multi",
-            null,
-            "laser",
-            null,
-            null,
-          ]);
-        }
+          if (dropDeck.length === 0) {
+            dropDeck = shuffle([
+              "speed",
+              null,
+              null,
+              "multi",
+              null,
+              "laser",
+              null,
+              null,
+            ]);
+          }
 
-        if (nextDrop) {
-          const geometry =
-            spriteGeometry(currentAsset);
+          if (nextDrop) {
+            const geometry =
+              spriteGeometry(currentAsset);
 
-          pickups.push({
-            kind: nextDrop,
-            x:
-              geometry.x +
-              gridX * geometry.scale,
-            y:
-              geometry.y +
-              gridY * geometry.scale,
-            size: geometry.scale,
-          });
+            pickups.push({
+              kind: nextDrop,
+              x:
+                geometry.x +
+                gridX * geometry.scale,
+              y:
+                geometry.y +
+                gridY * geometry.scale,
+              size: geometry.scale,
+            });
+          }
         }
       }
 
@@ -2133,6 +4277,109 @@ export default function HoodBreakPage() {
           ),
         45
       );
+    }
+
+    function fireSelectorLaser() {
+      if (
+        phase !==
+        "select"
+      ) {
+        return;
+      }
+
+      // Keep selection deliberate and visually clean: one selector beam at a time.
+      if (
+        selectorShots.length >
+        0
+      ) {
+        return;
+      }
+
+      selectorShots.push({
+        x:
+          paddleX +
+          paddleWidth / 2,
+        y:
+          PADDLE_Y - 1,
+      });
+
+      beep(
+        920,
+        0.018
+      );
+    }
+
+    function updateSelectorShots(
+      deltaTime:
+        number
+    ) {
+      if (
+        phase !==
+        "select"
+      ) {
+        return;
+      }
+
+      const survivors:
+        LaserShot[] = [];
+
+      for (
+        const shot of
+        selectorShots
+      ) {
+        shot.y -=
+          LASER_SPEED *
+          deltaTime;
+
+        const target =
+          selectorAtScreen(
+            Math.floor(
+              shot.x
+            ),
+            Math.floor(
+              shot.y
+            )
+          );
+
+        if (target) {
+          chooseSelector(
+            target
+          );
+          return;
+        }
+
+        if (
+          shot.y >= 8
+        ) {
+          survivors.push(
+            shot
+          );
+        }
+      }
+
+      selectorShots =
+        survivors;
+    }
+
+    function drawSelectorShots() {
+      gameContext.fillStyle =
+        GREEN;
+
+      for (
+        const shot of
+        selectorShots
+      ) {
+        gameContext.fillRect(
+          Math.round(
+            shot.x
+          ),
+          Math.round(
+            shot.y
+          ),
+          1,
+          3
+        );
+      }
     }
 
     function stepStageBall(
@@ -2461,191 +4708,6 @@ export default function HoodBreakPage() {
       return true;
     }
 
-    function stepSelectorBall(
-      ball:
-        Ball,
-      deltaTime:
-        number
-    ) {
-      const speed =
-        Math.hypot(
-          ball.vx,
-          ball.vy
-        );
-
-      const distance =
-        speed *
-        60 *
-        deltaTime;
-
-      const steps =
-        Math.max(
-          1,
-          Math.ceil(
-            distance /
-              0.35
-          )
-        );
-
-      const stepTime =
-        deltaTime /
-        steps;
-
-      for (
-        let step =
-          0;
-        step <
-        steps;
-        step +=
-          1
-      ) {
-        if (
-          phase !==
-          "select"
-        ) {
-          return true;
-        }
-
-        const previousY =
-          ball.y;
-
-        let nextX =
-          ball.x +
-          ball.vx *
-            60 *
-            stepTime;
-
-        let nextY =
-          ball.y +
-          ball.vy *
-            60 *
-            stepTime;
-
-        if (
-          nextX <
-          0
-        ) {
-          nextX =
-            -nextX;
-
-          ball.vx =
-            Math.abs(
-              ball.vx
-            );
-        } else if (
-          nextX >=
-          W
-        ) {
-          nextX =
-            W -
-            1 -
-            (nextX -
-              (W -
-                1));
-
-          ball.vx =
-            -Math.abs(
-              ball.vx
-            );
-        }
-
-        if (
-          nextY <
-          0
-        ) {
-          nextY =
-            -nextY;
-
-          ball.vy =
-            Math.abs(
-              ball.vy
-            );
-        }
-
-        const movingDown =
-          ball.vy >
-          0;
-
-        if (
-          movingDown &&
-          previousY <
-            PADDLE_Y &&
-          nextY >=
-            PADDLE_Y &&
-          nextX >=
-            paddleX &&
-          nextX <
-            paddleX +
-              paddleWidth
-        ) {
-          const hitPosition =
-            (nextX -
-              paddleX) /
-            paddleWidth;
-
-          const centered =
-            (hitPosition -
-              0.5) *
-            2;
-
-          ball.vx =
-            centered *
-            0.95 *
-            speedMultiplier;
-
-          ball.vy =
-            -Math.max(
-              0.48,
-              1.0 -
-                Math.abs(
-                  centered
-                ) *
-                  0.18
-            ) *
-            speedMultiplier;
-
-          nextY =
-            PADDLE_Y -
-            1;
-        }
-
-        const selector =
-          selectorAtScreen(
-            Math.floor(
-              nextX
-            ),
-            Math.floor(
-              nextY
-            )
-          );
-
-        if (
-          selector
-        ) {
-          chooseSelector(
-            selector
-          );
-
-          return true;
-        }
-
-        ball.x =
-          nextX;
-
-        ball.y =
-          nextY;
-
-        if (
-          ball.y >=
-          H
-        ) {
-          return false;
-        }
-      }
-
-      return true;
-    }
-
     function updatePickups(deltaTime: number) {
       if (phase !== "playing") return;
 
@@ -2694,9 +4756,7 @@ export default function HoodBreakPage() {
     ) {
       if (
         phase !==
-          "playing" &&
-        phase !==
-          "select"
+        "playing"
       ) {
         return;
       }
@@ -2709,23 +4769,15 @@ export default function HoodBreakPage() {
         balls
       ) {
         const survived =
-          phase ===
-          "select"
-            ? stepSelectorBall(
-                ball,
-                deltaTime
-              )
-            : stepStageBall(
-                ball,
-                deltaTime
-              );
+          stepStageBall(
+            ball,
+            deltaTime
+          );
 
         if (
           survived &&
-          (phase ===
-            "playing" ||
-            phase ===
-              "select")
+          phase ===
+            "playing"
         ) {
           survivors.push(
             ball
@@ -2735,9 +4787,7 @@ export default function HoodBreakPage() {
 
       if (
         phase !==
-          "playing" &&
-        phase !==
-          "select"
+        "playing"
       ) {
         return;
       }
@@ -3027,29 +5077,17 @@ export default function HoodBreakPage() {
       );
 
       drawSelectorBlocks();
+      drawSelectorShots();
       drawPaddle();
-      drawBalls();
 
+      // A tiny instruction only; this room is a selector, not another life-based stage.
       drawBitmapText(
-        "SELECT",
+        "FIRE",
         W / 2,
-        92,
+        108,
         1,
         "center"
       );
-
-      if (
-        phase ===
-        "select-ready"
-      ) {
-        drawBitmapText(
-          "LAUNCH",
-          W / 2,
-          103,
-          1,
-          "center"
-        );
-      }
     }
 
     function drawStageIntro() {
@@ -3317,6 +5355,7 @@ export default function HoodBreakPage() {
 
       updatePickups(deltaTime);
       updateLaserShots(deltaTime);
+      updateSelectorShots(deltaTime);
 
       stepBalls(
         deltaTime
@@ -3410,7 +5449,17 @@ export default function HoodBreakPage() {
         event.code === "Space" &&
         !event.repeat
       ) {
-        if (phase === "playing" && performance.now() < laserUntil) {
+        if (
+          phase ===
+          "select"
+        ) {
+          fireSelectorLaser();
+        } else if (
+          phase ===
+            "playing" &&
+          performance.now() <
+            laserUntil
+        ) {
           fireLaser();
         } else {
           startRunOrContinue();
@@ -3670,7 +5719,17 @@ export default function HoodBreakPage() {
     ) {
       event.preventDefault();
 
-      if (phase === "playing" && performance.now() < laserUntil) {
+      if (
+        phase ===
+        "select"
+      ) {
+        fireSelectorLaser();
+      } else if (
+        phase ===
+          "playing" &&
+        performance.now() <
+          laserUntil
+      ) {
         fireLaser();
       } else {
         startRunOrContinue();
@@ -3800,21 +5859,16 @@ export default function HoodBreakPage() {
     assets,
     runRevision,
     ochBalance,
+    setupMode,
   ]);
 
-  function handleLoadRun(
-    event:
-      FormEvent<HTMLFormElement>
-  ) {
-    event.preventDefault();
-
-    if (
-      loading
-    ) {
+  function reconnectSetup() {
+    if (address) {
+      void loadWalletHoodies();
       return;
     }
 
-    void loadRunAssets();
+    void connect();
   }
 
   return (
@@ -3838,106 +5892,43 @@ export default function HoodBreakPage() {
           <div className="pb-1 text-right text-[9px] uppercase leading-relaxed tracking-[0.17em] sm:text-[10px]">
             120×120
             <br />
-            {status.level}/{status.totalLevels} stages
+            {setupMode === "game"
+              ? `${status.level}/${status.totalLevels} stages`
+              : "setup"}
           </div>
         </div>
 
         <div className="mx-auto mt-5 w-full max-w-[600px]">
-          <form
-            onSubmit={handleLoadRun}
-            className="border-2 border-black"
-          >
-            <div className="grid grid-cols-2 sm:grid-cols-4">
-              {[
-                {
-                  label: "Hoodie",
-                  value: hoodieId,
-                  setter: setHoodieId,
-                },
-                {
-                  label: "Ping",
-                  value: pingId,
-                  setter: setPingId,
-                },
-                {
-                  label: "Studio",
-                  value: studioId,
-                  setter: setStudioId,
-                },
-                {
-                  label: "Frame",
-                  value: frameId,
-                  setter: setFrameId,
-                },
-              ].map(
-                (
-                  item,
-                  index
-                ) => (
-                  <label
-                    key={item.label}
-                    className={[
-                      "block",
-                      index > 0
-                        ? "border-l border-black"
-                        : "",
-                      index > 1
-                        ? "border-t border-black sm:border-t-0"
-                        : "",
-                    ].join(" ")}
-                  >
-                    <span className="block border-b border-black px-2 py-1 text-[7px] uppercase tracking-[0.12em]">
-                      {item.label} ID
-                    </span>
+          <div className="border-2 border-black">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-3">
+              <div>
+                <p className="text-[8px] uppercase tracking-[0.14em]">
+                  {address
+                    ? "Wallet connected"
+                    : "Public demo"}
+                </p>
 
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={item.value}
-                      onChange={(event) => {
-                        item.setter(
-                          event.target.value.replace(
-                            /\D/g,
-                            ""
-                          )
-                        );
+                <p className="mt-1 text-[7px] uppercase opacity-60">
+                  {address
+                    ? setupMode === "game"
+                      ? `Hoodie #${hoodieAsset.tokenId} / ${Math.max(0, assets.length - 1)} selected levels`
+                      : "Choose your Hoodie and levels inside the 120×120 screen."
+                    : "No wallet required. Demo assets are loaded automatically."}
+                </p>
+              </div>
 
-                        setLoadError(
-                          null
-                        );
-                      }}
-                      className="w-full bg-[#ccff00] px-2 py-2 text-xs outline-none"
-                    />
-                  </label>
-                )
-              )}
+              <button
+                type="button"
+                disabled={loading}
+                onClick={reconnectSetup}
+                className="border-2 border-black px-4 py-2 text-[8px] uppercase tracking-[0.12em] disabled:opacity-40"
+              >
+                {address
+                  ? "Select Hoodie / levels"
+                  : "Connect wallet"}
+              </button>
             </div>
-
-            <label className="block border-t-2 border-black">
-              <span className="block border-b border-black px-2 py-1 text-[7px] uppercase tracking-[0.12em]">
-                HoodWallet OCH / test until balance route is wired
-              </span>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={ochBalance}
-                onChange={(event) => setOchBalance(event.target.value.replace(/\D/g, ""))}
-                className="w-full bg-[#ccff00] px-2 py-2 text-xs outline-none"
-              />
-            </label>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full border-t-2 border-black px-3 py-3 text-[9px] uppercase tracking-[0.16em] disabled:opacity-50 active:bg-black active:text-[#ccff00]"
-            >
-              {loading
-                ? "Loading run..."
-                : "Load / restart run"}
-            </button>
-          </form>
+          </div>
 
           {loadError && (
             <div className="mt-2 border-2 border-black bg-black px-3 py-2 text-[10px] leading-relaxed text-[#ccff00]">
@@ -3992,15 +5983,26 @@ export default function HoodBreakPage() {
               type="button"
               className="col-span-2 min-h-12 touch-manipulation border-2 border-black bg-[#ccff00] px-3 py-3 text-[10px] uppercase tracking-[0.14em] active:bg-black active:text-[#ccff00] sm:col-span-1"
             >
-              Launch
+              {status.phase === "select"
+                ? "Fire"
+                : "Launch"}
             </button>
 
             <button
               ref={breakButtonRef}
               type="button"
-              className="col-span-2 min-h-12 touch-manipulation border-2 border-black bg-[#ccff00] px-3 py-3 text-[10px] uppercase tracking-[0.14em] active:bg-black active:text-[#ccff00] sm:col-span-3"
+              disabled={
+                !breakUnlocked ||
+                !status.breakAvailable ||
+                setupMode !== "game"
+              }
+              className="col-span-2 min-h-12 touch-manipulation border-2 border-black bg-[#ccff00] px-3 py-3 text-[10px] uppercase tracking-[0.14em] active:bg-black active:text-[#ccff00] disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-3"
             >
-              Break / B (5K OCH, once per run)
+              {!breakUnlocked
+                ? "Break locked / needs 5K OCH"
+                : status.breakAvailable
+                  ? "Break / B (5K OCH, once per run)"
+                  : "Break used"}
             </button>
           </div>
 
@@ -4023,12 +6025,12 @@ export default function HoodBreakPage() {
           </div>
 
           <p className="mt-3 text-[10px] leading-relaxed opacity-70">
-            Stage 1 is always the Hoodie. After each clear, the remaining
-            assets become identical 3×3 mystery blocks. Hit one with the ball
-            to reveal and enter the next stage. Their mapping is reshuffled
-            every select room. Catch falling pixels to reveal temporary Speed,
-            Multiball or Laser. SPACE fires Laser while active. BREAK is available
-            once per run when the HoodWallet has at least 5,000 OCH.
+            Connected holders select a Hoodie and up to 8 playable NFTs from
+            its HoodWallet directly inside the 120×120 screen. The Hoodie is
+            always stage 1. Without a connected wallet, Hood Break loads the
+            public demo run. Mystery stages stay hidden until the ball hits them.
+            Catch falling pixels for Speed, Multiball or Laser. BREAK is available
+            once per run when the selected HoodWallet holds at least 5,000 OCH.
           </p>
         </div>
 
