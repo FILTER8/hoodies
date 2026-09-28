@@ -10,8 +10,12 @@ import {
 } from "react";
 
 import {
+  BrowserProvider,
   Contract,
+  Interface,
   JsonRpcProvider,
+  parseUnits,
+  type Eip1193Provider,
 } from "ethers";
 
 import SiteHeader from "../../../components/SiteHeader";
@@ -80,6 +84,43 @@ const PING_OWNER_ABI = [
 
 const OCH_DECIMALS =
   BigInt("1000000000000000000");
+
+const HOOD_BREAK_SCORES_ADDRESS =
+  "0xd520fD747949dd9C670d05f561aC3EEcFBb0ea16";
+
+const HOOD_BREAK_OWNER =
+  "0xC7c165bA3fCf9244A45977D4809202b1DC803941";
+
+const ROBINHOOD_CHAIN_ID = BigInt(4663);
+const ROBINHOOD_CHAIN_HEX = "0x1237";
+const TX_EXPLORER_BASE =
+  "https://robinhoodchain.blockscout.com/tx/";
+
+const HOOD_WALLET_EXECUTE_ABI = [
+  "function execute(address target,uint256 value,bytes data,uint8 operation) payable returns (bytes result)",
+] as const;
+
+const OCH_WRITE_ABI = [
+  "function approve(address spender,uint256 amount) returns (bool)",
+  "function allowance(address owner,address spender) view returns (uint256)",
+] as const;
+
+const HOOD_BREAK_ABI = [
+  "function owner() view returns (address)",
+  "function submitScore(uint256 hoodieId,uint256 pingId,uint256 frameId,uint256 artId,uint32 elapsedMs,uint32 bricks,bytes32 runId,uint256 deadline,bytes signature)",
+  "function fullHoodCompleted(uint256 hoodieId) view returns (bool)",
+  "function completedRuns(uint256 hoodieId) view returns (uint256)",
+  "function bestFullHood(uint256 hoodieId) view returns (uint32 elapsedMs,uint32 bricks,uint64 submittedAt,uint256 pingId,uint256 frameId,uint256 artId,bytes32 runId,bool exists)",
+  "function tournamentCount() view returns (uint256)",
+  "function activeTournamentId() view returns (uint256)",
+  "function tournamentActive() view returns (bool)",
+  "function tournaments(uint256 tournamentId) view returns (uint64 startedAt,uint64 endsAt,uint64 settledAt,uint256 prize,uint256 leaderHoodieId,uint32 bestElapsedMs,uint32 bestBricks,bytes32 bestRunId,bool hasLeader,bool settled)",
+  "function startTournament(uint256 prize)",
+  "function settleTournament()",
+] as const;
+
+const HOOD_BREAK_INTERFACE =
+  new Interface(HOOD_BREAK_ABI);
 
 const FONT_SPACING = 2;
 
@@ -858,9 +899,36 @@ type SetupMode =
   | "asset-select"
   | "game";
 
-type SetupPreview = {
-  asset: PlayableAsset;
-  selected: boolean;
+type CompletedFullHoodRun = {
+  hoodieId: string;
+  pingId: string;
+  frameId: string;
+  artId: string;
+  elapsedMs: number;
+  bricks: number;
+  fullHood: boolean;
+  submitted: boolean;
+};
+
+type SignedRunResponse = {
+  signature?: string;
+  runId?: string;
+  deadline?: string;
+  error?: string;
+};
+
+type TournamentView = {
+  count: string;
+  activeId: string;
+  active: boolean;
+  startedAt: number;
+  endsAt: number;
+  prizeWei: string;
+  leaderHoodieId: string;
+  bestElapsedMs: number;
+  bestBricks: number;
+  hasLeader: boolean;
+  settled: boolean;
 };
 
 type GamePhase =
@@ -889,7 +957,8 @@ type SelectorBlock = {
 type PickupKind =
   | "speed"
   | "multi"
-  | "laser";
+  | "laser"
+  | "life";
 
 type Pickup = {
   kind: PickupKind;
@@ -1133,6 +1202,45 @@ function shuffle<T>(
   return copy;
 }
 
+function browserEthereum() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return (
+    window as typeof window & {
+      ethereum?: Eip1193Provider;
+    }
+  ).ethereum ?? null;
+}
+
+function formatRunTime(
+  elapsedMs: number
+) {
+  const totalTenths =
+    Math.floor(
+      elapsedMs / 100
+    );
+
+  const tenths =
+    totalTenths % 10;
+
+  const totalSeconds =
+    Math.floor(
+      totalTenths / 10
+    );
+
+  const minutes =
+    Math.floor(
+      totalSeconds / 60
+    );
+
+  const seconds =
+    totalSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${tenths}`;
+}
+
 export default function HoodBreakPage() {
   const {
     address,
@@ -1258,6 +1366,77 @@ export default function HoodBreakPage() {
     useState(0);
 
   const [
+    selectedHoodWalletAddress,
+    setSelectedHoodWalletAddress,
+  ] =
+    useState<string | null>(
+      null
+    );
+
+  const [
+    completedRun,
+    setCompletedRun,
+  ] =
+    useState<CompletedFullHoodRun | null>(
+      null
+    );
+
+  const [
+    scoreSubmitting,
+    setScoreSubmitting,
+  ] =
+    useState(false);
+
+  const [
+    scoreTxHash,
+    setScoreTxHash,
+  ] =
+    useState<string | null>(
+      null
+    );
+
+  const [
+    onchainMessage,
+    setOnchainMessage,
+  ] =
+    useState<string | null>(
+      null
+    );
+
+  const [
+    tournament,
+    setTournament,
+  ] =
+    useState<TournamentView | null>(
+      null
+    );
+
+  const [
+    tournamentNow,
+    setTournamentNow,
+  ] = useState(0);
+
+  const [
+    tournamentPrize,
+    setTournamentPrize,
+  ] =
+    useState("50");
+
+  const [
+    tournamentBusy,
+    setTournamentBusy,
+  ] =
+    useState(false);
+
+  const [
+    tournamentTxHash,
+    setTournamentTxHash,
+  ] =
+    useState<string | null>(
+      null
+    );
+
+  const [
     status,
     setStatus,
   ] =
@@ -1292,6 +1471,42 @@ export default function HoodBreakPage() {
   const breakUnlocked =
     Number(ochBalance) >=
     BREAK_OCH_THRESHOLD;
+
+  const selectedFullHoodReady =
+    useMemo(() => {
+      const selected =
+        availableAssets.filter(
+          (asset) =>
+            selectedAssetKeys.has(
+              `${asset.kind}:${asset.tokenId}`
+            )
+        );
+
+      return (
+        selected.some(
+          (asset) =>
+            asset.kind === "ping"
+        ) &&
+        selected.some(
+          (asset) =>
+            asset.kind === "hoodframe"
+        ) &&
+        selected.some(
+          (asset) =>
+            asset.kind === "studio"
+        )
+      );
+    }, [
+      availableAssets,
+      selectedAssetKeys,
+    ]);
+
+  const connectedIsContractOwner =
+    !!address &&
+    sameAddress(
+      address,
+      HOOD_BREAK_OWNER
+    );
 
   const assetKey =
     useCallback(
@@ -1608,6 +1823,10 @@ export default function HoodBreakPage() {
               info.wallet
             );
 
+          setSelectedHoodWalletAddress(
+            walletAddress
+          );
+
           const walletOchBalance =
             BigInt(
               info.paymentTokenBalance
@@ -1821,6 +2040,16 @@ export default function HoodBreakPage() {
           ...selected,
         ]);
 
+        setCompletedRun(
+          null
+        );
+        setScoreTxHash(
+          null
+        );
+        setOnchainMessage(
+          null
+        );
+
         setRunRevision(
           (value) =>
             value + 1
@@ -1837,6 +2066,533 @@ export default function HoodBreakPage() {
         selectedHoodie,
       ]
     );
+
+  const refreshTournament =
+    useCallback(
+      async () => {
+        if (!provider) {
+          return;
+        }
+
+        try {
+          const contract =
+            new Contract(
+              HOOD_BREAK_SCORES_ADDRESS,
+              HOOD_BREAK_ABI,
+              provider
+            );
+
+          const [
+            countRaw,
+            activeRaw,
+            activeIdRaw,
+          ] =
+            await Promise.all([
+              contract.tournamentCount(),
+              contract.tournamentActive(),
+              contract.activeTournamentId(),
+            ]);
+
+          const count =
+            BigInt(
+              countRaw
+            );
+
+          const activeId =
+            BigInt(
+              activeIdRaw
+            );
+
+          const view: TournamentView = {
+            count:
+              count.toString(),
+            activeId:
+              activeId.toString(),
+            active:
+              Boolean(
+                activeRaw
+              ),
+            startedAt:
+              0,
+            endsAt:
+              0,
+            prizeWei:
+              "0",
+            leaderHoodieId:
+              "0",
+            bestElapsedMs:
+              0,
+            bestBricks:
+              0,
+            hasLeader:
+              false,
+            settled:
+              false,
+          };
+
+          const readId =
+            activeId !==
+            BigInt(0)
+              ? activeId
+              : count;
+
+          if (
+            readId !==
+            BigInt(0)
+          ) {
+            const t =
+              await contract.tournaments(
+                readId
+              );
+
+            view.startedAt =
+              Number(
+                t.startedAt
+              );
+            view.endsAt =
+              Number(
+                t.endsAt
+              );
+            view.prizeWei =
+              BigInt(
+                t.prize
+              ).toString();
+            view.leaderHoodieId =
+              BigInt(
+                t.leaderHoodieId
+              ).toString();
+            view.bestElapsedMs =
+              Number(
+                t.bestElapsedMs
+              );
+            view.bestBricks =
+              Number(
+                t.bestBricks
+              );
+            view.hasLeader =
+              Boolean(
+                t.hasLeader
+              );
+            view.settled =
+              Boolean(
+                t.settled
+              );
+          }
+
+          setTournament(
+            view
+          );
+        } catch (error) {
+          console.error(
+            "Unable to read Hood Break tournament",
+            error
+          );
+        }
+      },
+      [
+        provider,
+      ]
+    );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void refreshTournament();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    refreshTournament,
+  ]);
+
+  useEffect(() => {
+    const updateTime = () => setTournamentNow(Date.now());
+    const timer = window.setInterval(updateTime, 1000);
+    updateTime();
+    return () => window.clearInterval(timer);
+  }, []);
+
+  async function getWriteSigner() {
+    const ethereum =
+      browserEthereum();
+
+    if (!ethereum) {
+      throw new Error(
+        "No browser wallet found."
+      );
+    }
+
+    const browserProvider =
+      new BrowserProvider(
+        ethereum
+      );
+
+    const network =
+      await browserProvider.getNetwork();
+
+    if (
+      network.chainId !==
+      ROBINHOOD_CHAIN_ID
+    ) {
+      await ethereum.request({
+        method:
+          "wallet_switchEthereumChain",
+        params: [
+          {
+            chainId:
+              ROBINHOOD_CHAIN_HEX,
+          },
+        ],
+      });
+    }
+
+    return browserProvider.getSigner();
+  }
+
+  async function submitCompletedScore() {
+    if (
+      !completedRun ||
+      !completedRun.fullHood
+    ) {
+      setOnchainMessage(
+        "Complete a FULL HOOD run first."
+      );
+      return;
+    }
+
+    if (
+      !selectedHoodWalletAddress
+    ) {
+      setOnchainMessage(
+        "No HoodWallet resolved for this Hoodie."
+      );
+      return;
+    }
+
+    setScoreSubmitting(
+      true
+    );
+    setOnchainMessage(
+      "Requesting verified run signature..."
+    );
+
+    try {
+      const proofResponse =
+        await fetch(
+          "/api/arcade/hood-break/sign",
+          {
+            method:
+              "POST",
+            headers: {
+              "content-type":
+                "application/json",
+            },
+            body:
+              JSON.stringify({
+                hoodieId:
+                  completedRun.hoodieId,
+                pingId:
+                  completedRun.pingId,
+                frameId:
+                  completedRun.frameId,
+                artId:
+                  completedRun.artId,
+                elapsedMs:
+                  completedRun.elapsedMs,
+                bricks:
+                  completedRun.bricks,
+              }),
+          }
+        );
+
+      const proof =
+        (await proofResponse.json()) as
+          SignedRunResponse;
+
+      if (
+        !proofResponse.ok ||
+        !proof.signature ||
+        !proof.runId ||
+        !proof.deadline
+      ) {
+        throw new Error(
+          proof.error ||
+            "Verifier did not return a valid proof."
+        );
+      }
+
+      const signer =
+        await getWriteSigner();
+
+      const signerAddress =
+        await signer.getAddress();
+
+      if (
+        address &&
+        !sameAddress(
+          signerAddress,
+          address
+        )
+      ) {
+        throw new Error(
+          "Connected wallet changed. Reconnect and try again."
+        );
+      }
+
+      const calldata =
+        HOOD_BREAK_INTERFACE.encodeFunctionData(
+          "submitScore",
+          [
+            BigInt(
+              completedRun.hoodieId
+            ),
+            BigInt(
+              completedRun.pingId
+            ),
+            BigInt(
+              completedRun.frameId
+            ),
+            BigInt(
+              completedRun.artId
+            ),
+            completedRun.elapsedMs,
+            completedRun.bricks,
+            proof.runId,
+            BigInt(
+              proof.deadline
+            ),
+            proof.signature,
+          ]
+        );
+
+      const hoodWallet =
+        new Contract(
+          selectedHoodWalletAddress,
+          HOOD_WALLET_EXECUTE_ABI,
+          signer
+        );
+
+      setOnchainMessage(
+        "Confirm HoodWallet transaction..."
+      );
+
+      const tx =
+        await hoodWallet.execute(
+          HOOD_BREAK_SCORES_ADDRESS,
+          0,
+          calldata,
+          0
+        );
+
+      setScoreTxHash(
+        tx.hash
+      );
+
+      setOnchainMessage(
+        "Score transaction submitted..."
+      );
+
+      await tx.wait();
+
+      setCompletedRun(
+        (
+          current
+        ) =>
+          current
+            ? {
+                ...current,
+                submitted:
+                  true,
+              }
+            : current
+      );
+
+      setOnchainMessage(
+        "Leaderboard score recorded. FULL HOOD is now eligible to Hood It."
+      );
+
+      await refreshTournament();
+    } catch (error) {
+      setOnchainMessage(
+        error instanceof Error
+          ? error.message
+          : "Score submission failed."
+      );
+    } finally {
+      setScoreSubmitting(
+        false
+      );
+    }
+  }
+
+  async function startTournament() {
+    if (
+      !connectedIsContractOwner
+    ) {
+      setOnchainMessage(
+        "Only the HoodBreak contract owner can start a tournament."
+      );
+      return;
+    }
+
+    const prize =
+      tournamentPrize.trim();
+
+    if (
+      !prize ||
+      Number(prize) <=
+        0
+    ) {
+      setOnchainMessage(
+        "Enter an OCH prize greater than zero."
+      );
+      return;
+    }
+
+    setTournamentBusy(
+      true
+    );
+    setOnchainMessage(
+      "Preparing tournament..."
+    );
+
+    try {
+      const signer =
+        await getWriteSigner();
+
+      const amount =
+        parseUnits(
+          prize,
+          18
+        );
+
+      const ownerAddress =
+        await signer.getAddress();
+
+      const och =
+        new Contract(
+          siteConfig.ochAddress,
+          OCH_WRITE_ABI,
+          signer
+        );
+
+      const allowance =
+        BigInt(
+          await och.allowance(
+            ownerAddress,
+            HOOD_BREAK_SCORES_ADDRESS
+          )
+        );
+
+      if (
+        allowance <
+        amount
+      ) {
+        setOnchainMessage(
+          `Approve ${prize} OCH for the tournament...`
+        );
+
+        const approveTx =
+          await och.approve(
+            HOOD_BREAK_SCORES_ADDRESS,
+            amount
+          );
+
+        setTournamentTxHash(
+          approveTx.hash
+        );
+
+        await approveTx.wait();
+      }
+
+      const scores =
+        new Contract(
+          HOOD_BREAK_SCORES_ADDRESS,
+          HOOD_BREAK_ABI,
+          signer
+        );
+
+      setOnchainMessage(
+        "Confirm tournament start..."
+      );
+
+      const startTx =
+        await scores.startTournament(
+          amount
+        );
+
+      setTournamentTxHash(
+        startTx.hash
+      );
+
+      await startTx.wait();
+
+      setOnchainMessage(
+        `48-hour tournament started with ${prize} OCH.`
+      );
+
+      await refreshTournament();
+    } catch (error) {
+      setOnchainMessage(
+        error instanceof Error
+          ? error.message
+          : "Tournament start failed."
+      );
+    } finally {
+      setTournamentBusy(
+        false
+      );
+    }
+  }
+
+  async function settleTournament() {
+    setTournamentBusy(
+      true
+    );
+    setOnchainMessage(
+      "Preparing settlement..."
+    );
+
+    try {
+      const signer =
+        await getWriteSigner();
+
+      const scores =
+        new Contract(
+          HOOD_BREAK_SCORES_ADDRESS,
+          HOOD_BREAK_ABI,
+          signer
+        );
+
+      const tx =
+        await scores.settleTournament();
+
+      setTournamentTxHash(
+        tx.hash
+      );
+
+      setOnchainMessage(
+        "Tournament settlement submitted..."
+      );
+
+      await tx.wait();
+
+      setOnchainMessage(
+        "Tournament settled."
+      );
+
+      await refreshTournament();
+    } catch (error) {
+      setOnchainMessage(
+        error instanceof Error
+          ? error.message
+          : "Tournament settlement failed."
+      );
+    } finally {
+      setTournamentBusy(
+        false
+      );
+    }
+  }
 
   useEffect(() => {
     const timer =
@@ -3052,6 +3808,8 @@ export default function HoodBreakPage() {
     let laserShots: LaserShot[] = [];
 
     let destroyedSinceDrop = 0;
+    let totalDestroyedBricks = 0;
+    let lifeRecoveredThisRun = false;
 
     let dropDeck: Array<PickupKind | null> = [];
 
@@ -3500,6 +4258,10 @@ export default function HoodBreakPage() {
         "laser",
         null,
         null,
+        null,
+        "life",
+        null,
+        null,
       ];
 
       // Collector always gets MULTI as the first real drop.
@@ -3705,6 +4467,12 @@ export default function HoodBreakPage() {
       finalElapsedMs =
         0;
 
+      totalDestroyedBricks =
+        0;
+
+      lifeRecoveredThisRun =
+        false;
+
       breakCharges =
         breakEligible ? 1 : 0;
 
@@ -3740,6 +4508,13 @@ export default function HoodBreakPage() {
         phase ===
         "start"
       ) {
+        setCompletedRun(
+          null
+        );
+        setScoreTxHash(
+          null
+        );
+
         timerStartedAt =
           performance.now();
 
@@ -3804,7 +4579,9 @@ export default function HoodBreakPage() {
           ? "SPEED"
           : kind === "multi"
             ? "MULTI"
-            : "LASER";
+            : kind === "laser"
+              ? "LASER"
+              : "LIFE";
 
       pickupRevealUntil = now + 650;
 
@@ -3816,6 +4593,32 @@ export default function HoodBreakPage() {
 
       if (kind === "multi") {
         activateMultiball();
+        return;
+      }
+
+      if (kind === "life") {
+        if (
+          lives < startingLives &&
+          !lifeRecoveredThisRun
+        ) {
+          lives = Math.min(
+            startingLives,
+            lives + 1
+          );
+
+          lifeRecoveredThisRun = true;
+
+          publishStatus(
+            "Extra life"
+          );
+
+          beep(660, 0.05);
+          window.setTimeout(
+            () => beep(980, 0.08),
+            55
+          );
+        }
+
         return;
       }
 
@@ -3909,11 +4712,68 @@ export default function HoodBreakPage() {
         timerStartedAt =
           null;
 
+        const scorePing =
+          runAssets.find(
+            (asset) =>
+              asset.kind ===
+              "ping"
+          );
+
+        const scoreFrame =
+          runAssets.find(
+            (asset) =>
+              asset.kind ===
+              "hoodframe"
+          );
+
+        const scoreArt =
+          runAssets.find(
+            (asset) =>
+              asset.kind ===
+              "studio"
+          );
+
+        const fullHood =
+          !!scorePing &&
+          !!scoreFrame &&
+          !!scoreArt;
+
+        setCompletedRun({
+          hoodieId:
+            hoodie.tokenId,
+          pingId:
+            scorePing?.tokenId ??
+            "0",
+          frameId:
+            scoreFrame?.tokenId ??
+            "0",
+          artId:
+            scoreArt?.tokenId ??
+            "0",
+          elapsedMs:
+            Math.max(
+              1,
+              Math.round(
+                finalElapsedMs
+              )
+            ),
+          bricks:
+            Math.max(
+              1,
+              totalDestroyedBricks
+            ),
+          fullHood,
+          submitted:
+            false,
+        });
+
         phase =
           "run-clear";
 
         publishStatus(
-          "Run clear"
+          fullHood
+            ? "Full Hood"
+            : "Run clear"
         );
 
         return;
@@ -3956,6 +4816,9 @@ export default function HoodBreakPage() {
       remainingBricks -=
         1;
 
+      totalDestroyedBricks +=
+        1;
+
       publishStatus();
 
       destroyedSinceDrop += 1;
@@ -3993,15 +4856,29 @@ export default function HoodBreakPage() {
               "laser",
               null,
               null,
+              null,
+              "life",
+              null,
+              null,
             ]);
           }
 
-          if (nextDrop) {
+          const eligibleDrop =
+            nextDrop === "life"
+              ? (
+                  lives < startingLives &&
+                  !lifeRecoveredThisRun
+                )
+                ? nextDrop
+                : null
+              : nextDrop;
+
+          if (eligibleDrop) {
             const geometry =
               spriteGeometry(currentAsset);
 
             pickups.push({
-              kind: nextDrop,
+              kind: eligibleDrop,
               x:
                 geometry.x +
                 gridX * geometry.scale,
@@ -5930,6 +6807,16 @@ export default function HoodBreakPage() {
             </div>
           </div>
 
+          {address &&
+            setupMode ===
+              "asset-select" && (
+              <div className="mt-2 border-2 border-black px-3 py-2 text-[9px] uppercase tracking-[0.12em]">
+                {selectedFullHoodReady
+                  ? "FULL HOOD READY ✓ / PING + FRAME + ART"
+                  : "FULL HOOD NEEDS / PING + FRAME + ART"}
+              </div>
+            )}
+
           {loadError && (
             <div className="mt-2 border-2 border-black bg-black px-3 py-2 text-[10px] leading-relaxed text-[#ccff00]">
               {loadError}
@@ -6024,13 +6911,202 @@ export default function HoodBreakPage() {
             </span>
           </div>
 
+          {completedRun && (
+            <div className="mt-4 border-2 border-black">
+              <div className="border-b-2 border-black px-3 py-2 text-[9px] uppercase tracking-[0.14em]">
+                {completedRun.fullHood
+                  ? "FULL HOOD COMPLETE"
+                  : "RUN COMPLETE / NOT FULL HOOD"}
+              </div>
+
+              <div className="grid grid-cols-2 gap-px bg-black text-[8px] uppercase tracking-[0.1em]">
+                <div className="bg-[#ccff00] p-3">
+                  Hoodie #{completedRun.hoodieId}
+                </div>
+                <div className="bg-[#ccff00] p-3 text-right">
+                  {formatRunTime(
+                    completedRun.elapsedMs
+                  )}
+                </div>
+                <div className="bg-[#ccff00] p-3">
+                  {completedRun.bricks} bricks
+                </div>
+                <div className="bg-[#ccff00] p-3 text-right">
+                  P{completedRun.pingId} / F{completedRun.frameId} / A{completedRun.artId}
+                </div>
+              </div>
+
+              {completedRun.fullHood && (
+                <button
+                  type="button"
+                  disabled={
+                    scoreSubmitting ||
+                    completedRun.submitted ||
+                    !address
+                  }
+                  onClick={() => {
+                    void submitCompletedScore();
+                  }}
+                  className="w-full border-t-2 border-black px-3 py-3 text-[9px] uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {completedRun.submitted
+                    ? "SCORE RECORDED ✓ / HOOD IT"
+                    : scoreSubmitting
+                      ? "SUBMITTING..."
+                      : "SUBMIT SCORE"}
+                </button>
+              )}
+            </div>
+          )}
+
+          {(onchainMessage ||
+            scoreTxHash ||
+            tournamentTxHash) && (
+            <div className="mt-2 border-2 border-black px-3 py-3 text-[9px] uppercase leading-relaxed tracking-[0.1em]">
+              {onchainMessage && (
+                <div>
+                  {onchainMessage}
+                </div>
+              )}
+
+              {scoreTxHash && (
+                <a
+                  href={`${TX_EXPLORER_BASE}${scoreTxHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 block break-all underline underline-offset-4"
+                >
+                  Score tx / {scoreTxHash}
+                </a>
+              )}
+
+              {tournamentTxHash && (
+                <a
+                  href={`${TX_EXPLORER_BASE}${tournamentTxHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 block break-all underline underline-offset-4"
+                >
+                  Tournament tx / {tournamentTxHash}
+                </a>
+              )}
+            </div>
+          )}
+
+          <div className="mt-4 border-2 border-black">
+            <div className="flex items-center justify-between border-b-2 border-black px-3 py-2 text-[9px] uppercase tracking-[0.14em]">
+              <span>
+                48H Tournament
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  void refreshTournament();
+                }}
+                className="underline underline-offset-4"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="px-3 py-3 text-[8px] uppercase leading-relaxed tracking-[0.1em]">
+              {tournament?.active ? (
+                <>
+                  <div>
+                    Tournament #{tournament.activeId} / LIVE
+                  </div>
+                  <div>
+                    Ends {new Date(
+                      tournament.endsAt *
+                        1000
+                    ).toLocaleString()}
+                  </div>
+                  <div>
+                    Leader {tournament.hasLeader
+                      ? `Hoodie #${tournament.leaderHoodieId} / ${formatRunTime(tournament.bestElapsedMs)} / ${tournament.bestBricks} bricks`
+                      : "No score yet"}
+                  </div>
+                </>
+              ) : (
+                <div>
+                  No active tournament.
+                </div>
+              )}
+            </div>
+
+            {connectedIsContractOwner &&
+              !tournament?.active && (
+                <div className="flex gap-2 border-t-2 border-black p-2">
+                  <input
+                    value={
+                      tournamentPrize
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setTournamentPrize(
+                        event.target.value
+                      )
+                    }
+                    inputMode="decimal"
+                    aria-label="Tournament prize in OCH"
+                    className="min-w-0 flex-1 border-2 border-black bg-[#ccff00] px-3 py-2 text-[9px] outline-none"
+                  />
+
+                  <button
+                    type="button"
+                    disabled={
+                      tournamentBusy
+                    }
+                    onClick={() => {
+                      void startTournament();
+                    }}
+                    className="border-2 border-black px-3 py-2 text-[9px] uppercase tracking-[0.12em] disabled:opacity-50"
+                  >
+                    {tournamentBusy
+                      ? "Starting..."
+                      : "Start / OCH"}
+                  </button>
+                </div>
+              )}
+
+            {tournament &&
+              !tournament.active &&
+              tournament.count !==
+                "0" &&
+              !tournament.settled &&
+              tournament.endsAt > 0 &&
+              tournamentNow >=
+                tournament.endsAt *
+                  1000 && (
+                <button
+                  type="button"
+                  disabled={
+                    tournamentBusy
+                  }
+                  onClick={() => {
+                    void settleTournament();
+                  }}
+                  className="w-full border-t-2 border-black px-3 py-3 text-[9px] uppercase tracking-[0.12em] disabled:opacity-50"
+                >
+                  Settle Tournament
+                </button>
+              )}
+          </div>
+
           <p className="mt-3 text-[10px] leading-relaxed opacity-70">
             Connected holders select a Hoodie and up to 8 playable NFTs from
             its HoodWallet directly inside the 120×120 screen. The Hoodie is
             always stage 1. Without a connected wallet, Hood Break loads the
             public demo run. Mystery stages stay hidden until the ball hits them.
-            Catch falling pixels for Speed, Multiball or Laser. BREAK is available
+            Catch falling pixels for Speed, Multiball, Laser or a rare Extra Life.
+            Extra Life only appears after a life was lost, can restore at most one life
+            per run, and never exceeds the Hoodie&apos;s starting lives. BREAK is available
             once per run when the selected HoodWallet holds at least 5,000 OCH.
+            A completed FULL HOOD run is first submitted to the onchain leaderboard
+            through the Hoodie&apos;s own HoodWallet; that accepted score is what makes
+            the Hoodie eligible for the FULL HOOD / Hood It milestone. Active 48-hour
+            tournaments automatically use the same verified score submission.
           </p>
         </div>
 
