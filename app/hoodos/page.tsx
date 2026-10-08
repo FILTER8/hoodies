@@ -148,6 +148,17 @@ const apps: HoodOSApp[] = [
 },
 
   {
+    id: "netmint",
+    name: "NET Mint",
+    tagline: "Mint directly from NET contracts",
+    description: "Collect supported NET-integrated on-chain NFTs with your Hoodie. Pay from your connected wallet or HoodWallet.",
+    href: "/hoodos/netmint",
+    fallbackIcon: "N",
+    buildType: "internal",
+    status: "live",
+  },
+
+  {
     id:
       "mintos",
 
