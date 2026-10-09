@@ -127,6 +127,42 @@ type Collection = {
 };
 type PaySource = "eoa" | "hoodwallet";
 
+type DiscoveredCollection = {
+  address: string;
+  name: string;
+  symbol: string;
+  priceWei: string;
+  circulatingSupply: string;
+  maxSupply: string;
+  maxMintsPerWallet: string;
+  updatedAt?: string;
+  interfaceCompatible: boolean;
+  openSeaUrl: string;
+  xSearchUrl: string;
+  blockExplorerUrl: string;
+};
+type DiscoveryResponse = {
+  chainId: number;
+  collections: DiscoveredCollection[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+};
+const NETMINT_DIRECTORY = "https://api.onchainhoodies.xyz/v1/netmint/collections";
+function safeBigInt(value: string): bigint | null {
+  try { return BigInt(value); } catch { return null; }
+}
+function supplyStatus(item: DiscoveredCollection): { label: string; atCapacity: boolean; percent: number | null } {
+  const max = safeBigInt(item.maxSupply);
+  const minted = safeBigInt(item.circulatingSupply);
+  if (max === null || minted === null) return { label: "SUPPLY UNKNOWN", atCapacity: false, percent: null };
+  if (max === BigInt(0)) return { label: "UNLIMITED SUPPLY", atCapacity: false, percent: null };
+  const percent = Math.min(100, Math.round(Number(minted * BigInt(100) / max)));
+  return { label: minted >= max ? "MINTED OUT" : "MINT STATUS: CHECK", atCapacity: minted >= max, percent };
+}
+
+
 function errText(error: unknown): string {
   if (error && typeof error === "object") {
     const e = error as { shortMessage?: string; reason?: string; message?: string };
@@ -170,6 +206,49 @@ export default function NetMintPage() {
   const [mintedHoodieId, setMintedHoodieId] = useState("");
   const [revealLoading, setRevealLoading] = useState(false);
   const [revealMessage, setRevealMessage] = useState("");
+  const [discoverQuery, setDiscoverQuery] = useState("");
+  const [discoverPage, setDiscoverPage] = useState(1);
+  const [discovered, setDiscovered] = useState<DiscoveredCollection[]>([]);
+  const orderedDiscovered = useMemo(() => [...discovered].sort((a, b) => {
+    const aFull = supplyStatus(a).atCapacity;
+    const bFull = supplyStatus(b).atCapacity;
+    return Number(aFull) - Number(bFull) || a.name.localeCompare(b.name);
+  }), [discovered]);
+  const [discoverTotal, setDiscoverTotal] = useState(0);
+  const [discoverMore, setDiscoverMore] = useState(false);
+  const [discoverLoading, setDiscoverLoading] = useState(true);
+  const [discoverError, setDiscoverError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setDiscoverLoading(true);
+      setDiscoverError("");
+      try {
+        const url = new URL(NETMINT_DIRECTORY);
+        url.searchParams.set("limit", "24");
+        url.searchParams.set("page", String(discoverPage));
+        if (discoverQuery.trim()) url.searchParams.set("q", discoverQuery.trim());
+        const response = await fetch(url.toString(), { signal: controller.signal, cache: "no-store" });
+        if (!response.ok) throw new Error(`Directory responded with HTTP ${response.status}`);
+        const data = await response.json() as DiscoveryResponse;
+        if (controller.signal.aborted) return;
+        if (data.chainId !== 4663 || !Array.isArray(data.collections)) throw new Error("Unexpected directory response");
+        setDiscovered(previous => discoverPage === 1 ? data.collections : [
+          ...previous,
+          ...data.collections.filter(item => !previous.some(existing => existing.address.toLowerCase() === item.address.toLowerCase())),
+        ]);
+        setDiscoverTotal(data.total);
+        setDiscoverMore(data.hasMore);
+      } catch (error) {
+        if (!controller.signal.aborted) setDiscoverError(errText(error));
+      } finally {
+        if (!controller.signal.aborted) setDiscoverLoading(false);
+      }
+    }, discoverPage === 1 ? 300 : 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [discoverQuery, discoverPage]);
+
 
   const fetchHood = useCallback(async (id: string) => {
     if (!id || !address) { setHood(null); return; }
@@ -218,12 +297,14 @@ export default function NetMintPage() {
     return () => { cancelled = true; };
   }, [fetchHood, tokenId]);
 
-  const loadCollection = useCallback(async () => {
+  const loadCollection = useCallback(async (addressOverride?: string) => {
+    const requestedContract = addressOverride ?? contractInput;
+    if (addressOverride) setContractInput(addressOverride);
     setError(""); setMessage(""); setCollection(null); setTxHash(""); setMintedTokens([]); setMintedHoodieId(""); setRevealMessage("");
-    if (!isAddress(contractInput)) { setError("Enter a valid Robinhood Chain collection contract address."); return; }
+    if (!isAddress(requestedContract)) { setError("Enter a valid Robinhood Chain collection contract address."); return; }
     setCollectionLoading(true);
     try {
-      const nftAddress = getAddress(contractInput);
+      const nftAddress = getAddress(requestedContract);
       if ((await provider.getCode(nftAddress)) === "0x") throw new Error("No contract found at this address on the configured chain.");
       const nft = new Contract(nftAddress, NET_COLLECTION_ABI, provider);
       const [name, symbol, netAddress, price, maxSupply, totalSupply, maxMintsPerWallet, creatorReserve, creatorMinted] = await Promise.all([
@@ -326,6 +407,62 @@ export default function NetMintPage() {
           <h1 className="mt-5 text-[clamp(4rem,10vw,8rem)] leading-[0.8] tracking-[-0.075em]">NET<br/>MINT.</h1>
           <p className="mt-7 max-w-xl text-lg leading-relaxed">Mint on-chain collectibles directly into your Hoodie’s wallet. Pay with your connected wallet or your HoodWallet balance.</p>
         </header>
+        <section className="mt-8 border border-black" aria-label="Discover NET collections">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black p-4">
+            <div>
+              <p className="text-[9px] uppercase tracking-[0.17em] opacity-60">ON-CHAIN DISCOVERY</p>
+              <h2 className="mt-2 text-2xl tracking-[-0.04em]">DISCOVER NET COLLECTIONS.</h2>
+            </div>
+            <span className="text-[9px] uppercase">{discoverTotal} INDEXED</span>
+          </div>
+          <div className="p-4">
+            <label htmlFor="netmint-discover-search" className="text-[9px] uppercase tracking-[0.14em]">SEARCH BY NAME, SYMBOL OR CONTRACT</label>
+            <input id="netmint-discover-search" value={discoverQuery} onChange={event => {
+              setDiscoverQuery(event.target.value); setDiscoverPage(1); setDiscovered([]);
+            }} className="mt-2 w-full border border-black bg-transparent p-3 text-sm outline-none placeholder:text-black/40" placeholder="64 Faces, symbol, or 0x…" />
+            <p className="mt-3 text-[9px] leading-relaxed opacity-60">Indexing NET mint activity on Robinhood Chain. Collection compatibility is not a trust endorsement. Supply figures are cached; eligibility is checked when you mint.</p>
+            {discoverError && <div className="mt-4 border border-black p-3 text-xs" role="alert">DIRECTORY UNAVAILABLE: {discoverError}. YOU CAN STILL ENTER A CONTRACT ADDRESS BELOW.</div>}
+            {discoverLoading && discovered.length === 0 && !discoverError && <p className="mt-5 text-sm" role="status">READING COLLECTION DIRECTORY…</p>}
+            {!discoverLoading && !discoverError && discovered.length === 0 && <p className="mt-5 text-sm">NO COLLECTIONS FOUND YET. THE INDEXER MAY STILL BE CATCHING UP.</p>}
+            {discovered.length > 0 && <div className="mt-5 max-h-[540px] overflow-y-auto overscroll-contain border border-black p-3" role="region" aria-label="Scrollable NET collection directory" tabIndex={0}>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {orderedDiscovered.map(item => {
+                const status = supplyStatus(item);
+                const minted = safeBigInt(item.circulatingSupply);
+                const max = safeBigInt(item.maxSupply);
+                const price = safeBigInt(item.priceWei);
+                return <article key={item.address} className="flex min-w-0 flex-col border border-black p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="min-w-0 break-words text-lg tracking-[-0.04em]">{item.name}</h3>
+                    <span className={`shrink-0 border border-black px-2 py-1 text-[8px] uppercase ${status.atCapacity ? "bg-black text-[#ccff00]" : ""}`}>{status.label}</span>
+                  </div>
+                  <p className="mt-1 text-[9px] opacity-55">{item.symbol || "NFT"} / ROBINHOOD</p>
+                  <p className="mt-3 break-all text-[9px] opacity-70">{item.address}</p>
+                  <div className="mt-4 grid grid-cols-2 gap-3 border-y border-black py-3">
+                    <div><p className="text-[8px] opacity-60">PRICE</p><p className="mt-1 text-base">{price === null ? "—" : price === BigInt(0) ? "FREE" : `${fmt(price)} ETH`}</p></div>
+                    <div><p className="text-[8px] opacity-60">CIRCULATING / CAP</p><p className="mt-1 text-base">{minted?.toString() ?? "—"} / {max === BigInt(0) ? "∞" : max?.toString() ?? "—"}</p></div>
+                  </div>
+                  {status.percent !== null && <div className="mt-3 h-2 border border-black" aria-label={`${status.percent}% of maximum supply circulating`}><div className="h-full bg-black" style={{ width: `${status.percent}%` }}/></div>}
+                  <div className="mt-auto pt-4">
+                    <button type="button" disabled={collectionLoading || !item.interfaceCompatible || status.atCapacity} className="w-full bg-black px-3 py-3 text-[9px] uppercase tracking-[0.12em] text-[#ccff00] disabled:opacity-40" onClick={() => {
+                      void loadCollection(item.address);
+                      document.getElementById("netmint-mint-flow")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}>{status.atCapacity ? "MINTED OUT" : "SELECT COLLECTION →"}</button>
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-[9px] uppercase">
+                      <a href={item.openSeaUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">OPENSEA ↗</a>
+                      <a href={item.xSearchUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">SEARCH X ↗</a>
+                      <a href={item.blockExplorerUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">CONTRACT ↗</a>
+                    </div>
+                  </div>
+                </article>;
+              })}
+              </div>
+            </div>}
+            {discovered.length > 0 && <p className="mt-2 text-[9px] uppercase opacity-60">SCROLL TO EXPLORE MORE COLLECTIONS · MINTED-OUT COLLECTIONS LISTED LAST</p>}
+            {discoverMore && <button type="button" className="mt-5 w-full border border-black px-4 py-3 text-[10px] uppercase disabled:opacity-40" disabled={discoverLoading} onClick={() => setDiscoverPage(page => page + 1)}>{discoverLoading ? "LOADING…" : "LOAD MORE COLLECTIONS ↓"}</button>}
+          </div>
+        </section>
+        <div id="netmint-mint-flow" className="scroll-mt-20" />
         {!address ? (
           <div className="mt-6 border border-black p-10 text-center">
             <h2 className="text-3xl">CONNECT YOUR WALLET</h2>
@@ -348,7 +485,7 @@ export default function NetMintPage() {
                   <div className="flex justify-between"><span>STATUS</span><b>{hood.active ? "ACTIVE" : "INACTIVE"}</b></div>
                   <div className="flex justify-between"><span>ETH BALANCE</span><b>{fmt(hood.nativeBalance)} ETH</b></div>
                   <a className="block break-all underline" href={`${siteConfig.explorerUrl.replace(/\/$/, "")}/address/${hood.wallet}`} target="_blank" rel="noreferrer">{hood.wallet}</a>
-                  {!hood.active && <Link href="/hoodwallet" className="block underline">Activate HoodWallet →</Link>}
+                  {!hood.active && <Link href={`/hoodwallet?hoodie=${encodeURIComponent(hood.tokenId)}`} className="block underline">Activate HoodWallet →</Link>}
                 </div>}
                 <p className="mt-5 border-t border-black pt-4 text-[9px]">EOA ETH: {eoaBalance === null ? "…" : `${fmt(eoaBalance)} ETH`}</p>
               </div>
