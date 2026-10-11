@@ -217,6 +217,17 @@ const apps: HoodOSApp[] = [
 },
 
   {
+    id: "delegateos",
+    name: "DelegateOS",
+    tagline: "Give your Hoodie an agent",
+    description: "Grant, limit, inspect and revoke on-chain permissions for another wallet or AI agent without transferring your Hoodie.",
+    href: "/hoodos/delegateos",
+    fallbackIcon: "D",
+    buildType: "internal",
+    status: "live",
+  },
+
+  {
     id:
       "hoodwallet",
 
