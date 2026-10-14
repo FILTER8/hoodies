@@ -49,6 +49,66 @@ const MAX_REVEAL = 100;
 
 type MintedToken = { id: string; image: string | null; title: string; metadataError?: string };
 
+const PORTRAIT_ADDRESS = "0x2eE6305804dD94F7ff695C5Ab1f3AE805f317653";
+const PNG_SIZE = 800;
+
+function openSeaTokenUrl(collectionAddress: string, id: string) {
+  return `https://opensea.io/assets/robinhood/${collectionAddress}/${id}`;
+}
+
+async function exportPng800(imageUrl: string, collectionAddress: string, tokenId: string): Promise<void> {
+  const image = new window.Image();
+  // Required for remotely hosted art; data: SVGs work without external requests.
+  image.crossOrigin = "anonymous";
+  image.decoding = "async";
+  const loaded = new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("Unable to load the NFT artwork for PNG export."));
+  });
+  image.src = imageUrl;
+  await loaded;
+
+  // The portrait is an 8x8 SVG. First rasterize at its native resolution,
+  // then scale with nearest-neighbor to retain perfectly crisp square pixels.
+  const sourceSize = collectionAddress.toLowerCase() === PORTRAIT_ADDRESS.toLowerCase()
+    ? 8
+    : Math.max(1, Math.min(2048, image.naturalWidth || PNG_SIZE));
+  const sourceHeight = collectionAddress.toLowerCase() === PORTRAIT_ADDRESS.toLowerCase()
+    ? 8
+    : Math.max(1, Math.min(2048, image.naturalHeight || PNG_SIZE));
+  const source = document.createElement("canvas");
+  source.width = sourceSize;
+  source.height = sourceHeight;
+  const sourceCtx = source.getContext("2d");
+  if (!sourceCtx) throw new Error("Canvas is unavailable in this browser.");
+  sourceCtx.imageSmoothingEnabled = false;
+  sourceCtx.drawImage(image, 0, 0, sourceSize, sourceHeight);
+
+  const output = document.createElement("canvas");
+  output.width = PNG_SIZE;
+  output.height = PNG_SIZE;
+  const ctx = output.getContext("2d");
+  if (!ctx) throw new Error("Canvas is unavailable in this browser.");
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, PNG_SIZE, PNG_SIZE);
+  ctx.drawImage(source, 0, 0, PNG_SIZE, PNG_SIZE);
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    try {
+      output.toBlob(result => result ? resolve(result) : reject(new Error("PNG encoding failed.")), "image/png");
+    } catch (error) { reject(error); }
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `netmint-${collectionAddress.slice(2, 10)}-${tokenId}-800x800.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+
 function resolveMetadataUrl(value: string): string | null {
   if (value.startsWith("ipfs://")) {
     const path = value.slice(7).replace(/^ipfs\//, "");
@@ -213,6 +273,8 @@ export default function NetMintPage() {
   const [error, setError] = useState("");
   const [txHash, setTxHash] = useState("");
   const [mintedTokens, setMintedTokens] = useState<MintedToken[]>([]);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState("");
   const [mintedHoodieId, setMintedHoodieId] = useState("");
   const [revealLoading, setRevealLoading] = useState(false);
   const [revealMessage, setRevealMessage] = useState("");
@@ -485,6 +547,19 @@ export default function NetMintPage() {
     finally { setPending(false); }
   }
 
+  async function downloadTokenPng(token: MintedToken) {
+    if (!collection || !token.image || downloadingId !== null) return;
+    setDownloadError("");
+    setDownloadingId(token.id);
+    try {
+      await exportPng800(token.image, collection.address, token.id);
+    } catch (error) {
+      setDownloadError(`Token #${token.id}: ${errText(error)}. Some external image hosts do not permit canvas export.`);
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
   const inputClass = "mt-2 w-full border border-black bg-transparent p-3 text-sm outline-none placeholder:text-black/35";
   const solidButton = "w-full bg-black px-5 py-4 text-[10px] uppercase tracking-[0.16em] text-[#ccff00] disabled:cursor-not-allowed disabled:opacity-30";
   return (
@@ -651,12 +726,16 @@ export default function NetMintPage() {
                               <p className="break-words text-xs">{token.title}</p>
                               <p className="text-[9px] opacity-60">TOKEN #{token.id}</p>
                               {token.metadataError && <p className="break-words text-[8px] opacity-60">{token.metadataError}</p>}
-                              <a className="inline-block text-[9px] underline underline-offset-2" href={`${EXPLORER_URL}/token/${collection?.address}/instance/${token.id}`} target="_blank" rel="noreferrer">VIEW NFT ↗</a>
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+                                <a className="inline-block text-[9px] underline underline-offset-2" href={openSeaTokenUrl(collection!.address, token.id)} target="_blank" rel="noreferrer">VIEW ON OPENSEA ↗</a>
+                                <button type="button" className="text-[9px] underline underline-offset-2 disabled:opacity-40" disabled={!token.image || downloadingId !== null} onClick={() => void downloadTokenPng(token)}>{downloadingId === token.id ? "EXPORTING PNG…" : "DOWNLOAD PNG 800×800 ↓"}</button>
+                              </div>
                             </div>
                           </div>
                         ))}
                       </div>
                     )}
+                    {downloadError && <p className="mt-3 border border-black p-3 text-xs" role="alert">{downloadError}</p>}
                     {mintedTokens.length > 0 && <Link className="mt-5 inline-block text-[10px] underline underline-offset-4" href={`/hoodwallet?hoodie=${mintedHoodieId || hood?.tokenId || tokenId}`} >OPEN HOODWALLET →</Link>}
                   </div>
                 </section>
