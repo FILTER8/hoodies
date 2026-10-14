@@ -13,6 +13,7 @@ import { siteConfig } from "../../../lib/config";
 import { apiConfig, collectionApiUrl } from "../../../lib/api";
 
 const NET = "0x00000000B24D62781dB359b07880a105cD0b64e6";
+const EXPLORER_URL = "https://robin.etherscan.io";
 const HOOD_OS_ABI = [
   "function hoodInfo(uint256 tokenId) view returns (tuple(uint256 tokenId,address owner,address wallet,bool walletDeployed,bool active,address activationOwner,uint64 activatedAt,uint256 walletState,uint256 nativeBalance,uint256 paymentTokenBalance) info)",
 ] as const;
@@ -27,11 +28,17 @@ const NET_COLLECTION_ABI = [
   "function creatorReserve() view returns (uint256)",
   "function creatorMinted() view returns (uint256)",
   "function mint(uint256 amount) payable",
+  "function hoodieClaimed(uint256 hoodieId) view returns (bool)",
+  "function HOODIE_CONTRACT() view returns (address)",
+  "function freeMint(uint256 hoodieId)",
 ] as const;
 const HOOD_WALLET_SIGNATURE =
   "function execute(address target, uint256 value, bytes data, uint8 operation) payable returns (bytes result)";
 const HOOD_WALLET_ABI = parseAbi([HOOD_WALLET_SIGNATURE]);
 const mintInterface = new Interface(["function mint(uint256 amount) payable"]);
+const freeMintInterface = new Interface(["function freeMint(uint256 hoodieId)"]);
+const FREE_MINT_ABI = parseAbi(["function freeMint(uint256 hoodieId)"]);
+const HOODIE_NFT_ADDRESS = "0x9Ec6C5b9f572A9B02138E553BC5F5882Da735F45";
 const executeInterface = new Interface([HOOD_WALLET_SIGNATURE]);
 const erc721Interface = new Interface([
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
@@ -124,6 +131,7 @@ type Collection = {
   address: string; name: string; symbol: string; price: bigint;
   maxSupply: bigint; totalSupply: bigint; maxMintsPerWallet: bigint;
   creatorReserve: bigint; creatorMinted: bigint;
+  hoodieFreeMint: boolean;
 };
 type PaySource = "eoa" | "hoodwallet";
 
@@ -199,6 +207,8 @@ export default function NetMintPage() {
   const [paySource, setPaySource] = useState<PaySource>("eoa");
   const [eoaBalance, setEoaBalance] = useState<bigint | null>(null);
   const [pending, setPending] = useState(false);
+  const [freeClaimed, setFreeClaimed] = useState<boolean | null>(null);
+  const [freeClaimLoading, setFreeClaimLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [txHash, setTxHash] = useState("");
@@ -300,7 +310,7 @@ export default function NetMintPage() {
   const loadCollection = useCallback(async (addressOverride?: string) => {
     const requestedContract = addressOverride ?? contractInput;
     if (addressOverride) setContractInput(addressOverride);
-    setError(""); setMessage(""); setCollection(null); setTxHash(""); setMintedTokens([]); setMintedHoodieId(""); setRevealMessage("");
+    setError(""); setMessage(""); setCollection(null); setFreeClaimed(null); setTxHash(""); setMintedTokens([]); setMintedHoodieId(""); setRevealMessage("");
     if (!isAddress(requestedContract)) { setError("Enter a valid Robinhood Chain collection contract address."); return; }
     setCollectionLoading(true);
     try {
@@ -314,14 +324,42 @@ export default function NetMintPage() {
       if (String(netAddress).toLowerCase() !== NET.toLowerCase()) {
         throw new Error("This contract does not advertise the expected NET Protocol integration.");
       }
+      // Optional collection-specific free-claim extension. Standard NET NFTs don't have it.
+      let hoodieFreeMint = false;
+      try {
+        const hoodieAddress = String(await nft.HOODIE_CONTRACT());
+        if (hoodieAddress.toLowerCase() === HOODIE_NFT_ADDRESS.toLowerCase()) {
+          await nft.hoodieClaimed(BigInt(0));
+          hoodieFreeMint = true;
+        }
+      } catch { /* Standard NET contracts simply won't expose this option. */ }
       setCollection({ address: nftAddress, name: String(name), symbol: String(symbol),
         price: BigInt(price), maxSupply: BigInt(maxSupply), totalSupply: BigInt(totalSupply),
         maxMintsPerWallet: BigInt(maxMintsPerWallet), creatorReserve: BigInt(creatorReserve),
-        creatorMinted: BigInt(creatorMinted),
+        creatorMinted: BigInt(creatorMinted), hoodieFreeMint,
       });
     } catch (e) { setError(`Unable to verify NET collection: ${errText(e)}`); }
     finally { setCollectionLoading(false); }
   }, [contractInput, provider]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const nftAddress = collection?.hoodieFreeMint ? collection.address : null;
+    const id = tokenId;
+    queueMicrotask(async () => {
+      if (cancelled) return;
+      setFreeClaimed(null);
+      if (!nftAddress || !id) { setFreeClaimLoading(false); return; }
+      setFreeClaimLoading(true);
+      try {
+        const nft = new Contract(nftAddress, NET_COLLECTION_ABI, provider);
+        const claimed = Boolean(await nft.hoodieClaimed(BigInt(id)));
+        if (!cancelled) setFreeClaimed(claimed);
+      } catch { if (!cancelled) setFreeClaimed(null); }
+      finally { if (!cancelled) setFreeClaimLoading(false); }
+    });
+    return () => { cancelled = true; };
+  }, [collection?.address, collection?.hoodieFreeMint, tokenId, provider]);
 
   const validQuantity = isAmount(quantity) && BigInt(quantity) <= BigInt(100);
   const amount = validQuantity ? BigInt(quantity) : BigInt(0);
@@ -330,6 +368,61 @@ export default function NetMintPage() {
   const enoughEth = paySource === "eoa" ? eoaBalance !== null && eoaBalance >= mintPrice : Boolean(hood && hood.nativeBalance >= mintPrice);
   const canMint = Boolean(collection && hood?.active && hood.walletDeployed && owned && validQuantity && enoughEth && !pending && !hoodLoading && !collectionLoading);
   const chosenHoodie = hoodies.find(item => item.tokenId === tokenId);
+
+  const canFreeMint = Boolean(collection?.hoodieFreeMint && address && owned && tokenId &&
+    freeClaimed === false && !freeClaimLoading && !pending && !collectionLoading);
+
+  async function claimFreeMint() {
+    if (!canFreeMint || !collection || !address || !tokenId) return;
+    const claimingId = tokenId;
+    const nftAddress = collection.address;
+    setPending(true); setError(""); setMessage("Checking your free Hoodie claim…");
+    setTxHash(""); setMintedTokens([]); setMintedHoodieId(""); setRevealMessage("");
+    try {
+      const nft = new Contract(nftAddress, NET_COLLECTION_ABI, provider);
+      const hoodiesContract = new Contract(HOODIE_NFT_ADDRESS, ["function ownerOf(uint256 tokenId) view returns (address)"], provider);
+      const [claimed, owner, currentSupply, cap] = await Promise.all([
+        nft.hoodieClaimed(BigInt(claimingId)), hoodiesContract.ownerOf(BigInt(claimingId)),
+        nft.totalSupply(), nft.maxSupply(),
+      ]);
+      if (claimed) { setFreeClaimed(true); throw new Error(`Hoodie #${claimingId} already claimed its free portrait.`); }
+      if (String(owner).toLowerCase() !== address.toLowerCase()) throw new Error("Connected wallet no longer directly owns this Hoodie.");
+      if (BigInt(cap) !== BigInt(0) && BigInt(currentSupply) >= BigInt(cap)) throw new Error("Collection is minted out.");
+      const data = freeMintInterface.encodeFunctionData("freeMint", [BigInt(claimingId)]);
+      await ensureRequiredNetwork();
+      setMessage("Simulating the free claim…");
+      await provider.call({ from: address, to: nftAddress, data });
+      const walletClient = await getWalletClient();
+      if (!walletClient.account || walletClient.account.address.toLowerCase() !== address.toLowerCase()) {
+        throw new Error("Connected wallet changed. Please reconnect.");
+      }
+      setMessage("Confirm the free claim in your wallet (gas only)…");
+      const hash = await walletClient.writeContract({
+        chain: null,
+        account: walletClient.account,
+        address: nftAddress as Address,
+        abi: FREE_MINT_ABI,
+        functionName: "freeMint",
+        args: [BigInt(claimingId)],
+      });
+      setTxHash(hash);
+      setMessage(`Free claim ${short(hash)} submitted. Waiting for confirmation…`);
+      const receipt = await provider.waitForTransaction(hash, 1);
+      if (!receipt || receipt.status !== 1) throw new Error("Free claim was not confirmed successfully.");
+      setFreeClaimed(true);
+      setMintedHoodieId(claimingId);
+      setMessage(`Free portrait claimed using Hoodie #${claimingId}! The NFT was minted to your connected wallet.`);
+      setRevealLoading(true);
+      try {
+        const tokens = await revealMintedTokens(provider, nftAddress, address, receipt.logs);
+        setMintedTokens(tokens);
+        setRevealMessage(tokens.length ? "Your newly minted free portrait" : "Claim confirmed. NFT Transfer event not found in receipt.");
+      } catch (e) { setRevealMessage(`Claim confirmed, but artwork could not load: ${errText(e)}`); }
+      finally { setRevealLoading(false); }
+      try { setEoaBalance(await provider.getBalance(address)); } catch { /* Claim still succeeded. */ }
+    } catch (e) { setError(errText(e)); setMessage(""); }
+    finally { setPending(false); }
+  }
 
   async function mint() {
     if (pending || !canMint || !collection || !hood || !address || !validQuantity) return;
@@ -405,7 +498,7 @@ export default function NetMintPage() {
         <header className="border-b border-black py-12">
           <p className="text-[9px] uppercase tracking-[0.2em] opacity-55">Robinhood Chain / NET-integrated ERC721A</p>
           <h1 className="mt-5 text-[clamp(4rem,10vw,8rem)] leading-[0.8] tracking-[-0.075em]">NET<br/>MINT.</h1>
-          <p className="mt-7 max-w-xl text-lg leading-relaxed">Mint on-chain collectibles directly into your Hoodie’s wallet. Pay with your connected wallet or your HoodWallet balance.</p>
+          <p className="mt-7 max-w-xl text-lg leading-relaxed">Mint on-chain collectibles into your Hoodie’s wallet, or claim eligible free NFTs directly to your connected wallet. No Bankr required.</p>
         </header>
         <section className="mt-8 border border-black" aria-label="Discover NET collections">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black p-4">
@@ -484,7 +577,7 @@ export default function NetMintPage() {
                 {hood && <div className="mt-5 space-y-3 text-[10px]">
                   <div className="flex justify-between"><span>STATUS</span><b>{hood.active ? "ACTIVE" : "INACTIVE"}</b></div>
                   <div className="flex justify-between"><span>ETH BALANCE</span><b>{fmt(hood.nativeBalance)} ETH</b></div>
-                  <a className="block break-all underline" href={`${siteConfig.explorerUrl.replace(/\/$/, "")}/address/${hood.wallet}`} target="_blank" rel="noreferrer">{hood.wallet}</a>
+                  <a className="block break-all underline" href={`${EXPLORER_URL}/address/${hood.wallet}`} target="_blank" rel="noreferrer">{hood.wallet}</a>
                   {!hood.active && <Link href={`/hoodwallet?hoodie=${encodeURIComponent(hood.tokenId)}`} className="block underline">Activate HoodWallet →</Link>}
                 </div>}
                 <p className="mt-5 border-t border-black pt-4 text-[9px]">EOA ETH: {eoaBalance === null ? "…" : `${fmt(eoaBalance)} ETH`}</p>
@@ -510,6 +603,16 @@ export default function NetMintPage() {
                 </div>
                 <p className="px-4 pb-4 text-[9px] opacity-60">Circulating supply can differ from total ever minted if tokens were burned. Mint availability is verified by transaction simulation.</p>
               </section>}
+              {collection?.hoodieFreeMint && <section className="border border-black">
+                <h2 className="border-b border-black p-4 text-[9px] uppercase">Free portrait / Hoodie claim</h2>
+                <div className="space-y-3 p-4">
+                  <p className="text-sm">One free NFT per OnChainHoodie ID, while supply lasts. No mint price; your connected wallet pays network gas.</p>
+                  <p className="text-[10px]">Selected: Hoodie #{tokenId || "—"} / {freeClaimLoading ? "CHECKING CLAIM…" : freeClaimed === true ? "ALREADY CLAIMED" : freeClaimed === false ? "AVAILABLE" : "STATUS UNKNOWN"}</p>
+                  <p className="text-[10px] font-bold">The contract sends the free NFT to your connected wallet, not your HoodWallet. You can transfer it to your HoodWallet separately afterwards.</p>
+                  <button type="button" className={solidButton} disabled={!canFreeMint} onClick={() => void claimFreeMint()}>{pending ? "PLEASE WAIT…" : freeClaimed ? "FREE MINT ALREADY CLAIMED" : `CLAIM FREE NFT WITH HOODIE #${tokenId || "—"} →`}</button>
+                  {!owned && <p className="text-[10px]">Connect the direct owner of the selected Hoodie to claim.</p>}
+                </div>
+              </section>}
               {collection && <section className="border border-black">
                 <h2 className="border-b border-black p-4 text-[9px] uppercase">04 / Mint as Hoodie</h2>
                 <div className="space-y-5 p-4">
@@ -526,7 +629,7 @@ export default function NetMintPage() {
                   <p className="text-[9px] leading-relaxed opacity-60">The connected owner always signs and pays network gas. For EOA payment the mint ETH passes through your HoodWallet in the same transaction. Simulations may fail for contracts with custom mint restrictions.</p>
                 </div>
               </section>}
-              {!!message && <div className="border border-black p-4 text-sm" role="status">{message}{txHash && <a href={`${siteConfig.explorerUrl.replace(/\/$/, "")}/tx/${txHash}`} target="_blank" rel="noreferrer" className="mt-3 block underline">View transaction ↗</a>}</div>}
+              {!!message && <div className="border border-black p-4 text-sm" role="status">{message}{txHash && <a href={`${EXPLORER_URL}/tx/${txHash}`} target="_blank" rel="noreferrer" className="mt-3 block underline">View transaction ↗</a>}</div>}
               {(revealLoading || revealMessage || mintedTokens.length > 0) && (
                 <section className="border border-black" aria-label="Newly minted collectibles">
                   <h2 className="border-b border-black p-4 text-[9px] uppercase tracking-[0.16em]">05 / Your new collectibles</h2>
@@ -548,13 +651,13 @@ export default function NetMintPage() {
                               <p className="break-words text-xs">{token.title}</p>
                               <p className="text-[9px] opacity-60">TOKEN #{token.id}</p>
                               {token.metadataError && <p className="break-words text-[8px] opacity-60">{token.metadataError}</p>}
-                              <a className="inline-block text-[9px] underline underline-offset-2" href={`${siteConfig.explorerUrl.replace(/\/$/, "")}/token/${collection?.address}/instance/${token.id}`} target="_blank" rel="noreferrer">VIEW NFT ↗</a>
+                              <a className="inline-block text-[9px] underline underline-offset-2" href={`${EXPLORER_URL}/token/${collection?.address}/instance/${token.id}`} target="_blank" rel="noreferrer">VIEW NFT ↗</a>
                             </div>
                           </div>
                         ))}
                       </div>
                     )}
-                    {mintedTokens.length > 0 && <Link className="mt-5 inline-block text-[10px] underline underline-offset-4" href={`/hoodwallet?hoodie=${mintedHoodieId || hood?.tokenId || tokenId}`} >VIEW IN HOODWALLET →</Link>}
+                    {mintedTokens.length > 0 && <Link className="mt-5 inline-block text-[10px] underline underline-offset-4" href={`/hoodwallet?hoodie=${mintedHoodieId || hood?.tokenId || tokenId}`} >OPEN HOODWALLET →</Link>}
                   </div>
                 </section>
               )}

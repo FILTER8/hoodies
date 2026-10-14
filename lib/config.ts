@@ -210,6 +210,20 @@ const testnetOCHProtocolMultisigAddress =
   process.env.NEXT_PUBLIC_OCH_PROTOCOL_MULTISIG_TESTNET_ADDRESS?.trim() || "";
 
 /* -------------------------------------------------------------------------- */
+/* ListingOS / OpenSea Seaport (Robinhood mainnet) */
+/* -------------------------------------------------------------------------- */
+
+// Use the exact deployed Seaport contract returned by a verified OpenSea
+// Robinhood Chain order. Do not guess or substitute another chain's Seaport.
+const mainnetListingOSSeaportAddress =
+  process.env.NEXT_PUBLIC_LISTINGOS_SEAPORT_MAINNET_ADDRESS?.trim() ||
+  process.env.NEXT_PUBLIC_LISTINGOS_SEAPORT_ADDRESS?.trim() ||
+  "";
+
+const testnetListingOSSeaportAddress =
+  process.env.NEXT_PUBLIC_LISTINGOS_SEAPORT_TESTNET_ADDRESS?.trim() || "";
+
+/* -------------------------------------------------------------------------- */
 /* Site Config */
 /* -------------------------------------------------------------------------- */
 
@@ -286,6 +300,22 @@ export const siteConfig = {
     appNetwork === "mainnet"
       ? mainnetGoatAddress
       : testnetGoatAddress,
+
+  /* ---------------------------------------------------------------------- */
+  /* ListingOS / OpenSea                                                    */
+  /* ---------------------------------------------------------------------- */
+
+  listingOSSeaportAddress:
+    appNetwork === "mainnet"
+      ? mainnetListingOSSeaportAddress
+      : testnetListingOSSeaportAddress,
+
+  listingOSCanvasAddress:
+    appNetwork === "mainnet"
+      ? mainnetHoodieArtAddress
+      : testnetHoodieArtAddress,
+
+  listingOSOpenSeaApiUrl: "https://api.opensea.io/api/v2",
 
   /* ---------------------------------------------------------------------- */
   /* Ping                                                                   */
