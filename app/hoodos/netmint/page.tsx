@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Contract, Interface, JsonRpcProvider, formatEther, getAddress, isAddress } from "ethers";
 import { parseAbi } from "viem";
 import type { Address, Hex } from "viem";
@@ -56,7 +56,11 @@ function openSeaTokenUrl(collectionAddress: string, id: string) {
   return `https://opensea.io/assets/robinhood/${collectionAddress}/${id}`;
 }
 
-async function exportPng800(imageUrl: string, collectionAddress: string, tokenId: string): Promise<void> {
+function safeCollectionFilename(name: string): string {
+  return name.trim().replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "Collection";
+}
+
+async function exportPng800(imageUrl: string, collectionName: string, collectionAddress: string, tokenId: string): Promise<void> {
   const image = new window.Image();
   // Required for remotely hosted art; data: SVGs work without external requests.
   image.crossOrigin = "anonymous";
@@ -101,7 +105,7 @@ async function exportPng800(imageUrl: string, collectionAddress: string, tokenId
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `netmint-${collectionAddress.slice(2, 10)}-${tokenId}-800x800.png`;
+  link.download = `${safeCollectionFilename(collectionName)}-${tokenId}.png`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -261,6 +265,8 @@ export default function NetMintPage() {
   const [ownershipLoading, setOwnershipLoading] = useState(false);
   const [hoodLoading, setHoodLoading] = useState(false);
   const [contractInput, setContractInput] = useState("");
+  const initialCollectionLoaded = useRef(false);
+  const [shareFeedback, setShareFeedback] = useState("");
   const [collection, setCollection] = useState<Collection | null>(null);
   const [collectionLoading, setCollectionLoading] = useState(false);
   const [quantity, setQuantity] = useState("1");
@@ -372,7 +378,7 @@ export default function NetMintPage() {
   const loadCollection = useCallback(async (addressOverride?: string) => {
     const requestedContract = addressOverride ?? contractInput;
     if (addressOverride) setContractInput(addressOverride);
-    setError(""); setMessage(""); setCollection(null); setFreeClaimed(null); setTxHash(""); setMintedTokens([]); setMintedHoodieId(""); setRevealMessage("");
+    setError(""); setMessage(""); setShareFeedback(""); setCollection(null); setFreeClaimed(null); setTxHash(""); setMintedTokens([]); setMintedHoodieId(""); setRevealMessage("");
     if (!isAddress(requestedContract)) { setError("Enter a valid Robinhood Chain collection contract address."); return; }
     setCollectionLoading(true);
     try {
@@ -403,6 +409,27 @@ export default function NetMintPage() {
     } catch (e) { setError(`Unable to verify NET collection: ${errText(e)}`); }
     finally { setCollectionLoading(false); }
   }, [contractInput, provider]);
+
+  // A shared URL selects and reads the collection once on initial page load.
+  // This works without requiring the visitor to connect a wallet first.
+  useEffect(() => {
+    if (initialCollectionLoaded.current) return;
+    initialCollectionLoaded.current = true;
+    const requested = new URLSearchParams(window.location.search).get("collection");
+    if (requested && isAddress(requested)) void loadCollection(requested);
+  }, [loadCollection]);
+
+  async function copyCollectionLink() {
+    if (!collection) return;
+    const url = new URL(window.location.pathname, window.location.origin);
+    url.searchParams.set("collection", collection.address);
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      setShareFeedback("Collection link copied!");
+    } catch {
+      setShareFeedback(`Copy this link: ${url.toString()}`);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -552,7 +579,7 @@ export default function NetMintPage() {
     setDownloadError("");
     setDownloadingId(token.id);
     try {
-      await exportPng800(token.image, collection.address, token.id);
+      await exportPng800(token.image, collection.name, collection.address, token.id);
     } catch (error) {
       setDownloadError(`Token #${token.id}: ${errText(error)}. Some external image hosts do not permit canvas export.`);
     } finally {
@@ -676,6 +703,10 @@ export default function NetMintPage() {
                   <div><span className="text-[9px] opacity-60">CIRCULATING SUPPLY</span><p className="mt-2 text-xl">{collection.totalSupply.toString()} / {collection.maxSupply === BigInt(0) ? "∞" : collection.maxSupply.toString()}</p></div>
                   <div><span className="text-[9px] opacity-60">PUBLIC MINT LIMIT PER WALLET</span><p className="mt-2 text-xl">{collection.maxMintsPerWallet === BigInt(0) ? "UNLIMITED" : collection.maxMintsPerWallet.toString()}</p></div>
                 </div>
+                  <div className="mx-4 mb-4 flex flex-wrap items-center gap-3 border-t border-black pt-4">
+                    <button type="button" onClick={() => void copyCollectionLink()} className="border border-black px-4 py-3 text-[10px] font-bold uppercase hover:bg-black hover:text-[#ccff00]">COPY COLLECTION LINK ↗</button>
+                    {shareFeedback && <span className="break-all text-[10px]" role="status">{shareFeedback}</span>}
+                  </div>
                 <p className="px-4 pb-4 text-[9px] opacity-60">Circulating supply can differ from total ever minted if tokens were burned. Mint availability is verified by transaction simulation.</p>
               </section>}
               {collection?.hoodieFreeMint && <section className="border border-black">
