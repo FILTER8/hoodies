@@ -211,9 +211,13 @@
       "contract": "0x7A9AA55Ee6bA43A26bdfb5187D881eAeAA56e5F9",
       "name": "CRPT FACES"
     },
+    {
+      "contract": "0x2eE6305804dD94F7ff695C5Ab1f3AE805f317653",
+      "name": "8x8Portrait"
+    },
         {
       "contract": "0xc8e36ae47246e5943da2b228fbaff1fb27a473b0",
       "name": "64 FACES"
     }
   ]
-}
+} 
