@@ -99,8 +99,13 @@ export async function interpretActions(raw:unknown, expected:{wallet:string;cont
  const signedMessage=obj(typed.message ?? typed);
  if (!Object.keys(signedMessage).length)throw Error('OpenSea EIP-712 signing message missing order parameters');
  const {params,counter,seaport}=makeOrder(obj(create.orders[0]),signedMessage);
- checkOrder(params,expected.wallet,expected.contract,expected.tokenId);
+ // Ensure OpenSea's typed-data message agrees with its returned order before
+ // diagnosing whether its zone and conduit are compatible with ListingOS.
  verifyMessage(typed,params,counter,seaport);
+ if(params.orderType!==2 && params.orderType!==3){
+  throw Error(`OpenSea returned orderType=${params.orderType}, zone=${params.zone}, conduitKey=${params.conduitKey}. ListingOS currently requires restricted Seaport order type 2 or 3. No signature or approval was requested; inspect these exact OpenSea-provided values before changing the acceptance policy.`);
+ }
+ checkOrder(params,expected.wallet,expected.contract,expected.tokenId);
  const seaportContract=new Contract(seaport,SEAPORT_ABI,expected.provider);
  const chainCounter=String(await seaportContract.getCounter(expected.wallet));
  if(counter!==chainCounter)throw Error('OpenSea order counter is stale');
