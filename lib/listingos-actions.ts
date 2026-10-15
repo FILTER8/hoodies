@@ -56,12 +56,14 @@ function parseMessage(message:unknown):Obj {
  try{parsed=JSON.parse(message);}catch {throw Error('OpenSea signing message was not JSON typed data; refused to invent a signing payload');}
  return obj(parsed);
 }
-function makeOrder(raw:Obj):{params:Parameters;counter:string;seaport:string} {
+function makeOrder(raw:Obj, signedMessage:Obj):{params:Parameters;counter:string;seaport:string} {
  const counter=num(raw.counter,'orders[0].counter');
  const seaport=addr(raw.protocolAddress);
  const params=cleanParams({
   offerer:addr(raw.offerer),zone:addr(raw.zone),offer:items(raw.offer,false),consideration:items(raw.consideration,true),
-  orderType:num(raw.orderType,'orders[0].orderType'),startTime:num(raw.startTime,'orders[0].startTime'),endTime:num(raw.endTime,'orders[0].endTime'),
+  // Only recover a missing orderType from the actual OpenSea EIP-712 signing message.
+  // Never invent FULL_OPEN or another value: Seaport hashes the precise order type.
+  orderType:num(raw.orderType ?? signedMessage.orderType,'orders[0].orderType / signatureRequest.message.orderType'),startTime:num(raw.startTime,'orders[0].startTime'),endTime:num(raw.endTime,'orders[0].endTime'),
   zoneHash:String(raw.zoneHash),salt:num(raw.salt,'orders[0].salt'),conduitKey:String(raw.conduitKey),
   totalOriginalConsiderationItems:(raw.consideration as unknown[])?.length,
  });
@@ -90,12 +92,14 @@ export async function interpretActions(raw:unknown, expected:{wallet:string;cont
  const create=steps.map(s=>obj(obj(s).createListingsAction)).find(v=>Object.keys(v).length>0);
  if(!create)throw Error('OpenSea did not provide createListingsAction');
  if(!Array.isArray(create.orders)||create.orders.length!==1)throw Error('Expected exactly one OpenSea listing order');
- const {params,counter,seaport}=makeOrder(obj(create.orders[0]));
- checkOrder(params,expected.wallet,expected.contract,expected.tokenId);
  const request=obj(create.signatureRequest);
  const chain=obj(request.chainIdentifier);
  if(Number(chain.chainId)!==CHAIN_ID)throw Error('OpenSea signing request chain does not match Robinhood');
  const typed=parseMessage(request.message);
+ const signedMessage=obj(typed.message ?? typed);
+ if (!Object.keys(signedMessage).length)throw Error('OpenSea EIP-712 signing message missing order parameters');
+ const {params,counter,seaport}=makeOrder(obj(create.orders[0]),signedMessage);
+ checkOrder(params,expected.wallet,expected.contract,expected.tokenId);
  verifyMessage(typed,params,counter,seaport);
  const seaportContract=new Contract(seaport,SEAPORT_ABI,expected.provider);
  const chainCounter=String(await seaportContract.getCounter(expected.wallet));
