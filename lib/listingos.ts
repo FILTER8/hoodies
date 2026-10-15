@@ -22,7 +22,7 @@ export function provider() { if (siteConfig.chainId !== CHAIN_ID) throw Error('L
 export function seaportAddress() { const a=siteConfig.listingOSSeaportAddress; if(!a) throw Error('Configure NEXT_PUBLIC_LISTINGOS_SEAPORT_MAINNET_ADDRESS from a verified Robinhood OpenSea order'); return getAddress(a); }
 export function requireOpenSeaKey() { const key=process.env.OPENSEA_API_KEY; if(!key) throw Error('Configure OPENSEA_API_KEY'); return key; }
 export function jsonError(e:unknown) { return e instanceof Error ? e.message : 'Unknown failure'; }
-export function parsePrice(price:string) { const x=parseEther(price); if(x<=BigInt(0)) throw Error('Price must be positive'); return x; }
+export function parsePrice(price:string) { const x=parseEther(price); if(x<=0n) throw Error('Price must be positive'); return x; }
 export async function hoodInfo(hoodieId:string) { const p=provider(); const i=await new Contract(HOODOS,HOODOS_ABI,p).hoodInfo(BigInt(hoodieId)); if(!i.active || !i.walletDeployed) throw Error('HoodWallet not active/deployed'); return {p, owner:getAddress(i.owner), wallet:getAddress(i.wallet), hoodieId}; }
 export async function getNftOwner(p:JsonRpcProvider, contract:string, tokenId:string) { return getAddress(await new Contract(contract,NFT_ABI,p).ownerOf(BigInt(tokenId))); }
 export function requireCanvasContract(contract:string) { return getAddress(contract); } // Legacy name; ListingOS supports ERC-721s from multiple contracts.
@@ -33,11 +33,18 @@ export function components(params:Parameters,counter:string){ const {totalOrigin
 export function cleanParams(v:unknown):Parameters { if(!v || typeof v!=='object') throw Error('Missing order parameters'); const x=v as Record<string,unknown>; const toItems=(a:unknown, recipient:boolean) => {if(!Array.isArray(a)) throw Error('Invalid items');return a.map((it:unknown)=>{const z=it as Record<string,unknown>;return {itemType:Number(z.itemType),token:getAddress(String(z.token)),identifierOrCriteria:String(z.identifierOrCriteria),startAmount:String(z.startAmount),endAmount:String(z.endAmount),...(recipient?{recipient:getAddress(String(z.recipient))}:{})};});};return {offerer:getAddress(String(x.offerer)),zone:getAddress(String(x.zone)),offer:toItems(x.offer,false),consideration:toItems(x.consideration,true),orderType:Number(x.orderType),startTime:String(x.startTime),endTime:String(x.endTime),zoneHash:String(x.zoneHash),salt:String(x.salt),conduitKey:String(x.conduitKey),totalOriginalConsiderationItems:Number(x.totalOriginalConsiderationItems)}; }
 export function checkOrder(p:Parameters,wallet:string,token:string,id:string){
  if(getAddress(p.offerer)!==getAddress(wallet))throw Error('Offerer is not HoodWallet');
- if(p.offer.length!==1||p.offer[0].itemType!==2||getAddress(p.offer[0].token)!==getAddress(token)||BigInt(p.offer[0].identifierOrCriteria)!==BigInt(id)||BigInt(p.offer[0].startAmount)!==BigInt(1)||BigInt(p.offer[0].endAmount)!==BigInt(1))throw Error('Unexpected NFT offer');
- if(p.orderType!==2&&p.orderType!==3)throw Error('Order must use restricted OpenSea Signed Zone');
- if(p.zone===ZeroAddress||p.conduitKey===ZeroHash)throw Error('Missing OpenSea zone or conduit key');
+ if(p.offer.length!==1||p.offer[0].itemType!==2||getAddress(p.offer[0].token)!==getAddress(token)||BigInt(p.offer[0].identifierOrCriteria)!==BigInt(id)||BigInt(p.offer[0].startAmount)!==1n||BigInt(p.offer[0].endAmount)!==1n)throw Error('Unexpected NFT offer');
+ // OpenSea's Robinhood Listing Creation Actions API can return either
+ // FULL_OPEN (0, zero zone) or restricted (2/3, nonzero zone) orders.
+ // Reject other order types and inconsistent zone combinations.
+ const fullOpen=p.orderType===0;
+ const restricted=p.orderType===2||p.orderType===3;
+ if(!fullOpen&&!restricted)throw Error('Unsupported OpenSea Seaport order type');
+ if(fullOpen&&(p.zone!==ZeroAddress||p.zoneHash!==ZeroHash))throw Error('FULL_OPEN order must have zero zone and zone hash');
+ if(restricted&&p.zone===ZeroAddress)throw Error('Restricted OpenSea order missing zone');
+ if(p.conduitKey===ZeroHash)throw Error('Missing OpenSea conduit key');
  if(p.consideration.length<2)throw Error('Missing seller or marketplace payment items');
- for(const c of p.consideration){if(c.itemType!==0||getAddress(c.token)!==ZeroAddress||BigInt(c.startAmount)!==BigInt(c.endAmount)||BigInt(c.startAmount)<=BigInt(0))throw Error('Only fixed native ETH consideration supported');}
+ for(const c of p.consideration){if(c.itemType!==0||getAddress(c.token)!==ZeroAddress||BigInt(c.startAmount)!==BigInt(c.endAmount)||BigInt(c.startAmount)<=0n)throw Error('Only fixed native ETH consideration supported');}
  if(!p.consideration.some(c=>getAddress(c.recipient!)===getAddress(wallet)))throw Error('Missing HoodWallet sale proceeds');
  if(BigInt(p.endTime)<=BigInt(Math.floor(Date.now()/1000)))throw Error('Listing already expired');
 }

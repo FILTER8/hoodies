@@ -102,9 +102,6 @@ export async function interpretActions(raw:unknown, expected:{wallet:string;cont
  // Ensure OpenSea's typed-data message agrees with its returned order before
  // diagnosing whether its zone and conduit are compatible with ListingOS.
  verifyMessage(typed,params,counter,seaport);
- if(params.orderType!==2 && params.orderType!==3){
-  throw Error(`OpenSea returned orderType=${params.orderType}, zone=${params.zone}, conduitKey=${params.conduitKey}. ListingOS currently requires restricted Seaport order type 2 or 3. No signature or approval was requested; inspect these exact OpenSea-provided values before changing the acceptance policy.`);
- }
  checkOrder(params,expected.wallet,expected.contract,expected.tokenId);
  const seaportContract=new Contract(seaport,SEAPORT_ABI,expected.provider);
  const chainCounter=String(await seaportContract.getCounter(expected.wallet));
@@ -122,6 +119,7 @@ export async function interpretActions(raw:unknown, expected:{wallet:string;cont
  const controller=new Contract(CONTROLLER,CONTROLLER_ABI,expected.provider);
  const [operator,exists]=await controller.getConduit(params.conduitKey) as [string,boolean];
  if(!exists||!isAddress(operator)||same(operator,ZeroAddress))throw Error('OpenSea conduit cannot be verified on-chain');
+ if(await expected.provider.getCode(operator)==='0x')throw Error('OpenSea conduit has no deployed code on Robinhood Chain');
  const nft=new Contract(expected.contract,NFT_ABI,expected.provider);
  const approved=await nft.isApprovedForAll(expected.wallet,operator) || same(await nft.getApproved(BigInt(expected.tokenId)),operator);
  // Parse the exact approval action shape returned by OpenSea, with wrapped addresses.
