@@ -86,7 +86,7 @@ function verifyMessage(message:Obj, params:Parameters,counter:string,seaport:str
   if(String(domain.version)!=='1.6')throw Error('Unexpected Seaport domain version');
  }
 }
-export async function interpretActions(raw:unknown, expected:{wallet:string;contract:string;tokenId:string;price:bigint;provider:JsonRpcProvider}) {
+export async function interpretActions(raw:unknown, expected:{wallet:string;contract:string;tokenId:string;price:bigint;paymentToken:string;paymentDecimals:number;currency:'ETH'|'USDG';provider:JsonRpcProvider}) {
  const steps=obj(raw).steps;
  if(!Array.isArray(steps))throw Error('OpenSea returned no steps array');
  const create=steps.map(s=>obj(obj(s).createListingsAction)).find(v=>Object.keys(v).length>0);
@@ -103,6 +103,8 @@ export async function interpretActions(raw:unknown, expected:{wallet:string;cont
  // diagnosing whether its zone and conduit are compatible with ListingOS.
  verifyMessage(typed,params,counter,seaport);
  checkOrder(params,expected.wallet,expected.contract,expected.tokenId);
+ if(!same(params.consideration[0].token,expected.paymentToken))throw Error('OpenSea consideration currency differs from requested '+expected.currency);
+ if(params.consideration[0].itemType!==(expected.currency==='ETH'?0:1))throw Error('OpenSea consideration payment type differs from requested '+expected.currency);
  const seaportContract=new Contract(seaport,SEAPORT_ABI,expected.provider);
  const chainCounter=String(await seaportContract.getCounter(expected.wallet));
  if(counter!==chainCounter)throw Error('OpenSea order counter is stale');
@@ -111,7 +113,7 @@ export async function interpretActions(raw:unknown, expected:{wallet:string;cont
  const seller=params.consideration.filter(c=>same(c.recipient!,expected.wallet)).reduce((n,c)=>n+BigInt(c.startAmount),BigInt(0));
  const fee=total-seller;
  if(total!==expected.price){
-  const fmt=(v:bigint)=>`${v.toString()} wei (${Number(v)/1e18} ETH)`;
+  const fmt=(v:bigint)=>`${v.toString()} base units (${expected.currency}, ${expected.paymentDecimals} decimals)`;
   throw Error(`OpenSea price check: requested ${fmt(expected.price)}; buyer total ${fmt(total)}; HoodWallet receives ${fmt(seller)}; fees ${fmt(fee)}; consideration items ${params.consideration.length}. No signature requested.`);
  }
  if(seller<=BigInt(0))throw Error('No proceeds allocated to HoodWallet');

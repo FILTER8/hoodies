@@ -1,8 +1,18 @@
 import { siteConfig } from "./config";
-import { Contract, Interface, JsonRpcProvider, ZeroAddress, ZeroHash, getAddress, parseEther, randomBytes, hexlify } from 'ethers';
+import { Contract, Interface, JsonRpcProvider, ZeroAddress, ZeroHash, getAddress, parseEther, parseUnits, randomBytes, hexlify } from 'ethers';
 
 export const CHAIN = 'robinhood';
 export const CHAIN_ID = 4663; // ListingOS v1 is mainnet-only
+export const USDG_ADDRESS = getAddress('0x5fc5360d0400a0fd4f2af552add042d716f1d168');
+export type ListingCurrency = 'ETH' | 'USDG';
+export function currencyAddress(currency:ListingCurrency):string {return currency==='USDG'?USDG_ADDRESS:ZeroAddress;}
+export function parseListingPrice(amount:string,decimals:number):bigint {
+ if(!/^\d+(?:\.\d+)?$/.test(amount) || !Number.isInteger(decimals) || decimals<0 || decimals>36)throw Error('Invalid listing amount or token decimals');
+ const n=parseUnits(amount,decimals);
+ if(n<=BigInt(0))throw Error('Price must be positive');
+ return n;
+}
+
 export const OPENSEA_API = siteConfig.listingOSOpenSeaApiUrl;
 export const HOODOS = siteConfig.hoodOSAddress;
 export const CANVAS = siteConfig.listingOSCanvasAddress;
@@ -44,7 +54,14 @@ export function checkOrder(p:Parameters,wallet:string,token:string,id:string){
  if(restricted&&p.zone===ZeroAddress)throw Error('Restricted OpenSea order missing zone');
  if(p.conduitKey===ZeroHash)throw Error('Missing OpenSea conduit key');
  if(p.consideration.length<2)throw Error('Missing seller or marketplace payment items');
- for(const c of p.consideration){if(c.itemType!==0||getAddress(c.token)!==ZeroAddress||BigInt(c.startAmount)!==BigInt(c.endAmount)||BigInt(c.startAmount)<=BigInt(0))throw Error('Only fixed native ETH consideration supported');}
+ // All proceeds must use ONE approved payment asset. Do not allow mixed currencies.
+ const first=p.consideration[0];
+ const paymentToken=getAddress(first.token);
+ const paymentType=first.itemType;
+ if(!((paymentType===0 && paymentToken===ZeroAddress)||(paymentType===1 && paymentToken===USDG_ADDRESS)))throw Error('Unsupported listing currency: only native ETH or Robinhood USDG');
+ for(const c of p.consideration){
+  if(c.itemType!==paymentType||getAddress(c.token)!==paymentToken||BigInt(c.identifierOrCriteria)!==BigInt(0)||BigInt(c.startAmount)!==BigInt(c.endAmount)||BigInt(c.startAmount)<=BigInt(0))throw Error('Only fixed, uniform ETH or USDG consideration supported');
+ }
  if(!p.consideration.some(c=>getAddress(c.recipient!)===getAddress(wallet)))throw Error('Missing HoodWallet sale proceeds');
  if(BigInt(p.endTime)<=BigInt(Math.floor(Date.now()/1000)))throw Error('Listing already expired');
 }

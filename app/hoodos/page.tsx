@@ -69,7 +69,7 @@ const apps: HoodOSApp[] = [
     "Community-built tokenized asset swaps where activated Hoodies can participate in the Hive fee-rebate system.",
 
   href:
-    "https://hooney.xyz/",
+    "https://v1.hooney.xyz/",
 
   icon:
     "/hoodos/hooney.png",

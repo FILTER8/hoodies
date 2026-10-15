@@ -318,7 +318,7 @@ function task(m: JourneyMilestone, j: JourneyResponse) {
       return {
         status: "● SWAPPED IN THE HIVE",
         text: "A qualifying Hooney swap was verified onchain.",
-        href: "https://hooney.xyz/",
+        href: "https://v1.hooney.xyz/",
         cta: "OPEN HOONEY",
       };
     }
@@ -326,7 +326,7 @@ function task(m: JourneyMilestone, j: JourneyResponse) {
     return {
       status: "○ WAITING FOR VERIFICATION",
       text: "Make one Hooney swap of at least 0.005 ETH. Verification can take up to 1 hour.",
-      href: "https://hooney.xyz/",
+      href: "https://v1.hooney.xyz/",
       cta: "OPEN HOONEY",
     };
   }
