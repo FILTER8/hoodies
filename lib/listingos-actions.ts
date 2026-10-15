@@ -9,11 +9,15 @@ export type Approval = { target:string; data:`0x${string}`; value:'0' };
 type Obj = Record<string, unknown>;
 const obj = (v:unknown):Obj => v!==null && typeof v==='object' && !Array.isArray(v) ? v as Obj : {};
 const addr = (v:unknown):string => getAddress(String(obj(v).value ?? v));
-const num = (v:unknown):string => {
+const num = (v:unknown, path:string):string => {
  const raw = obj(v).value ?? v;
- if (typeof raw !== 'string' && typeof raw !== 'number' && typeof raw !== 'bigint') throw Error('OpenSea numeric field is missing');
+ if (typeof raw !== 'string' && typeof raw !== 'number' && typeof raw !== 'bigint') {
+  const shape = v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
+  const keys = Object.keys(obj(v)).slice(0,8).join(',');
+  throw Error(`OpenSea numeric field missing at ${path} (received ${shape}${keys ? `; object keys: ${keys}` : ''})`);
+ }
  const value=String(raw);
- if(!/^\d+$/.test(value))throw Error(`Unexpected OpenSea numeric field: ${value.slice(0,35)}`);
+ if(!/^\d+$/.test(value))throw Error(`Unexpected OpenSea numeric field at ${path} (received ${JSON.stringify(value.slice(0,35))})`);
  return value;
 };
 const same = (a:string,b:string) => getAddress(a)===getAddress(b);
@@ -40,9 +44,10 @@ function itemType(v: unknown): number {
 
 function items(v:unknown,isConsideration:boolean):Obj[] {
  if(!Array.isArray(v))throw Error('OpenSea order items missing');
- return v.map(raw=>{
+ return v.map((raw,index)=>{
   const i=obj(raw);
-  return {itemType:itemType(i.itemType),token:addr(i.tokenContract ?? i.token),identifierOrCriteria:num(i.identifierOrCriteria),startAmount:num(i.startAmount),endAmount:num(i.endAmount),...(isConsideration?{recipient:addr(i.recipient)}:{})};
+  const where=`orders[0].${isConsideration?'consideration':'offer'}[${index}]`;
+  return {itemType:itemType(i.itemType),token:addr(i.tokenContract ?? i.token),identifierOrCriteria:num(i.identifierOrCriteria,`${where}.identifierOrCriteria`),startAmount:num(i.startAmount,`${where}.startAmount`),endAmount:num(i.endAmount,`${where}.endAmount`),...(isConsideration?{recipient:addr(i.recipient)}:{})};
  });
 }
 function parseMessage(message:unknown):Obj {
@@ -52,12 +57,12 @@ function parseMessage(message:unknown):Obj {
  return obj(parsed);
 }
 function makeOrder(raw:Obj):{params:Parameters;counter:string;seaport:string} {
- const counter=num(raw.counter);
+ const counter=num(raw.counter,'orders[0].counter');
  const seaport=addr(raw.protocolAddress);
  const params=cleanParams({
   offerer:addr(raw.offerer),zone:addr(raw.zone),offer:items(raw.offer,false),consideration:items(raw.consideration,true),
-  orderType:num(raw.orderType),startTime:num(raw.startTime),endTime:num(raw.endTime),
-  zoneHash:String(raw.zoneHash),salt:num(raw.salt),conduitKey:String(raw.conduitKey),
+  orderType:num(raw.orderType,'orders[0].orderType'),startTime:num(raw.startTime,'orders[0].startTime'),endTime:num(raw.endTime,'orders[0].endTime'),
+  zoneHash:String(raw.zoneHash),salt:num(raw.salt,'orders[0].salt'),conduitKey:String(raw.conduitKey),
   totalOriginalConsiderationItems:(raw.consideration as unknown[])?.length,
  });
  return {params,counter,seaport};
@@ -66,7 +71,7 @@ function verifyMessage(message:Obj, params:Parameters,counter:string,seaport:str
  // The signing request may be a JSON EIP-712 envelope or just its order message.
  const msg=obj(message.message ?? message);
  if(!Object.keys(msg).length)throw Error('OpenSea signing message missing order parameters');
- const messageCounter=num(msg.counter);
+ const messageCounter=num(msg.counter,'signatureRequest.message.counter');
  if(messageCounter!==counter)throw Error('OpenSea signing message counter differs from returned order');
  const signed=cleanParams({...msg,totalOriginalConsiderationItems:params.consideration.length});
  // Compare normalized complete order. Signed order MUST match the returned order, including fee recipients.
@@ -117,7 +122,7 @@ export async function interpretActions(raw:unknown, expected:{wallet:string;cont
   const transaction=obj(action.transaction);
   if(!Object.keys(transaction).length)throw Error('OpenSea approval action missing transaction');
   const target=addr(transaction.to);
-  if(!same(target,expected.contract)||BigInt(num(transaction.value))!==BigInt(0))throw Error('OpenSea returned an unsafe approval transaction');
+  if(!same(target,expected.contract)||BigInt(num(transaction.value,'itemApprovalAction.transaction.value'))!==BigInt(0))throw Error('OpenSea returned an unsafe approval transaction');
   if(Number(obj(transaction.chainIdentifier).chainId)!==CHAIN_ID)throw Error('Approval action on wrong chain');
   const source=addr(transaction.from);
   if(!same(source,expected.wallet))throw Error('Approval must come from the HoodWallet');
