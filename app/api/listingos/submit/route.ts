@@ -1,6 +1,6 @@
 import {NextRequest, NextResponse} from 'next/server';
 import {Contract, TypedDataEncoder, getAddress, isHexString} from 'ethers';
-import {CHAIN, CHAIN_ID, OPENSEA_API, CANVAS, SEAPORT_ABI, checkOrder, cleanParams, components, getNftOwner, hoodInfo, jsonError, requireOpenSeaKey} from '../../../../lib/listingos';
+import {CHAIN, CHAIN_ID, OPENSEA_API, CANVAS, SEAPORT_ABI, checkOrder, cleanParams, components, getNftOwner, hoodInfo, jsonError, requireOpenSeaKey, validateListingDuration, verifyCreatorRoyalty} from '../../../../lib/listingos';
 import {ORDER_TYPES, orderValues, signingDomain} from '../../../../lib/listingos-signing';
 
 export const runtime = 'nodejs';
@@ -33,6 +33,14 @@ export async function POST(req: NextRequest) {
   if(await getNftOwner(p,contract,tokenId)!==wallet)throw Error('NFT no longer belongs to this HoodWallet');
   const params=cleanParams(b.parameters);
   checkOrder(params,wallet,contract,tokenId);
+  // Always reject multi-year orders, even for older clients. For a precise
+  // requested duration, the submit caller must also send `days`.
+  const days=b.days===undefined?undefined:Number(b.days);
+  const duration=validateListingDuration(params,days);
+  const useCreatorFee=b.useCreatorFee===undefined?true:b.useCreatorFee;
+  if(typeof useCreatorFee!=='boolean')throw Error('useCreatorFee must be a boolean');
+  const total=params.consideration.reduce((n,c)=>n+BigInt(c.startAmount),BigInt(0));
+  const royalty=await verifyCreatorRoyalty(params,contract,tokenId,total,p,useCreatorFee);
   const seaportAddr=getAddress(String(b.seaport));
   const seaport=new Contract(seaportAddr,SEAPORT_ABI,p);
   const counter=String(await seaport.getCounter(wallet));
@@ -68,6 +76,6 @@ export async function POST(req: NextRequest) {
    if(lookup.ok){const body=await lookup.json() as {order?:{status?:string;order_hash?:string}};active=body.order?.status==='ACTIVE'&&body.order.order_hash?.toLowerCase()===hash.toLowerCase();}
    else verificationError=`OpenSea order lookup returned HTTP ${lookup.status}; indexing may take time`;
   }catch(e){verificationError=jsonError(e);}
-  return NextResponse.json({ok:true,submittedToOpenSea:true,activeConfirmed:active,orderHash:hash,openseaUrl:`https://opensea.io/item/robinhood/${contract}/${tokenId}`,verificationError,response:payload});
+  return NextResponse.json({ok:true,submittedToOpenSea:true,activeConfirmed:active,orderHash:hash,duration,creatorRoyalty:royalty,openseaUrl:`https://opensea.io/item/robinhood/${contract}/${tokenId}`,verificationError,response:payload});
  }catch(e){return NextResponse.json({ok:false,error:jsonError(e)},{status:400});}
 }

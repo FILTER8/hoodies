@@ -65,3 +65,36 @@ export function checkOrder(p:Parameters,wallet:string,token:string,id:string){
  if(!p.consideration.some(c=>getAddress(c.recipient!)===getAddress(wallet)))throw Error('Missing HoodWallet sale proceeds');
  if(BigInt(p.endTime)<=BigInt(Math.floor(Date.now()/1000)))throw Error('Listing already expired');
 }
+
+
+// Fail closed on unexpected long-running Seaport orders. The OpenSea Actions
+// endpoint does not currently document a duration input; never forge signed times.
+export function validateListingDuration(p:Parameters, days?:number, now=Math.floor(Date.now()/1000)) {
+ const start=Number(p.startTime), end=Number(p.endTime);
+ if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||end<=start||end<=now)throw Error('Invalid or expired Seaport listing timestamps');
+ if(start>now+900)throw Error('OpenSea listing starts unexpectedly far in the future');
+ if(end>now+30*86400+900)throw Error(`OpenSea listing expiration is too long (${new Date(end*1000).toISOString()}). Maximum supported duration is 30 days; no signature requested.`);
+ if(days!==undefined){
+  if(!Number.isInteger(days)||days<1||days>30)throw Error('Duration must be 1-30 days');
+  const requested=days*86400;
+  const actual=end-now;
+  if(Math.abs(actual-requested)>900)throw Error(`OpenSea listing expiration mismatch: requested ${days} day(s), but returned endTime=${end} (${new Date(end*1000).toISOString()}); no signature requested. The listing Actions API may not support custom expiration.`);
+ }
+ return {startTime:start,endTime:end,expiresAt:new Date(end*1000).toISOString(),remainingSeconds:end-now};
+}
+
+export type RoyaltyReport={supported:boolean;recipient:string|null;amount:string;paid:string;verified:boolean;note:string};
+export async function verifyCreatorRoyalty(p:Parameters,nftContract:string,tokenId:string,total:bigint,rpc:JsonRpcProvider,required:boolean):Promise<RoyaltyReport>{
+ const abi=['function royaltyInfo(uint256 tokenId,uint256 salePrice) view returns (address receiver,uint256 royaltyAmount)'];
+ let recipient:string;let amount:bigint;
+ try {
+  const result=await new Contract(nftContract,abi,rpc).royaltyInfo(BigInt(tokenId),total);
+  recipient=getAddress(String(result[0]));amount=BigInt(result[1]);
+ }catch{
+  return {supported:false,recipient:null,amount:'0',paid:'0',verified:false,note:'ERC-2981 royaltyInfo unavailable; OpenSea creator fee recipients cannot be independently classified from order data.'};
+ }
+ if(recipient===ZeroAddress||amount===BigInt(0))return {supported:true,recipient:recipient===ZeroAddress?null:recipient,amount:amount.toString(),paid:'0',verified:true,note:'ERC-2981 reports no creator royalty at this sale price.'};
+ const paid=p.consideration.filter(c=>getAddress(c.recipient!)===recipient).reduce((n,c)=>n+BigInt(c.startAmount),BigInt(0));
+ if(required&&paid<amount)throw Error(`Creator royalties enabled, but OpenSea order pays ${paid} base units to ERC-2981 recipient ${recipient}; royaltyInfo requests ${amount}. Listing refused.`);
+ return {supported:true,recipient,amount:amount.toString(),paid:paid.toString(),verified:paid>=amount,note:paid>=amount?'ERC-2981 creator royalty satisfied in signed order.':'Creator royalty not fully included in order (configuration disabled).'};
+}

@@ -1,5 +1,5 @@
 import { Contract, Interface, JsonRpcProvider, ZeroAddress, getAddress, isAddress, isHexString } from 'ethers';
-import { CHAIN_ID, NFT_ABI, SEAPORT_ABI, checkOrder, cleanParams, components } from './listingos';
+import { CHAIN_ID, NFT_ABI, SEAPORT_ABI, checkOrder, cleanParams, components, validateListingDuration, verifyCreatorRoyalty } from './listingos';
 import type { Parameters } from './listingos';
 
 const CONTROLLER = '0x00000000F9490004C11Cef243f5400493c00Ad63';
@@ -86,7 +86,7 @@ function verifyMessage(message:Obj, params:Parameters,counter:string,seaport:str
   if(String(domain.version)!=='1.6')throw Error('Unexpected Seaport domain version');
  }
 }
-export async function interpretActions(raw:unknown, expected:{wallet:string;contract:string;tokenId:string;price:bigint;paymentToken:string;paymentDecimals:number;currency:'ETH'|'USDG';provider:JsonRpcProvider}) {
+export async function interpretActions(raw:unknown, expected:{wallet:string;contract:string;tokenId:string;price:bigint;paymentToken:string;paymentDecimals:number;currency:'ETH'|'USDG';days:number;useCreatorFee:boolean;provider:JsonRpcProvider}) {
  const steps=obj(raw).steps;
  if(!Array.isArray(steps))throw Error('OpenSea returned no steps array');
  const create=steps.map(s=>obj(obj(s).createListingsAction)).find(v=>Object.keys(v).length>0);
@@ -143,6 +143,8 @@ export async function interpretActions(raw:unknown, expected:{wallet:string;cont
    if(!same(String(parsed.args[0]),operator)||BigInt(parsed.args[1])!==BigInt(expected.tokenId))throw Error('Incorrect token approval');
   }else throw Error('Unsupported NFT approval action');
  }
+ const duration=validateListingDuration(params,expected.days);
+ const royalty=await verifyCreatorRoyalty(params,expected.contract,expected.tokenId,total,expected.provider,expected.useCreatorFee);
  const approval:Approval|null=approved?null:{target:expected.contract,value:'0',data:APPROVAL_IFACE.encodeFunctionData('setApprovalForAll',[operator,true]) as `0x${string}`};
- return {params,counter,orderHash,seaport,operator,approval,total,seller,fee};
+ return {params,counter,orderHash,seaport,operator,approval,total,seller,fee,royalty,duration};
 }

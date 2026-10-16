@@ -24,15 +24,17 @@ export async function POST(req:NextRequest){
   if(getAddress(await getNftOwner(p,contract,tokenId))!==wallet)throw Error('NFT not owned by the selected HoodWallet');
   // The Actions API expects a human-readable amount in the selected asset.
   // Always ask OpenSea to construct the USDG order; never mutate signed order fields.
+  const useCreatorFee=b.useCreatorFee===undefined?true:b.useCreatorFee;
+  if(typeof useCreatorFee!=='boolean')throw Error('useCreatorFee must be a boolean');
   const input={address:wallet,items:[{
     chain:CHAIN,contract,token_id:tokenId,quantity:1,
     price:{currency:paymentToken,amount}
-  }],use_creator_fee:true};
+  }],use_creator_fee:useCreatorFee};
   const response=await fetch(`${OPENSEA_API.replace(/\/$/,'')}/listings/actions`,{method:'POST',headers:{'x-api-key':requireOpenSeaKey(),'content-type':'application/json',accept:'application/json'},body:JSON.stringify(input),cache:'no-store',signal:AbortSignal.timeout(20000)});
   const raw=await response.text();let data:unknown;
   try{data=JSON.parse(raw);}catch{data={raw:raw.slice(0,1200)};}
   if(!response.ok)return NextResponse.json({ok:false,error:`OpenSea listing actions returned HTTP ${response.status}`,details:data},{status:422});
-  const result=await interpretActions(data,{wallet,contract,tokenId,price,paymentToken,paymentDecimals:decimals,currency,provider:p});
-  return NextResponse.json({ok:true,hoodieId,wallet,tokenId,contract,currency,paymentToken,paymentDecimals:decimals,priceAmount:amount,priceWei:price.toString(),royaltyWei:result.fee.toString(),royaltyRecipient:'See marketplace and creator fee recipients below',sellerWei:result.seller.toString(),seaport:result.seaport,orderHash:result.orderHash,counter:result.counter,parameters:result.params,approval:result.approval,marketplaceFeeAndRoyaltyWei:result.fee.toString(),feeRecipients:result.params.consideration.filter(c=>c.recipient?.toLowerCase()!==wallet.toLowerCase()).map(c=>({recipient:c.recipient,amountWei:c.startAmount})),conduit:result.operator});
+  const result=await interpretActions(data,{wallet,contract,tokenId,price,paymentToken,paymentDecimals:decimals,currency,days,useCreatorFee,provider:p});
+  return NextResponse.json({ok:true,hoodieId,wallet,tokenId,contract,currency,paymentToken,paymentDecimals:decimals,priceAmount:amount,days,useCreatorFee,creatorRoyalty:result.royalty,duration:result.duration,priceWei:price.toString(),feeTotalBaseUnits:result.fee.toString(),sellerWei:result.seller.toString(),seaport:result.seaport,orderHash:result.orderHash,counter:result.counter,parameters:result.params,approval:result.approval,marketplaceFeeAndRoyaltyBaseUnits:result.fee.toString(),feeRecipients:result.params.consideration.filter(c=>c.recipient?.toLowerCase()!==wallet.toLowerCase()).map(c=>({recipient:c.recipient,amountWei:c.startAmount})),conduit:result.operator});
  }catch(e){return NextResponse.json({ok:false,error:jsonError(e)},{status:400});}
 }
