@@ -86,7 +86,7 @@ function verifyMessage(message:Obj, params:Parameters,counter:string,seaport:str
   if(String(domain.version)!=='1.6')throw Error('Unexpected Seaport domain version');
  }
 }
-export async function interpretActions(raw:unknown, expected:{wallet:string;contract:string;tokenId:string;price:bigint;paymentToken:string;paymentDecimals:number;currency:'ETH'|'USDG';days:number;useCreatorFee:boolean;provider:JsonRpcProvider}) {
+export async function interpretActions(raw:unknown, expected:{wallet:string;contract:string;tokenId:string;price:bigint;paymentToken:string;paymentDecimals:number;currency:'ETH'|'USDG';durationSeconds:number;useCreatorFee:boolean;provider:JsonRpcProvider}) {
  const steps=obj(raw).steps;
  if(!Array.isArray(steps))throw Error('OpenSea returned no steps array');
  const create=steps.map(s=>obj(obj(s).createListingsAction)).find(v=>Object.keys(v).length>0);
@@ -108,7 +108,22 @@ export async function interpretActions(raw:unknown, expected:{wallet:string;cont
  const seaportContract=new Contract(seaport,SEAPORT_ABI,expected.provider);
  const chainCounter=String(await seaportContract.getCounter(expected.wallet));
  if(counter!==chainCounter)throw Error('OpenSea order counter is stale');
- const orderHash:string=await seaportContract.getOrderHash(components(params,counter));
+ // OpenSea Actions currently defaults to 30 days on Robinhood. Its order is
+ // validated *before* changing any signed field. Create a NEW Seaport order
+ // with the requested expiry, preserving its NFT, prices, fees, zone, conduit,
+ // salt and counter. The agent must sign this new hash, not the Actions digest.
+ const templateEndTime=params.endTime;
+ const now=Math.floor(Date.now()/1000);
+ const templateStart=Number(params.startTime);
+ if(!Number.isSafeInteger(templateStart)||templateStart>now+900||templateStart<now-86400)
+  throw Error('OpenSea returned an unexpected startTime; refusing custom expiration');
+ const desiredEnd=now+expected.durationSeconds;
+ if(!Number.isSafeInteger(desiredEnd)||desiredEnd<=templateStart)
+  throw Error('Invalid requested listing expiration');
+ const finalParams:Parameters={...params,endTime:String(desiredEnd)};
+ checkOrder(finalParams,expected.wallet,expected.contract,expected.tokenId);
+ const duration=validateListingDuration(finalParams,expected.durationSeconds,now);
+ const orderHash:string=await seaportContract.getOrderHash(components(finalParams,counter));
  const total=params.consideration.reduce((n,c)=>n+BigInt(c.startAmount),BigInt(0));
  const seller=params.consideration.filter(c=>same(c.recipient!,expected.wallet)).reduce((n,c)=>n+BigInt(c.startAmount),BigInt(0));
  const fee=total-seller;
@@ -143,8 +158,7 @@ export async function interpretActions(raw:unknown, expected:{wallet:string;cont
    if(!same(String(parsed.args[0]),operator)||BigInt(parsed.args[1])!==BigInt(expected.tokenId))throw Error('Incorrect token approval');
   }else throw Error('Unsupported NFT approval action');
  }
- const duration=validateListingDuration(params,expected.days);
  const royalty=await verifyCreatorRoyalty(params,expected.contract,expected.tokenId,total,expected.provider,expected.useCreatorFee);
  const approval:Approval|null=approved?null:{target:expected.contract,value:'0',data:APPROVAL_IFACE.encodeFunctionData('setApprovalForAll',[operator,true]) as `0x${string}`};
- return {params,counter,orderHash,seaport,operator,approval,total,seller,fee,royalty,duration};
+ return {params:finalParams,counter,orderHash,seaport,operator,approval,total,seller,fee,royalty,duration,originalOpenSeaEndTime:templateEndTime,customDuration:true};
 }

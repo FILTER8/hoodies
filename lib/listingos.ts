@@ -69,18 +69,45 @@ export function checkOrder(p:Parameters,wallet:string,token:string,id:string){
 
 // Fail closed on unexpected long-running Seaport orders. The OpenSea Actions
 // endpoint does not currently document a duration input; never forge signed times.
-export function validateListingDuration(p:Parameters, days?:number, now=Math.floor(Date.now()/1000)) {
+export const LISTING_DURATION_PRESETS = [
+ {id:'1h',label:'1 hour',seconds:3600},
+ {id:'12h',label:'12 hours',seconds:43200},
+ {id:'1d',label:'1 day',seconds:86400},
+ {id:'3d',label:'3 days',seconds:259200},
+ {id:'7d',label:'7 days',seconds:604800},
+ {id:'30d',label:'30 days',seconds:2592000},
+] as const;
+export const DEFAULT_LISTING_DURATION_SECONDS = 604800;
+export function listingDurationSeconds(value:unknown):number {
+ const seconds=Number(value);
+ if(!Number.isSafeInteger(seconds)||!LISTING_DURATION_PRESETS.some(p=>p.seconds===seconds))
+  throw Error('Unsupported durationSeconds; choose 3600, 43200, 86400, 259200, 604800, or 2592000');
+ return seconds;
+}
+export function resolveListingDuration(body:Record<string,unknown>, defaultAllowed=true):number {
+ if(body.durationSeconds!==undefined) {
+  const seconds=listingDurationSeconds(body.durationSeconds);
+  if(body.days!==undefined && Number(body.days)*86400!==seconds)throw Error('days and durationSeconds disagree');
+  return seconds;
+ }
+ if(body.days!==undefined) return listingDurationSeconds(Number(body.days)*86400);
+ if(!defaultAllowed)throw Error('Custom-duration submission requires durationSeconds (or legacy days)');
+ return DEFAULT_LISTING_DURATION_SECONDS;
+}
+export function validateListingDuration(p:Parameters, durationSeconds?:number, now=Math.floor(Date.now()/1000)) {
  const start=Number(p.startTime), end=Number(p.endTime);
  if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||end<=start||end<=now)throw Error('Invalid or expired Seaport listing timestamps');
  if(start>now+900)throw Error('OpenSea listing starts unexpectedly far in the future');
- if(end>now+30*86400+900)throw Error(`OpenSea listing expiration is too long (${new Date(end*1000).toISOString()}). Maximum supported duration is 30 days; no signature requested.`);
- if(days!==undefined){
-  if(!Number.isInteger(days)||days<1||days>30)throw Error('Duration must be 1-30 days');
-  const requested=days*86400;
-  const actual=end-now;
-  if(Math.abs(actual-requested)>900)throw Error(`OpenSea listing expiration mismatch: requested ${days} day(s), but returned endTime=${end} (${new Date(end*1000).toISOString()}); no signature requested. The listing Actions API may not support custom expiration.`);
+ if(end>now+2592000+900)throw Error(`OpenSea listing expiration is too long (${new Date(end*1000).toISOString()}). Maximum supported duration is 30 days`);
+ if(durationSeconds!==undefined){
+  listingDurationSeconds(durationSeconds);
+  // Permit time elapsed between prepare and submit, but never an entirely
+  // different preset. The timestamp itself is signed and cannot be altered.
+  const tolerance=Math.min(900,Math.max(120,Math.floor(durationSeconds/10)));
+  if(Math.abs(end-now-durationSeconds)>tolerance)
+   throw Error(`OpenSea listing expiration mismatch: requested ${durationSeconds} seconds but returned endTime=${end} (${new Date(end*1000).toISOString()}); no signature requested.`);
  }
- return {startTime:start,endTime:end,expiresAt:new Date(end*1000).toISOString(),remainingSeconds:end-now};
+ return {startTime:start,endTime:end,expiresAt:new Date(end*1000).toISOString(),remainingSeconds:end-now,requestedDurationSeconds:durationSeconds??null};
 }
 
 export type RoyaltyReport={supported:boolean;recipient:string|null;amount:string;paid:string;verified:boolean;note:string};

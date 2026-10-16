@@ -1,6 +1,6 @@
 import {NextRequest, NextResponse} from 'next/server';
 import {Contract, TypedDataEncoder, getAddress, isHexString} from 'ethers';
-import {CHAIN, CHAIN_ID, OPENSEA_API, CANVAS, SEAPORT_ABI, checkOrder, cleanParams, components, getNftOwner, hoodInfo, jsonError, requireOpenSeaKey, validateListingDuration, verifyCreatorRoyalty} from '../../../../lib/listingos';
+import {CHAIN, CHAIN_ID, OPENSEA_API, CANVAS, SEAPORT_ABI, checkOrder, cleanParams, components, getNftOwner, hoodInfo, jsonError, requireOpenSeaKey, validateListingDuration, verifyCreatorRoyalty, resolveListingDuration} from '../../../../lib/listingos';
 import {ORDER_TYPES, orderValues, signingDomain} from '../../../../lib/listingos-signing';
 
 export const runtime = 'nodejs';
@@ -35,8 +35,10 @@ export async function POST(req: NextRequest) {
   checkOrder(params,wallet,contract,tokenId);
   // Always reject multi-year orders, even for older clients. For a precise
   // requested duration, the submit caller must also send `days`.
-  const days=b.days===undefined?undefined:Number(b.days);
-  const duration=validateListingDuration(params,days);
+  if(b.customDuration===true && b.durationSeconds===undefined && b.days===undefined)
+   throw Error('Custom-duration submission requires durationSeconds (or legacy days)');
+  const requestedDuration=(b.durationSeconds!==undefined||b.days!==undefined)?resolveListingDuration(b):undefined;
+  const duration=validateListingDuration(params,requestedDuration);
   const useCreatorFee=b.useCreatorFee===undefined?true:b.useCreatorFee;
   if(typeof useCreatorFee!=='boolean')throw Error('useCreatorFee must be a boolean');
   const total=params.consideration.reduce((n,c)=>n+BigInt(c.startAmount),BigInt(0));

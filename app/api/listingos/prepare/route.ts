@@ -1,8 +1,11 @@
 import { NextRequest,NextResponse } from 'next/server';
 import { Contract, ZeroAddress, getAddress } from 'ethers';
-import { CHAIN, OPENSEA_API, getNftOwner, hoodInfo, jsonError, currencyAddress, parseListingPrice, requireOpenSeaKey } from '../../../../lib/listingos';
+import { CHAIN, OPENSEA_API, getNftOwner, hoodInfo, jsonError, currencyAddress, parseListingPrice, requireOpenSeaKey, LISTING_DURATION_PRESETS, DEFAULT_LISTING_DURATION_SECONDS, resolveListingDuration } from '../../../../lib/listingos';
 import { interpretActions } from '../../../../lib/listingos-actions';
 export const runtime='nodejs';
+
+// Public discovery endpoint for Bankr and the ListingOS interface.
+export async function GET(){return NextResponse.json({ok:true,defaultDurationSeconds:DEFAULT_LISTING_DURATION_SECONDS,durationPresets:LISTING_DURATION_PRESETS,unit:'seconds'});}
 
 export async function POST(req:NextRequest){
  try{
@@ -19,8 +22,7 @@ export async function POST(req:NextRequest){
   // Read decimals from the actual USDG token, never assume 18 or 6 decimals.
   const decimals=currency==='ETH'?18:Number(await new Contract(paymentToken,['function decimals() view returns (uint8)'],p).decimals());
   const price=parseListingPrice(amount,decimals);
-  const days=Number(b.days||7);
-  if(!Number.isInteger(days)||days<1||days>30)throw Error('Duration must be 1-30 days');
+  const durationSeconds=resolveListingDuration(b);
   if(getAddress(await getNftOwner(p,contract,tokenId))!==wallet)throw Error('NFT not owned by the selected HoodWallet');
   // The Actions API expects a human-readable amount in the selected asset.
   // Always ask OpenSea to construct the USDG order; never mutate signed order fields.
@@ -34,7 +36,7 @@ export async function POST(req:NextRequest){
   const raw=await response.text();let data:unknown;
   try{data=JSON.parse(raw);}catch{data={raw:raw.slice(0,1200)};}
   if(!response.ok)return NextResponse.json({ok:false,error:`OpenSea listing actions returned HTTP ${response.status}`,details:data},{status:422});
-  const result=await interpretActions(data,{wallet,contract,tokenId,price,paymentToken,paymentDecimals:decimals,currency,days,useCreatorFee,provider:p});
-  return NextResponse.json({ok:true,hoodieId,wallet,tokenId,contract,currency,paymentToken,paymentDecimals:decimals,priceAmount:amount,days,useCreatorFee,creatorRoyalty:result.royalty,duration:result.duration,priceWei:price.toString(),feeTotalBaseUnits:result.fee.toString(),sellerWei:result.seller.toString(),seaport:result.seaport,orderHash:result.orderHash,counter:result.counter,parameters:result.params,approval:result.approval,marketplaceFeeAndRoyaltyBaseUnits:result.fee.toString(),feeRecipients:result.params.consideration.filter(c=>c.recipient?.toLowerCase()!==wallet.toLowerCase()).map(c=>({recipient:c.recipient,amountWei:c.startAmount})),conduit:result.operator});
+  const result=await interpretActions(data,{wallet,contract,tokenId,price,paymentToken,paymentDecimals:decimals,currency,durationSeconds,useCreatorFee,provider:p});
+  return NextResponse.json({ok:true,hoodieId,wallet,tokenId,contract,currency,paymentToken,paymentDecimals:decimals,priceAmount:amount,durationSeconds,durationPreset:LISTING_DURATION_PRESETS.find(v=>v.seconds===durationSeconds)?.id,useCreatorFee,creatorRoyalty:result.royalty,duration:result.duration,customDuration:result.customDuration,originalOpenSeaEndTime:result.originalOpenSeaEndTime,signingInstructions:'Sign returned parameters and counter, NOT the original OpenSea Actions signatureRequest.message',priceWei:price.toString(),feeTotalBaseUnits:result.fee.toString(),sellerWei:result.seller.toString(),seaport:result.seaport,orderHash:result.orderHash,counter:result.counter,parameters:result.params,approval:result.approval,marketplaceFeeAndRoyaltyBaseUnits:result.fee.toString(),feeRecipients:result.params.consideration.filter(c=>c.recipient?.toLowerCase()!==wallet.toLowerCase()).map(c=>({recipient:c.recipient,amountWei:c.startAmount})),conduit:result.operator});
  }catch(e){return NextResponse.json({ok:false,error:jsonError(e)},{status:400});}
 }
