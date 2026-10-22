@@ -36,6 +36,7 @@ const IDS = {
   hoodlitaireWon: "0xfacfe3851303ecdff4bc5657ee1306973651205e0da2789aa31ef299a16f21ec",
   hoodieStudioArtwork: "0x6e814e6963127c0d9f4ae95920380e487152783ea6d8fe7c9824f6ee85e8be48",
   hoodFrameSealed: "0x8fd200940bb7b62cabc8e2f6023bb63798a58b4a0220114353e9182760f7dd16",
+  face64Score: "0x44c4b73649a9cd9c6bdafd99fc7e61347aba8cc9b317bf70946ab5f0d5baa88d",
 } as const;
 
 const HOOD_OS_ABI = ["function isActive(uint256 tokenId) view returns (bool)"] as const;
@@ -102,6 +103,8 @@ type JourneyMilestone = {
   completedGames?:
     number;
 
+  score?: number | string | null;
+
   verificationMode?:
     string;
 
@@ -141,6 +144,8 @@ type JourneyMilestone = {
 
     ochBurned?:
       string | null;
+
+    score?: number | string | null;
   };
 };
 
@@ -292,14 +297,15 @@ function milestoneId(m: JourneyMilestone) {
   if (m.key === "hoodlitaireWon") return IDS.hoodlitaireWon;
   if (m.key === "hoodieStudioArtwork") return IDS.hoodieStudioArtwork;
   if (m.key === "hoodFrameSealed") return IDS.hoodFrameSealed;
+  if (m.key === "face64Score") return IDS.face64Score;
   return m.milestoneId;
 }
 
 function task(m: JourneyMilestone, j: JourneyResponse) {
   if (m.key === "hoodWalletActivated") {
     return j.hoodWallet.active
-      ? { status: "● WALLET ACTIVE", text: "Your HoodWallet is active and ready.", href: "/hoodwallet", cta: "OPEN HOODWALLET" }
-      : { status: "○ NOT ACTIVATED", text: "Activate your HoodWallet to use your Hoodie onchain.", href: "/hoodwallet", cta: "ACTIVATE HOODWALLET" };
+      ? { status: "● WALLET ACTIVE", text: "Your HoodWallet is active and ready.", href: `/hoodwallet?hoodie=${j.tokenId}`, cta: "OPEN HOODWALLET" }
+      : { status: "○ NOT ACTIVATED", text: "Activate your HoodWallet to use your Hoodie onchain.", href: `/hoodwallet?hoodie=${j.tokenId}`, cta: "ACTIVATE HOODWALLET" };
   }
   if (m.key === "hoodTalkSpoken") {
     return m.completed
@@ -307,10 +313,10 @@ function task(m: JourneyMilestone, j: JourneyResponse) {
       : { status: "○ NOT SPOKEN", text: "Give your Hoodie a permanent voice onchain.", href: "/hood-talk", cta: "OPEN HOOD TALK" };
   }
   if (m.key === "pingClaimed") {
-    if (j.ping.state === "home") return { status: "● PING IS HOME", text: `Ping #${j.tokenId} lives inside this HoodWallet.`, href: "/hoodwallet", cta: "OPEN HOODWALLET" };
-    if (j.ping.state === "away") return { status: "○ PING IS AWAY", text: `Ping #${j.tokenId} was claimed, but no longer lives here.`, href: "/hoodwallet", cta: "OPEN HOODWALLET" };
-    if (j.ping.state === "available") return { status: "○ READY TO CLAIM", text: `Ping #${j.tokenId} is waiting for this Hoodie.`, href: "/hoodwallet", cta: `CLAIM PING #${j.tokenId}` };
-    return { status: "○ LOCKED", text: "Activate your HoodWallet first to unlock Ping.", href: "/hoodwallet", cta: "ACTIVATE HOODWALLET" };
+    if (j.ping.state === "home") return { status: "● PING IS HOME", text: `Ping #${j.tokenId} lives inside this HoodWallet.`, href: `/hoodwallet?hoodie=${j.tokenId}`, cta: "OPEN HOODWALLET" };
+    if (j.ping.state === "away") return { status: "○ PING IS AWAY", text: `Ping #${j.tokenId} was claimed, but no longer lives here.`, href: `/hoodwallet?hoodie=${j.tokenId}`, cta: "OPEN HOODWALLET" };
+    if (j.ping.state === "available") return { status: "○ READY TO CLAIM", text: `Ping #${j.tokenId} is waiting for this Hoodie.`, href: `/hoodwallet?hoodie=${j.tokenId}`, cta: `CLAIM PING #${j.tokenId}` };
+    return { status: "○ LOCKED", text: "Activate your HoodWallet first to unlock Ping.", href: `/hoodwallet?hoodie=${j.tokenId}`, cta: "ACTIVATE HOODWALLET" };
   }
 
   if (m.key === "hooneySwap") {
@@ -383,6 +389,22 @@ function task(m: JourneyMilestone, j: JourneyResponse) {
       href: "https://hoodframe.filter8.xyz/",
       cta: "OPEN HOODFRAME",
     };
+  }
+
+  if (m.key === "face64Score") {
+    return m.completed
+      ? {
+          status: "● SCORE ON THE BOARD",
+          text: "Your ranked FACE64 score has been verified and is ready for Journey.",
+          href: "https://64faces.filter8.xyz/game",
+          cta: "PLAY FACE64",
+        }
+      : {
+          status: "○ NOT DONE",
+          text: "Submit a ranked FACE64 score with your Hoodie. Verification usually takes a few minutes.",
+          href: "https://64faces.filter8.xyz/game",
+          cta: "PLAY FACE64",
+        };
   }
 
   return { status: m.completed ? "● READY" : "○ NOT DONE", text: m.description, href: m.href, cta: m.cta };
@@ -508,6 +530,19 @@ function MilestoneVisual({
     );
   }
 
+  if (milestone.key === "face64Score") {
+    return (
+      <Image
+        unoptimized
+        src="/journey/face64.svg"
+        alt="FACE64"
+        width={64}
+        height={64}
+        className="h-16 w-16 object-contain"
+      />
+    );
+  }
+
   return (
     <Flag
       width={56}
@@ -581,6 +616,10 @@ function shareIconSource(
     "hoodFrameSealed"
   ) {
     return "/journey/hoodframe.png";
+  }
+
+  if (milestone.key === "face64Score") {
+    return "/journey/face64.svg";
   }
 
   return null;
@@ -1392,6 +1431,19 @@ async function makeShareCard({
       "SEALED A HOODFRAME.";
   }
 
+  if (milestone.key === "face64Score") {
+    // The Journey API currently does not expose an actual score for every token.
+    // Only show a number when the API provides one; never substitute a demo score.
+    const rawScore = milestone.qualification?.score ?? milestone.score;
+    const parsedScore =
+      typeof rawScore === "number" || typeof rawScore === "string"
+        ? Number(rawScore)
+        : NaN;
+    personalCopy = Number.isSafeInteger(parsedScore) && parsedScore >= 0
+      ? `FIRST SCORE ON THE BOARD. SCORE: ${parsedScore.toLocaleString("en-US")}`
+      : "FIRST SCORE ON THE BOARD.";
+  }
+
 if (
   milestone.season2
 ) {
@@ -1904,29 +1956,22 @@ async function makeStatsExport({
   const canvas = document.createElement("canvas");
   canvas.width = 1200;
   canvas.height = 1200;
-
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas unavailable.");
 
-  const background = "#000000";
   const ink = "#ccff00";
-  const font =
-    getComputedStyle(document.body).fontFamily ||
-    "monospace";
-
+  const background = "#000000";
+  const font = getComputedStyle(document.body).fontFamily || "monospace";
   ctx.fillStyle = background;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+  ctx.fillRect(0, 0, 1200, 1200);
   ctx.strokeStyle = ink;
-  ctx.lineWidth = 8;
-  ctx.strokeRect(36, 36, 1128, 1128);
-
+  ctx.lineWidth = 7;
+  ctx.strokeRect(34, 34, 1132, 1132);
   ctx.fillStyle = ink;
-  ctx.font = `700 100px ${font}`;
-  ctx.fillText("HOOD IT", 72, 165);
-
-  ctx.font = `700 38px ${font}`;
-  ctx.fillText("JOURNEY STATS", 76, 225);
+  ctx.font = `700 90px ${font}`;
+  ctx.fillText("HOOD IT", 70, 145);
+  ctx.font = `700 31px ${font}`;
+  ctx.fillText("JOURNEY STATS", 74, 198);
 
   const cards = [
     ["TOTAL HOOD ITS", leaderboard.summary.totalHoodIts],
@@ -1936,92 +1981,65 @@ async function makeStatsExport({
   ] as const;
 
   cards.forEach(([label, value], index) => {
-    const column = index % 2;
-    const row = Math.floor(index / 2);
-    const x = 76 + column * 520;
-    const y = 300 + row * 175;
-
+    const x = 74 + (index % 2) * 534;
+    const y = 236 + Math.floor(index / 2) * 140;
     ctx.strokeStyle = ink;
     ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, 470, 140);
-
+    ctx.strokeRect(x, y, 493, 112);
     ctx.fillStyle = ink;
     ctx.font = `400 18px ${font}`;
-    ctx.fillText(label, x + 24, y + 34);
-
-    ctx.font = `700 62px ${font}`;
-    ctx.fillText(
-      Number(value).toLocaleString(),
-      x + 24,
-      y + 108,
-    );
+    ctx.fillText(label, x + 20, y + 29);
+    ctx.font = `700 54px ${font}`;
+    ctx.fillText(Number(value).toLocaleString(), x + 20, y + 91);
   });
 
   const rows = statsChartRows(milestones);
-  const maximum = Math.max(
-    1,
-    ...rows.map(row => row.value),
-  );
-
-  ctx.font = `700 26px ${font}`;
-  ctx.fillText("HOOD ITS BY MILESTONE", 76, 705);
+  const largest = Math.max(1, ...rows.map(row => row.value));
+  const chartTitleY = 565;
+  const chartStartY = 605;
+  const footerY = 1124;
+  const rowHeight = Math.min(59, (footerY - chartStartY - 46) / Math.max(rows.length, 1));
+  const labelX = 74;
+  const barsX = 390;
+  const barMaxWidth = 575;
+  ctx.fillStyle = ink;
+  ctx.font = `700 25px ${font}`;
+  ctx.fillText("HOOD ITS BY MILESTONE", labelX, chartTitleY);
 
   rows.forEach((row, index) => {
-    const y = 760 + index * 62;
-    const maxBarWidth = 570;
-    const barWidth =
-      row.value === 0
-        ? 2
-        : Math.max(
-            3,
-            (row.value / maximum) * maxBarWidth,
-          );
-
+    const y = chartStartY + index * rowHeight;
+    const barHeight = Math.min(28, rowHeight * 0.52);
+    const barWidth = row.value === 0 ? 2 : (row.value / largest) * barMaxWidth;
+    const label = row.label.toUpperCase();
+    ctx.fillStyle = ink;
     ctx.font = `400 17px ${font}`;
-    ctx.fillText(
-      row.label.toUpperCase(),
-      76,
-      y + 20,
-    );
-
-    ctx.fillRect(
-      390,
-      y,
-      barWidth,
-      28,
-    );
-
+    // Keep labels inside the available column without stretching the canvas.
+    const labelWidth = ctx.measureText(label).width;
+    ctx.save();
+    if (labelWidth > 290) {
+      ctx.translate(labelX, y + barHeight - 3);
+      ctx.scale(290 / labelWidth, 1);
+      ctx.fillText(label, 0, 0);
+    } else {
+      ctx.fillText(label, labelX, y + barHeight - 3);
+    }
+    ctx.restore();
+    ctx.fillStyle = ink;
+    ctx.fillRect(barsX, y, Math.max(2, barWidth), barHeight);
     ctx.font = `700 18px ${font}`;
-    ctx.fillText(
-      String(row.value),
-      Math.min(985, 410 + barWidth),
-      y + 21,
-    );
+    ctx.fillText(String(row.value), Math.min(1010, barsX + barWidth + 13), y + barHeight - 3);
   });
 
-  ctx.font = `400 18px ${font}`;
-  ctx.fillText(
-    "ONCHAINHOODIES · ROBINHOOD CHAIN",
-    76,
-    1110,
-  );
+  ctx.fillStyle = ink;
+  ctx.font = `400 17px ${font}`;
+  ctx.fillText("ONCHAINHOODIES · ROBINHOOD CHAIN", 74, footerY);
 
-  const blob = await new Promise<Blob>(
-    (resolve, reject) => {
-      canvas.toBlob(
-        result =>
-          result
-            ? resolve(result)
-            : reject(
-                new Error(
-                  "Stats PNG render failed.",
-                ),
-              ),
-        "image/png",
-      );
-    },
-  );
-
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      result => result ? resolve(result) : reject(new Error("Stats PNG render failed.")),
+      "image/png",
+    );
+  });
   return {
     url: URL.createObjectURL(blob),
     filename: "onchainhoodies-journey-stats.png",
