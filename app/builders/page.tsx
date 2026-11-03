@@ -282,8 +282,8 @@ const officialTools: OfficialTool[] = [
 
 function OfficialToolCard({ tool }: { tool: OfficialTool }) {
   const content = (
-    <article className="group flex h-full flex-col overflow-hidden border-2 border-[#ccff00] bg-black text-[#ccff00] transition-colors hover:bg-[#ccff00] hover:text-black">
-      <div className="relative aspect-square overflow-hidden border-b-2 border-current bg-[#151515]">
+    <article className="group flex h-full min-w-0 flex-col overflow-hidden border-2 border-[#ccff00] bg-black text-[#ccff00] transition-colors hover:bg-[#ccff00] hover:text-black">
+      <div className="relative aspect-square w-full flex-none shrink-0 overflow-hidden border-b-2 border-current bg-[#151515]">
         <ToolArtwork tool={tool} />
       </div>
       <div className="flex flex-1 flex-col p-5">
