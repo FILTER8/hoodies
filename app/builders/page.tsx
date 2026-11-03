@@ -283,7 +283,7 @@ const officialTools: OfficialTool[] = [
 function OfficialToolCard({ tool }: { tool: OfficialTool }) {
   const content = (
     <article className="group flex h-full flex-col overflow-hidden border-2 border-[#ccff00] bg-black text-[#ccff00] transition-colors hover:bg-[#ccff00] hover:text-black">
-      <div className="relative aspect-[16/10] overflow-hidden border-b-2 border-current bg-[#151515]">
+      <div className="relative aspect-square overflow-hidden border-b-2 border-current bg-[#151515]">
         <ToolArtwork tool={tool} />
       </div>
       <div className="flex flex-1 flex-col p-5">
@@ -308,7 +308,7 @@ function OfficialToolCard({ tool }: { tool: OfficialTool }) {
 }
 
 // A missing picture is intentional during rollout: replace the text with artwork
-// simply by adding the matching 16:10 image to public/builders/.
+// simply by adding the matching square image to public/builders/.
 function ToolArtwork({ tool }: { tool: OfficialTool }) {
   // Use CSS background images rather than Next/Image here: a missing optional
   // asset never causes a broken-image icon or requires an onError handler.
