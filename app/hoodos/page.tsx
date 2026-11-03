@@ -56,6 +56,41 @@ type HoodOSApp = {
 
 const apps: HoodOSApp[] = [
   {
+    id: "profileos",
+    name: "ProfileOS",
+    tagline: "Give your Hoodie a profile",
+    description:
+      "Create and customize your HoodWallet's OpenSea profile with on-chain Hoodie artwork, Hood Talk, a pixel banner and a personal username.",
+    href: "/hoodos/profileos",
+    fallbackIcon: "P",
+    buildType: "internal",
+    status: "live",
+  },
+  {
+    id: "hoodframe",
+    name: "HoodFrame",
+    tagline: "Frame a piece of your Hoodie",
+    description:
+      "Seal an 8x8 piece of your Hoodie as an on-chain collectible. Make it yours and explore the HoodFrame gallery.",
+    href: "https://hoodframe.filter8.xyz/",
+    fallbackIcon: "HF",
+    buildType: "internal",
+    status: "live",
+    external: true,
+  },
+  {
+    id: "face64",
+    name: "FACE64",
+    tagline: "Play the ranked tournament",
+    description:
+      "Compete in FACE64 with your Hoodie and submit an on-chain ranked tournament score.",
+    href: "https://64faces.filter8.xyz/game",
+    fallbackIcon: "64",
+    buildType: "internal",
+    status: "live",
+    external: true,
+  },
+  {
   id:
     "hooney",
 

@@ -258,6 +258,69 @@ function BuilderCard({
 }
 
 /*//////////////////////////////////////////////////////////////
+                      ONCHAINHOODIES BUILDS
+//////////////////////////////////////////////////////////////*/
+
+type OfficialTool = {
+  name: string;
+  description: string;
+  href: string;
+  image: string;
+  category: "Tool";
+  external?: boolean;
+};
+
+// All image paths are optional: cards render a text fallback until assets are added.
+// Keep community projects in lib/builders.json; this is our own project directory.
+const officialTools: OfficialTool[] = [
+  { name: "Hoodie Explorer", category: "Tool", href: "/tools/explorer", image: "/builders/explorer.png", description: "Explore the collection and discover individual on-chain Hoodies." },
+  { name: "Hoodie Export", category: "Tool", href: "/tools/export", image: "/builders/export.png", description: "Export Hoodie artwork for use outside the collection viewer." },
+  { name: "Hoodie Collage", category: "Tool", href: "/tools/collage", image: "/builders/collage.png", description: "Create collage compositions with Hoodie artwork." },
+  { name: "Hoodie Gym", category: "Tool", href: "/tools/gym", image: "/builders/gym.png", description: "An interactive Hoodie experiment in the tools collection." },
+  { name: "SayIt", category: "Tool", href: "/tools/sayit", image: "/builders/sayit.png", description: "A playful Hoodie voice and expression tool." },
+];
+
+function OfficialToolCard({ tool }: { tool: OfficialTool }) {
+  const content = (
+    <article className="group flex h-full flex-col overflow-hidden border-2 border-[#ccff00] bg-black text-[#ccff00] transition-colors hover:bg-[#ccff00] hover:text-black">
+      <div className="relative aspect-[16/10] overflow-hidden border-b-2 border-current bg-[#151515]">
+        <ToolArtwork tool={tool} />
+      </div>
+      <div className="flex flex-1 flex-col p-5">
+        <p className="text-[8px] uppercase tracking-[0.16em] opacity-60">{tool.category}</p>
+        <h3 className="mt-2 text-2xl tracking-[-0.04em]">{tool.name}</h3>
+        <p className="mt-3 flex-1 text-sm leading-relaxed opacity-75">{tool.description}</p>
+        <div className="mt-6 flex items-center justify-between border-t border-current pt-3 text-[9px] uppercase tracking-[0.12em]">
+          <span>Explore build</span><ExternalArrow />
+        </div>
+      </div>
+    </article>
+  );
+  return tool.external ? (
+    <a href={tool.href} target="_blank" rel="noopener noreferrer" className="block h-full" aria-label={`Open ${tool.name}`}>
+      {content}
+    </a>
+  ) : (
+    <Link href={tool.href} className="block h-full" aria-label={`Open ${tool.name}`}>
+      {content}
+    </Link>
+  );
+}
+
+// A missing picture is intentional during rollout: replace the text with artwork
+// simply by adding the matching 16:10 image to public/builders/.
+function ToolArtwork({ tool }: { tool: OfficialTool }) {
+  // Use CSS background images rather than Next/Image here: a missing optional
+  // asset never causes a broken-image icon or requires an onError handler.
+  return (
+    <div className="relative flex h-full w-full items-center justify-center bg-black text-[#ccff00]">
+      <span className="px-4 text-center text-3xl uppercase tracking-[-0.05em] sm:text-4xl">{tool.name}</span>
+      <div className="absolute inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: `url("${tool.image}")` }} aria-hidden="true" />
+    </div>
+  );
+}
+
+/*//////////////////////////////////////////////////////////////
                               PAGE
 //////////////////////////////////////////////////////////////*/
 
@@ -321,7 +384,7 @@ export default function BuildersPage() {
               <div>
 
                 <p className="max-w-2xl text-base leading-relaxed opacity-80 md:text-xl">
-                  Games, tools, experiments and experiences built by the community around OnChainHoodies.
+                  Tools and on-chain experiences built by OnChainHoodies and the wider community.
                 </p>
 
                 <p className="mt-4 max-w-2xl text-sm leading-relaxed opacity-55">
@@ -355,6 +418,20 @@ export default function BuildersPage() {
             </div>
 
           </div>
+
+          {/* OnChainHoodies-built tools (separate from the community directory) */}
+          <section className="mt-14" aria-labelledby="official-builds-heading">
+            <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-[#ccff00] pb-4">
+              <div>
+                <p className="text-[8px] uppercase tracking-[0.16em] opacity-55">Made by OnChainHoodies</p>
+                <h2 id="official-builds-heading" className="mt-2 text-3xl tracking-[-0.045em] md:text-4xl">OUR TOOLS</h2>
+              </div>
+              <p className="text-[8px] uppercase opacity-55">{String(officialTools.length).padStart(3, "0")} tools</p>
+            </div>
+            <div className="mt-6 grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {officialTools.map((tool) => <OfficialToolCard key={tool.href} tool={tool} />)}
+            </div>
+          </section>
 
           {/*//////////////////////////////////////////////////////
                           COMMUNITY BUILDS
