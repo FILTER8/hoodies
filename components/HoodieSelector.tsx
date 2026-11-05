@@ -14,8 +14,6 @@ type Props = {
   disabled?: boolean;
   selectedActive?: boolean;
 };
-
-/** Shared compact, swipeable Hoodie picker for HoodOS builds. */
 export default function HoodieSelector({ hoodies, selectedId, onSelect, imageForId, loading = false, disabled = false, selectedActive = false }: Props) {
   const track = useRef<HTMLDivElement>(null);
   const chosen = hoodies.findIndex((h) => String(h.tokenId) === selectedId);
