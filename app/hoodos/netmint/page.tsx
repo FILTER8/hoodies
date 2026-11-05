@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Contract, Interface, JsonRpcProvider, formatEther, getAddress, isAddress } from "ethers";
@@ -436,10 +435,15 @@ export default function NetMintPage() {
   // A shared URL selects and reads the collection once on initial page load.
   // This works without requiring the visitor to connect a wallet first.
   useEffect(() => {
-    if (initialCollectionLoaded.current) return;
-    initialCollectionLoaded.current = true;
-    const requested = new URLSearchParams(window.location.search).get("collection");
-    if (requested && isAddress(requested)) void loadCollection(requested);
+    // Defer the initial collection load to avoid synchronously updating React
+    // state within an effect. Cleanup also handles React Strict Mode remounts.
+    const timer = window.setTimeout(() => {
+      if (initialCollectionLoaded.current) return;
+      initialCollectionLoaded.current = true;
+      const requested = new URLSearchParams(window.location.search).get("collection");
+      if (requested && isAddress(requested)) void loadCollection(requested);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadCollection]);
 
   async function copyCollectionLink() {
