@@ -1,58 +1,25 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-
-import {
-  useMemo,
-  useState,
-} from "react";
-
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
 
-/*///////////////////////////////////////////////////////////////
-                              TYPES
-//////////////////////////////////////////////////////////////*/
-
-type BuildType =
-  | "internal"
-  | "community";
-
-type BuildStatus =
-  | "live"
-  | "building"
-  | "coming";
-
-type FilterType =
-  | "all"
-  | BuildType;
-
+type BuildType = "internal" | "community";
+type BuildStatus = "live" | "building" | "coming";
+type FilterType = "all" | BuildType;
 type HoodOSApp = {
   id: string;
-
   name: string;
-
   tagline: string;
-
   description: string;
-
   href: string;
-
   icon?: string;
-
   fallbackIcon: string;
-
   buildType: BuildType;
-
   status: BuildStatus;
-
   external?: boolean;
 };
-
-/*//////////////////////////////////////////////////////////////
-                              APPS
-//////////////////////////////////////////////////////////////*/
 
 const apps: HoodOSApp[] = [
   {
@@ -392,502 +359,211 @@ const apps: HoodOSApp[] = [
   },
 ];
 
-/*//////////////////////////////////////////////////////////////
-                             HELPERS
-//////////////////////////////////////////////////////////////*/
 
-function buildLabel(
-  type: BuildType,
-) {
-  return type ===
-    "internal"
-    ? "Internal"
-    : "Community";
-}
 
-function statusLabel(
-  status: BuildStatus,
-) {
-  if (
-    status ===
-    "live"
-  ) {
-    return "Live";
-  }
+/** Lightweight, recognisable monochrome symbols for apps without uploaded artwork. */
+function AppGlyph({ id }: { id: string }) {
+  const common = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
 
-  if (
-    status ===
-    "building"
-  ) {
-    return "Building";
-  }
-
-  return "Coming";
-}
-
-/*//////////////////////////////////////////////////////////////
-                              ICON
-//////////////////////////////////////////////////////////////*/
-
-function AppIcon({
-  app,
-}: {
-  app:
-    HoodOSApp;
-}) {
-  const [
-    failed,
-    setFailed,
-  ] =
-    useState(false);
-
-  if (
-    !app.icon ||
-    failed
-  ) {
-    return (
-      <div className="flex h-[74px] w-[74px] items-center justify-center overflow-hidden rounded-[18px] border border-black bg-black text-2xl text-[#ccff00] md:h-[82px] md:w-[82px] md:rounded-[20px]">
-        {app.fallbackIcon}
-      </div>
-    );
-  }
+  const glyphs: Record<string, ReactNode> = {
+    homepage: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M7 6.5h.01M10 6.5h.01M7 13h10M7 16h6" /></>,
+    profileos: <><circle cx="12" cy="8" r="3.2" /><path d="M5 20v-1.8a7 7 0 0 1 14 0V20H5Z" /></>,
+    hoodframe: <><path d="M4 4h16v16H4zM8 8h8v8H8z"/><path d="M4 9h4M16 15h4"/></>,
+    face64: <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/><path d="M5.5 5.5h1M11.5 11.5h1M17.5 17.5h1"/></>,
+    hooney: <><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="M8 9v6m8-6v6M8 12h8"/></>,
+    hoodiestudio: <><path d="m5 17 11-11 3 3-11 11-4 1 1-4Z"/><path d="m14 8 3 3M5 5h4M7 3v4M19 16v5M16.5 18.5h5"/></>,
+    flooros: <><path d="M4 20h16M6 17h12M8 14h8M10 11h4M12 4v6"/><path d="m9 7 3-3 3 3"/></>,
+    netmint: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18m-11 3-3 3 3 3m4-6 3 3-3 3"/></>,
+    mintos: <><path d="M12 3v12m-4-4 4 4 4-4"/><path d="M5 16v4h14v-4M6 7l2-2m10 2-2-2"/></>,
+    buyos: <><path d="M4 5h2l2 11h11l2-8H7"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></>,
+    delegateos: <><path d="M12 3 5 6v6c0 4 3 7 7 9 4-2 7-5 7-9V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></>,
+    hoodwallet: <><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18M16 14h3M6 6V4h12"/></>,
+    "och-games": <><rect x="3" y="8" width="18" height="11" rx="5"/><path d="M8 11v6M5 14h6M16 13h.01M19 15h.01"/></>,
+    hoodieswap: <><path d="M4 8h15m-4-4 4 4-4 4M20 16H5m4-4-4 4 4 4"/></>,
+    next: <><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></>,
+  };
 
   return (
-    <div className="relative h-[74px] w-[74px] overflow-hidden rounded-[18px] border border-black bg-black md:h-[82px] md:w-[82px] md:rounded-[20px]">
+    <svg viewBox="0 0 24 24" className="h-[43%] w-[43%]" aria-hidden="true" {...common}>
+      {glyphs[id] ?? <><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12h8"/></>}
+    </svg>
+  );
+}
 
-      <Image
-        src={
-          app.icon
-        }
+function AppIcon({ app, large = false }: { app: HoodOSApp; large?: boolean }) {
+  const dimension = large ? "h-24 w-24 sm:h-28 sm:w-28" : "h-[76px] w-[76px] sm:h-[88px] sm:w-[88px]";
 
-        alt={`${app.name} icon`}
-
-        fill
-
-        unoptimized
-
-        sizes="82px"
-
-        onError={() =>
-          setFailed(
-            true,
-          )
-        }
-
-        className="image-render-pixel object-cover"
-      />
-
+  return (
+    <div
+      className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-[20px] border border-[#ccff00] bg-[#ccff00] text-black transition-transform duration-150 sm:rounded-[22px] ${dimension}`}
+    >
+      <AppGlyph id={app.id} />
     </div>
   );
 }
 
-/*//////////////////////////////////////////////////////////////
-                           APP TILE
-//////////////////////////////////////////////////////////////*/
+function AppDialog({ app, onClose }: { app: HoodOSApp; onClose: () => void }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
 
-function AppTile({
-  app,
-}: {
-  app:
-    HoodOSApp;
-}) {
-  const disabled =
-    app.href === "#";
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose]);
 
-  const content = (
-    <article
-      className={`group h-full rounded-[24px] border border-black p-5 transition-all duration-200 md:p-6 ${
-        disabled
-          ? "opacity-60"
-          : "hover:-translate-y-1 hover:bg-black hover:text-[#ccff00]"
-      }`}
-    >
-
-      {/* ICON + META */}
-
-      <div className="flex items-start justify-between gap-4">
-
-        <AppIcon
-          app={
-            app
-          }
-        />
-
-        <div className="flex flex-col items-end gap-1.5">
-
-          <span className="rounded-full border border-current px-2 py-1 text-[6px] uppercase tracking-[0.15em]">
-            {buildLabel(
-              app.buildType,
-            )}
-          </span>
-
-          <span className="text-[6px] uppercase tracking-[0.15em] opacity-45">
-            {statusLabel(
-              app.status,
-            )}
-          </span>
-
-        </div>
-
-      </div>
-
-      {/* TITLE */}
-
-      <h2 className="mt-6 text-2xl tracking-[-0.04em] md:text-3xl">
-        {app.name}
-      </h2>
-
-      <p className="mt-1 text-[8px] uppercase tracking-[0.14em] opacity-55">
-        {app.tagline}
-      </p>
-
-      {/* COPY */}
-
-      <p className="mt-5 text-sm leading-relaxed opacity-65">
-        {app.description}
-      </p>
-
-      {/* FOOTER */}
-
-      <div className="mt-8 flex items-center justify-between border-t border-current pt-4">
-
-  <div className="flex items-center gap-2">
-
-    <span className="text-[7px] uppercase tracking-[0.16em] opacity-60">
-      {disabled
-        ? "Unavailable"
-        : "Open"}
-    </span>
-
-    {app.external && !disabled && (
-      <span className="text-[6px] uppercase tracking-[0.14em] opacity-40">
-        External
-      </span>
-    )}
-
-  </div>
-
-  {!disabled && (
-    <span className="text-base">
-      →
-    </span>
-  )}
-
-</div>
-
-    </article>
-  );
-
-  if (
-    disabled
-  ) {
-    return content;
-  }
-
-  if (
-    app.external
-  ) {
-    return (
-      <a
-        href={
-          app.href
-        }
-
-        target="_blank"
-
-        rel="noreferrer"
-
-        className="block h-full"
-      >
-        {content}
-      </a>
-    );
-  }
+  const available = app.href !== "#" && app.status === "live";
 
   return (
-    <Link
-      href={
-        app.href
-      }
-
-      className="block h-full"
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black p-4 sm:p-6"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
-      {content}
-    </Link>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${app.name} information`}
+        className="w-full max-w-[480px] border border-[#ccff00] bg-black p-5 text-[#ccff00]  sm:p-8"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <AppIcon app={app} large />
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={onClose}
+            aria-label="Close app details"
+            className="flex h-10 w-10 items-center justify-center border border-[#ccff00] text-xl hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#ccff00]"
+          >
+            ×
+          </button>
+        </div>
+        <p className="mt-7 text-[10px] uppercase tracking-[0.18em] ">
+          {app.buildType === "internal" ? "OnChainHoodies" : "Community build"} / {app.status}
+        </p>
+        <h2 className="mt-2 text-3xl leading-none tracking-[-0.045em] sm:text-4xl">{app.name}</h2>
+        <p className="mt-3 text-xs uppercase tracking-[0.13em] ">{app.tagline}</p>
+        <div className="my-6 h-px bg-[#ccff00]" />
+        <p className="text-sm leading-7 sm:text-base">{app.description}</p>
+        <div className="mt-8 flex flex-wrap gap-3">
+          {available ? (
+            app.external ? (
+              <a href={app.href} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 flex-1 items-center justify-center border border-[#ccff00] bg-black px-5 text-xs font-bold uppercase tracking-widest text-[#ccff00] hover:underline">
+                Open App ↗
+              </a>
+            ) : (
+              <Link href={app.href} className="inline-flex min-h-11 flex-1 items-center justify-center border border-[#ccff00] bg-black px-5 text-xs font-bold uppercase tracking-widest text-[#ccff00] hover:underline">
+                Open App →
+              </Link>
+            )
+          ) : (
+            <span className="inline-flex min-h-11 flex-1 items-center justify-center border border-[#ccff00] px-5 text-xs uppercase tracking-widest ">
+              {app.status === "building" ? "In development" : "Coming soon"}
+            </span>
+          )}
+          <button type="button" onClick={onClose} className="min-h-11 border border-[#ccff00] px-5 text-xs uppercase tracking-widest hover:underline">
+            Back
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
-/*//////////////////////////////////////////////////////////////
-                              PAGE
-//////////////////////////////////////////////////////////////*/
-
 export default function HoodOSPage() {
-  const [
-    filter,
-    setFilter,
-  ] =
-    useState<FilterType>(
-      "all",
-    );
-
-  const visibleApps =
-    useMemo(
-      () => {
-        if (
-          filter ===
-          "all"
-        ) {
-          return apps;
-        }
-
-        return apps.filter(
-          (
-            app,
-          ) =>
-            app.buildType ===
-            filter,
-        );
-      },
-      [
-        filter,
-      ],
-    );
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = apps.find((item) => item.id === selectedId) ?? null;
+  const visibleApps = useMemo(
+    () => (filter === "all" ? apps : apps.filter((app) => app.buildType === filter)),
+    [filter],
+  );
+  const closeDialog = () => setSelectedId(null);
 
   return (
-    <main className="min-h-screen bg-[#ccff00] text-black">
-
+    <main className="min-h-screen bg-black text-[#ccff00]">
       <SiteHeader />
-
-      <section className="mx-auto max-w-[1360px] px-4 pb-24 pt-20 md:px-6 md:pt-24">
-
-        {/*////////////////////////////////////////////////////////
-                             TOP NAV
-        ////////////////////////////////////////////////////////*/}
-
-        <div className="flex items-center justify-between gap-6 border-b border-black pb-3">
-
-          <p className="text-[9px] uppercase tracking-[0.16em]">
-            OnChainHoodies / HoodOS
-          </p>
-
-          <div className="flex items-center gap-5">
-
-            <Link
-              href="/hoodos/docs"
-
-              className="text-[8px] uppercase tracking-[0.12em] underline underline-offset-4"
-            >
-              Builder Docs
-            </Link>
-
-            <Link
-              href="/"
-
-              className="text-[8px] uppercase tracking-[0.12em]"
-            >
-              Back
-            </Link>
-
+      <div className="mx-auto w-full max-w-[1260px] px-4 pb-24 pt-24 sm:px-6 md:pt-28">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#ccff00] pb-5">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.2em] ">OnChainHoodies / Application Launcher</p>
+            <h1 className="mt-2 text-4xl tracking-[-0.07em] sm:text-6xl">HOODOS<span className="">_</span></h1>
           </div>
-
+          <Link href="/hoodos/docs" className="border border-[#ccff00] px-4 py-3 text-[10px] uppercase tracking-[0.13em] hover:underline">
+            Builder Docs ↗
+          </Link>
         </div>
 
-        {/*////////////////////////////////////////////////////////
-                               HERO
-        ////////////////////////////////////////////////////////*/}
-
-        <section className="border-b border-black py-12 md:py-16">
-
-          <p className="text-[9px] uppercase tracking-[0.2em] opacity-50">
-            Programmable Hoodies
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-5">
+          <p className="max-w-lg text-sm leading-relaxed ">
+            Your Hoodie. Your apps. Select an icon to learn more and launch.
           </p>
-
-          <div className="mt-6 grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
-
-            <div>
-
-              <h1 className="text-[clamp(5rem,12vw,10rem)] leading-[0.74] tracking-[-0.09em]">
-                HOOD
-                <br />
-                OS
-              </h1>
-
-            </div>
-
-            <div className="pb-1">
-
-              <h2 className="text-4xl leading-[0.9] tracking-[-0.055em] md:text-6xl">
-                RUN
-                <br />
-                THE HOOD.
-              </h2>
-
-              <p className="mt-7 max-w-xl text-base leading-relaxed opacity-70 md:text-lg">
-                HoodOS turns every Hoodie into an on-chain account that can own,
-                interact, play, mint and connect with applications built across
-                the Hood.
-              </p>
-
-            </div>
-
+          <div className="flex items-center gap-1" role="group" aria-label="Filter applications">
+            {([ ["all", "All"], ["internal", "Our apps"], ["community", "Community"] ] as const).map(([value, label]) => (
+              <button
+                type="button"
+                key={value}
+                onClick={() => setFilter(value)}
+                aria-pressed={filter === value}
+                className={`min-h-10 border border-[#ccff00] px-3 text-[10px] uppercase tracking-[0.09em] transition-colors ${filter === value ? "bg-black text-[#ccff00] underline underline-offset-4" : "bg-black text-[#ccff00] hover:underline"}`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
+        </div>
 
+        <section aria-label="HoodOS applications" className="mt-8 border-t border-[#ccff00] pt-8">
+          <div className="grid grid-cols-3 gap-x-3 gap-y-9 sm:grid-cols-4 sm:gap-x-5 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7">
+            {visibleApps.map((app) => (
+              <button
+                key={app.id}
+                type="button"
+                onClick={() => setSelectedId(app.id)}
+                aria-label={`View ${app.name} details`}
+                className="group flex min-w-0 flex-col items-center gap-3 text-center focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#ccff00]"
+              >
+                <div className="transition-transform duration-150 group-hover:-translate-y-1 group-hover:scale-[1.05] group-focus-visible:-translate-y-1">
+                  <AppIcon app={app} />
+                </div>
+                <span className="w-full break-words text-[11px] font-medium leading-4 sm:text-xs">{app.name}</span>
+                {app.status !== "live" && <span className="text-[9px] uppercase tracking-wider ">{app.status}</span>}
+              </button>
+            ))}
+          </div>
+          {visibleApps.length === 0 && <p className="py-12 text-sm ">No apps in this category.</p>}
         </section>
 
-        {/*////////////////////////////////////////////////////////
-                         APPS HEADER + FILTER
-        ////////////////////////////////////////////////////////*/}
-
-        <section className="pt-9">
-
-          <div className="flex flex-col gap-5 border-b border-black pb-4 sm:flex-row sm:items-end sm:justify-between">
-
-            <div>
-
-              <p className="text-[8px] uppercase tracking-[0.17em] opacity-45">
-                HoodOS Apps
-              </p>
-
-              <h2 className="mt-2 text-2xl tracking-[-0.035em]">
-                Pick an app.
-              </h2>
-
-            </div>
-
-            {/* FILTER */}
-
-            <div className="flex items-center gap-1">
-
-              {(
-                [
-                  [
-                    "all",
-                    "All",
-                  ],
-
-                  [
-                    "internal",
-                    "Internal",
-                  ],
-
-                  [
-                    "community",
-                    "Community",
-                  ],
-                ] as const
-              ).map(
-                (
-                  [
-                    value,
-                    label,
-                  ],
-                ) => (
-
-                  <button
-                    key={
-                      value
-                    }
-
-                    type="button"
-
-                    onClick={() =>
-                      setFilter(
-                        value,
-                      )
-                    }
-
-                    className={`border border-black px-3 py-2 text-[7px] uppercase tracking-[0.13em] transition-colors ${
-                      filter ===
-                      value
-                        ? "bg-black text-[#ccff00]"
-                        : "hover:bg-black hover:text-[#ccff00]"
-                    }`}
-                  >
-                    {
-                      label
-                    }
-                  </button>
-
-                ),
-              )}
-
-            </div>
-
+        <section className="mt-20 flex flex-col items-start justify-between gap-5 border-t border-[#ccff00] pt-8 sm:flex-row sm:items-end">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.2em] ">Open infrastructure</p>
+            <h2 className="mt-3 text-2xl tracking-tight sm:text-3xl">BUILD FOR THE HOOD.</h2>
+            <p className="mt-3 max-w-lg text-sm leading-relaxed ">
+              Build applications, tools and games around HoodOS and HoodWallet.
+            </p>
           </div>
-
-          {/*//////////////////////////////////////////////////////
-                             APP CARDS
-          //////////////////////////////////////////////////////*/}
-
-          <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-
-            {visibleApps.map(
-              (
-                app,
-              ) => (
-
-                <AppTile
-                  key={
-                    app.id
-                  }
-
-                  app={
-                    app
-                  }
-                />
-
-              ),
-            )}
-
-          </div>
-
+          <Link href="/hoodos/docs" className="inline-flex min-h-11 items-center justify-center border border-[#ccff00] px-5 text-xs uppercase tracking-widest hover:underline">
+            Developer docs →
+          </Link>
         </section>
-
-        {/*////////////////////////////////////////////////////////
-                         BUILDER SECTION
-        ////////////////////////////////////////////////////////*/}
-
-
-
-        <section className="mt-16 border-t border-black pt-8">
-
-          <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
-
-            <div>
-
-              <p className="text-[8px] uppercase tracking-[0.17em] opacity-45">
-                Open infrastructure
-              </p>
-
-              <h2 className="mt-4 text-4xl leading-[0.9] tracking-[-0.05em] md:text-5xl">
-                ADD AN APP
-                <br />
-                TO THE HOOD.
-              </h2>
-
-              <p className="mt-5 max-w-xl text-sm leading-relaxed opacity-65 md:text-base">
-                Build games, agents, tools and new Hoodie-native experiences on
-                top of HoodOS and HoodWallet.
-              </p>
-
-            </div>
-
-            <Link
-              href="/hoodos/docs"
-
-              className="inline-flex min-h-12 items-center justify-center rounded-full border border-black px-5 text-[8px] uppercase tracking-[0.15em] transition-colors hover:bg-black hover:text-[#ccff00]"
-            >
-              Builder Docs →
-            </Link>
-
-          </div>
-
-        </section>
-
-      </section>
-
+      </div>
       <SiteFooter />
-
+      {selected && <AppDialog key={selected.id} app={selected} onClose={closeDialog} />}
     </main>
   );
 }

@@ -11,7 +11,7 @@ type Props = { params: Promise<{ id: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const pageUrl = `https://onchainhoodies.xyz/hoodie/${id}`;
+  const pageUrl = `https://onchainhoodies.xyz/hoodies/${id}`;
   const config = /^\d{1,4}$/.test(id) && Number(id) < 6000 ? await fetchHomepage(Number(id)) : null;
   const title = config?.title ? `${config.title} — Hoodie #${id}` : `Hoodie #${id}'s Homepage`;
   const description = `Explore Hoodie #${id}'s personal homepage on the World Wide Hood. One Hoodie, one homepage, inherited by every new owner.`;
@@ -38,7 +38,7 @@ export default async function HoodiePublicPage({ params }: Props) {
       <nav className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-[10px] uppercase tracking-widest sm:px-8">
         <Link href="/hoodie" className="underline underline-offset-4">← WORLD WIDE HOOD</Link>
         <div className="flex flex-wrap items-center gap-3">
-          <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Visit Hoodie #${id}'s homepage on the World Wide Hood!`)}&url=${encodeURIComponent(`https://onchainhoodies.xyz/hoodie/${id}`)}`} target="_blank" rel="noopener noreferrer" className="border border-[#ccff00] px-3 py-2 hover:bg-[#ccff00] hover:text-black">SHARE ON X ↗</a>
+          <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Visit Hoodie #${id}'s homepage on the World Wide Hood!`)}&url=${encodeURIComponent(`https://onchainhoodies.xyz/hoodies/${id}`)}`} target="_blank" rel="noopener noreferrer" className="border border-[#ccff00] px-3 py-2 hover:bg-[#ccff00] hover:text-black">SHARE ON X ↗</a>
           <HoodieHomepageEditLink id={id}/>
         </div>
       </nav>

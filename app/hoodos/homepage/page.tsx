@@ -172,7 +172,7 @@ export default function HomepageEditor() {
     <div className="mx-auto max-w-[1500px] px-4 pb-10 pt-28 sm:px-6 sm:pb-16 sm:pt-32">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-3 border-b border-black pb-5">
         <div><p className="mb-2 text-[10px] uppercase tracking-widest">HoodOS / Personal Web</p><h1 className="text-4xl tracking-tight sm:text-6xl">YOUR HOMEPAGE.</h1></div>
-        <div className="flex flex-wrap gap-4"><Link href="/hoodie" className="text-xs underline underline-offset-4">World Wide Hood ↗</Link><Link href="/hoodos" className="text-xs underline underline-offset-4">Back to HoodOS</Link></div>
+        <div className="flex flex-wrap gap-4"><Link href="/hoodies" className="text-xs underline underline-offset-4">World Wide Hood ↗</Link><Link href="/hoodos" className="text-xs underline underline-offset-4">Back to HoodOS</Link></div>
       </div>
       {!address ? <section className="border border-black p-7 text-center"><p className="mb-5">Connect your wallet to edit your Hoodie homepage.</p><button className={button} onClick={() => void connect()}>Connect wallet</button></section> :
       owned.length === 0 ? <section className="border border-black p-7 text-center">No Hoodies found for this wallet.</section> :
@@ -183,7 +183,7 @@ export default function HomepageEditor() {
               {owned.map(item => <option value={item.tokenId} key={item.tokenId}>Hoodie #{item.tokenId}</option>)}
             </select>
           </label>
-          {isOwned && <Link href={`/hoodie/${tokenId}`} target="_blank" className="text-sm underline underline-offset-4">View public homepage ↗</Link>}
+          {isOwned && <Link href={`/hoodies/${tokenId}`} target="_blank" className="text-sm underline underline-offset-4">View public homepage ↗</Link>}
         </div>
         <div className="grid gap-6 lg:grid-cols-[minmax(320px,0.75fr)_minmax(0,1.25fr)]">
           <section className="min-w-0 space-y-5">

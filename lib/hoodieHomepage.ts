@@ -59,7 +59,7 @@ export function defaultHomepage(id: number): HomepageConfig {
       { id: "about", type: "text", title: "ABOUT ME", text: "Welcome to my corner of the Hood. Make yourself at home!", framed: true, textFill: "black" },
       { id: "divider", type: "divider", style: "stars", framed: false },
       { id: "links", type: "links", items: [
-        { label: "MY HOODIE", url: `https://onchainhoodies.xyz/hoodie/${id}` },
+        { label: "MY HOODIE", url: `https://onchainhoodies.xyz/hoodies/${id}` },
         { label: "THE HOOD", url: "https://onchainhoodies.xyz/hoodos" },
       ], framed: false },
     ],

@@ -21,7 +21,7 @@ export default function HoodieHomepageTile({ entry }: { entry: HomepageDirectory
   };
   const decoration = p?.decorations?.[0];
   return (
-    <Link href={`/hoodie/${entry.tokenId}`} className="group block min-w-0 border border-[#ccff00] bg-black transition-colors hover:bg-[#ccff00] hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ccff00]" aria-label={`Visit Hoodie #${entry.tokenId}'s homepage`}>
+    <Link href={`/hoodies/${entry.tokenId}`} className="group block min-w-0 border border-[#ccff00] bg-black transition-colors hover:bg-[#ccff00] hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ccff00]" aria-label={`Visit Hoodie #${entry.tokenId}'s homepage`}>
       <div className="flex items-center justify-between gap-2 border-b border-[#ccff00] px-2 py-2 text-[9px] sm:text-[10px]">
         <span className="truncate">HOODIE-{entry.tokenId}.HTML</span><span aria-hidden="true">▣ ×</span>
       </div>
