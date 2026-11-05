@@ -51,7 +51,6 @@ export default async function HoodiePublicPage({ params }: Props) {
 >
   SHARE ON X ↗
 </a>
-
           <HoodieHomepageEditLink id={id}/>
         </div>
       </nav>
