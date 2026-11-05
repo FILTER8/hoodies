@@ -504,9 +504,6 @@ export default function HoodOSPage() {
             <p className="text-[10px] uppercase tracking-[0.2em] ">OnChainHoodies / Application Launcher</p>
             <h1 className="mt-2 text-4xl tracking-[-0.07em] sm:text-6xl">HOODOS<span className="">_</span></h1>
           </div>
-          <Link href="/hoodos/docs" className="border border-[#ccff00] px-4 py-3 text-[10px] uppercase tracking-[0.13em] hover:underline">
-            Builder Docs ↗
-          </Link>
         </div>
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-5">
