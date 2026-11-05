@@ -56,6 +56,16 @@ type HoodOSApp = {
 
 const apps: HoodOSApp[] = [
   {
+    id: "homepage",
+    name: "HoodPage",
+    tagline: "Make your little corner of the web",
+    description: "Build and publish a personal homepage for your Hoodie with themes, live Hood Talk, links and creative blocks.",
+    href: "/hoodos/homepage",
+    fallbackIcon: "HP",
+    buildType: "internal",
+    status: "live",
+  },
+  {
     id: "profileos",
     name: "ProfileOS",
     tagline: "Give your Hoodie a profile",
