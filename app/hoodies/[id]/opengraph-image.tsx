@@ -57,7 +57,7 @@ export default async function OpenGraphImage({ params }: Props) {
           </div>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",backgroundColor:paper,padding:"8px 14px",fontSize:23,zIndex:1}}>
-          <span>THE WORLD WIDE HOOD</span><span>ONCHAINHOODIES.XYZ/HOODIE/{id}</span>
+          <span>THE WORLD WIDE HOOD</span><span>ONCHAINHOODIES.XYZ/HOODIES/{id}</span>
         </div>
       </div>
     </div>, size,

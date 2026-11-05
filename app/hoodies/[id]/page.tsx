@@ -36,7 +36,7 @@ export default async function HoodiePublicPage({ params }: Props) {
     <SiteHeader />
     <div className="w-full pt-24 sm:pt-28">
       <nav className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-[10px] uppercase tracking-widest sm:px-8">
-        <Link href="/hoodie" className="underline underline-offset-4">← WORLD WIDE HOOD</Link>
+        <Link href="/hoodies" className="underline underline-offset-4">← WORLD WIDE HOOD</Link>
         <div className="flex flex-wrap items-center gap-3">
           <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Visit Hoodie #${id}'s homepage on the World Wide Hood!`)}&url=${encodeURIComponent(`https://onchainhoodies.xyz/hoodies/${id}`)}`} target="_blank" rel="noopener noreferrer" className="border border-[#ccff00] px-3 py-2 hover:bg-[#ccff00] hover:text-black">SHARE ON X ↗</a>
           <HoodieHomepageEditLink id={id}/>
