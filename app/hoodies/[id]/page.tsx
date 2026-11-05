@@ -11,7 +11,18 @@ type Props = { params: Promise<{ id: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  return { title: `Hoodie #${id}'s homepage`, description: `Visit Hoodie #${id}'s home on the World Wide Hood.` };
+  const pageUrl = `https://onchainhoodies.xyz/hoodie/${id}`;
+  const config = /^\d{1,4}$/.test(id) && Number(id) < 6000 ? await fetchHomepage(Number(id)) : null;
+  const title = config?.title ? `${config.title} — Hoodie #${id}` : `Hoodie #${id}'s Homepage`;
+  const description = `Explore Hoodie #${id}'s personal homepage on the World Wide Hood. One Hoodie, one homepage, inherited by every new owner.`;
+  return {
+    metadataBase: new URL("https://onchainhoodies.xyz"),
+    title,
+    description,
+    alternates: { canonical: pageUrl },
+    openGraph: { title, description, url: pageUrl, siteName:"OnChainHoodies",type:"website",images:[{url:`${pageUrl}/opengraph-image`,width:1200,height:630,alt:`Hoodie #${id} personalized homepage`}] },
+    twitter: { card: "summary_large_image", title, description, images: [`${pageUrl}/opengraph-image`] },
+  };
 }
 export default async function HoodiePublicPage({ params }: Props) {
   const { id: raw } = await params;
@@ -26,7 +37,10 @@ export default async function HoodiePublicPage({ params }: Props) {
     <div className="w-full pt-24 sm:pt-28">
       <nav className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-[10px] uppercase tracking-widest sm:px-8">
         <Link href="/hoodie" className="underline underline-offset-4">← WORLD WIDE HOOD</Link>
-        <HoodieHomepageEditLink id={id}/>
+        <div className="flex flex-wrap items-center gap-3">
+          <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Visit Hoodie #${id}'s homepage on the World Wide Hood!`)}&url=${encodeURIComponent(`https://onchainhoodies.xyz/hoodie/${id}`)}`} target="_blank" rel="noopener noreferrer" className="border border-[#ccff00] px-3 py-2 hover:bg-[#ccff00] hover:text-black">SHARE ON X ↗</a>
+          <HoodieHomepageEditLink id={id}/>
+        </div>
       </nav>
       <HoodieHomepageView id={id} config={config} live={live}/>
     </div>

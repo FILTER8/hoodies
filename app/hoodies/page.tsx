@@ -1,7 +1,7 @@
-/* eslint-disable @next/next/no-img-element -- External R2 GIFs and on-chain SVGs intentionally use raw img elements. */
 import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
+import HoodieHomepageTile from "../../components/HoodieHomepageTile";
 import { homepageApi, type HomepageDirectoryEntry } from "../../lib/hoodieHomepage";
 
 export const dynamic = "force-dynamic";
@@ -23,10 +23,7 @@ export default async function HomepageDirectory({ searchParams }: { searchParams
     <div className="mx-auto max-w-6xl px-4 pb-20 pt-28 sm:px-8 sm:pt-32">
       <div className="mb-6 border-b border-[#ccff00] pb-6"><p className="text-[11px] tracking-widest">ONCHAINHOODIES / PERSONAL WEB</p><h1 className="mt-3 text-3xl sm:text-5xl">THE WORLD WIDE HOOD</h1><p className="mt-4 max-w-2xl text-sm leading-relaxed">Explore homepages made by Hoodies, newest updates first. Every page stays with its Hoodie when ownership changes.</p></div>
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4"><p className="text-xs">{listing.total} PUBLISHED HOMEPAGES</p><Link href="/hoodos/homepage" className="border border-[#ccff00] px-4 py-3 text-xs hover:bg-[#ccff00] hover:text-black">CREATE YOUR HOMEPAGE ↗</Link></div>
-      {unavailable ? <p role="alert">The homepage directory is temporarily unavailable.</p> : listing.entries.length === 0 ? <p>No published pages yet. Be the first to create one!</p> : <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{listing.entries.map(entry => <Link key={entry.tokenId} href={`/hoodie/${entry.tokenId}`} className="group min-w-0 border border-[#ccff00] p-2 hover:bg-[#ccff00] hover:text-black sm:p-3">
-        <img src={`https://api.onchainhoodies.xyz/images/${entry.tokenId}.svg`} alt={`Hoodie #${entry.tokenId}`} loading="lazy" className="aspect-square w-full bg-[#ccff00] object-contain [image-rendering:pixelated]"/>
-        <h2 className="mt-3 break-words text-sm sm:text-base">HOODIE #{entry.tokenId}</h2><p className="mt-1 truncate text-[10px]">{entry.title}</p><time className="mt-2 block text-[10px] opacity-75" dateTime={entry.updatedAt}>{new Date(entry.updatedAt).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" })}</time>
-      </Link>)}</div>}
+      {unavailable ? <p role="alert">The homepage directory is temporarily unavailable.</p> : listing.entries.length === 0 ? <p>No published pages yet. Be the first to create one!</p> : <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{listing.entries.map(entry => <HoodieHomepageTile key={entry.tokenId} entry={entry} />)}</div>}
       {totalPages > 1 && <nav className="mt-8 flex justify-between text-xs">{page > 1 ? <Link href={`/hoodie?page=${page - 1}`} className="underline">← PREVIOUS</Link> : <span/>}<span>{page} / {totalPages}</span>{page < totalPages ? <Link href={`/hoodie?page=${page + 1}`} className="underline">NEXT →</Link> : <span/>}</nav>}
     </div><SiteFooter />
   </main>;
