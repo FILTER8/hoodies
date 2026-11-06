@@ -28,7 +28,9 @@ const isNftSelected = (keys: string[] | undefined, contract: string, tokenId: st
 
 export default function HoodieHomepageView({ id, config, live = {} }: { id: number; config: HomepageConfig; live?: HomepageLiveData }) {
   const greenBackground = config.theme === "green";
-  const background = config.background?.asset && mediaUrl("backgrounds", config.background.asset);
+  const nftRef = config.background?.nft;
+  const selectedNft = nftRef && (live.nfts || []).find(n => n.contract.toLowerCase() === nftRef.contract.toLowerCase() && n.tokenId === nftRef.tokenId && !n.spam);
+  const background = selectedNft?.image || (config.background?.asset ? mediaUrl("backgrounds", config.background.asset) : "");
   const mode = config.background?.mode || "tile";
   const scale = Math.min(300,Math.max(25,config.background?.scale ?? 100));
   const theme: CSSProperties = {
@@ -38,7 +40,7 @@ export default function HoodieHomepageView({ id, config, live = {} }: { id: numb
     ...(background ? {
       backgroundImage: `url("${background}")`,
       backgroundRepeat: mode === "tile" ? "repeat" : "no-repeat",
-      backgroundSize: mode === "tile" ? `${scale}% auto` : mode === "cover" ? "cover" : mode === "contain" ? "contain" : "100% 100%",
+      backgroundSize: mode === "tile" ? (selectedNft ? `${Math.round(scale * 1.5)}px auto` : `${scale}% auto`) : mode === "cover" ? "cover" : mode === "contain" ? "contain" : "100% 100%",
       backgroundPosition: "center top",
     } : {}),
     "--hood-fg": greenBackground ? "#000000" : "#ccff00",
@@ -57,7 +59,7 @@ export default function HoodieHomepageView({ id, config, live = {} }: { id: numb
         </section>;
         if (module.type === "talk") return <section key={module.id} className={panel(module, true)}><p className="mb-3 text-[10px] tracking-widest opacity-75">HOOD TALK</p><p className={`whitespace-pre-wrap break-words leading-relaxed ${sizeClass(module.size)}`}><TextWithGifs text={live.quote || "This Hoodie hasn't spoken yet."}/></p></section>;
         if (module.type === "text") return <section key={module.id} className={`${panel(module, true)}`}>{module.title && <h2 className={`mb-3 break-words ${sizeClass(module.size)}`}><TextWithGifs text={module.title}/></h2>}<p className={`whitespace-pre-wrap break-words leading-relaxed ${sizeClass(module.size)}`}><TextWithGifs text={module.text}/></p></section>;
-        if (module.type === "links") return <section key={module.id} className={`${panel(module)} flex flex-wrap justify-center gap-2`}>{module.items.map((link, index) => <a key={`${module.id}-${index}`} href={safeHref(link.url)} target="_blank" rel="noopener noreferrer" className={`max-w-full break-all border border-current px-3 py-2 underline underline-offset-4 hover:opacity-70 ${sizeClass(module.size)}`}>[<TextWithGifs text={link.label || "LINK"}/>]</a>)}</section>;
+        if (module.type === "links") return <section key={module.id} className={`${panel(module)} flex flex-wrap justify-center gap-3`}>{module.items.map((link, index) => <a key={`${module.id}-${index}`} href={safeHref(link.url)} target="_blank" rel="noopener noreferrer" className={`flex max-w-full flex-col items-center gap-2 break-all border border-current px-3 py-2 underline underline-offset-4 hover:opacity-70 ${sizeClass(module.size)}`}>{link.gif && mediaUrl("gifs",link.gif) && <img src={mediaUrl("gifs",link.gif)} alt="" loading="lazy" className="h-16 w-16 object-contain [image-rendering:pixelated]"/>}<span>[<TextWithGifs text={link.label || "LINK"}/>]</span></a>)}</section>;
         if (module.type === "divider") return <div key={module.id} aria-hidden="true" className={`${panel(module)} ${sizeClass(module.size)}`}>
           {module.asset ? <img src={mediaUrl("decorations", module.asset)} alt="" loading="lazy" className="mx-auto h-auto max-h-24 max-w-full object-contain [image-rendering:pixelated]" /> : module.style === "stars" ? "✦ · ★ · ✦ · ★ · ✦" : "━━━━━━━━━━━━━━━━━━━━"}
         </div>;
@@ -66,6 +68,11 @@ export default function HoodieHomepageView({ id, config, live = {} }: { id: numb
           <img src={mediaUrl("gifs", module.asset)} loading="lazy" alt={module.asset.replaceAll("-", " ")} style={{width:module.width || 160}} className="mx-auto h-auto max-w-full [image-rendering:pixelated]" />
         </section>;
         if (module.type === "midi") return <section key={module.id} className={panel(module)}><MidiPlayer key={module.asset} file={module.asset} title={module.label || module.asset.replace(/\.(mid|midi)$/i, "").replace(/[-_]/g, " ")} loop={module.loop === true}/></section>;
+        if (module.type === "memory") {
+          const events = (live.memory || []).filter(e => !module.category || e.type === module.category || e.source === module.category).slice(0,module.limit || 5);
+          return <section key={module.id} className={panel(module,true)}><h2 className="mb-4 text-sm tracking-widest">HOODIE MEMORY</h2><div className="space-y-2 text-left">{events.length ? events.map((event,index)=><div key={`${event.type}-${event.timestamp}-${index}`} className="border-b border-current p-2"><p className="text-xs font-bold">{event.title || event.type.replaceAll("_"," ")}</p>{event.detail && <p className="mt-1 break-words text-[10px] opacity-80">{event.detail}</p>}<p className="mt-1 text-[9px] opacity-70">{event.source || event.type}{event.timestamp ? ` · ${new Date(event.timestamp * 1000).toLocaleDateString("en-GB", {timeZone:"UTC"})}` : ""}</p></div>) : <p className="text-xs opacity-70">No memory events available.</p>}</div><a className="mt-4 inline-block text-[10px] underline" href={`https://api.onchainhoodies.xyz/v1/token/${id}/memory`} target="_blank" rel="noopener noreferrer">VIEW FULL HISTORY ↗</a></section>;
+        }
+        if (module.type === "netmint") return <section key={module.id} className={panel(module,true)}><p className="mb-2 text-[10px] tracking-widest">FROM THE HOOD · NET MINT</p><h2 className={`mb-3 break-words ${sizeClass(module.size)}`}>{module.title || "MY ON-CHAIN COLLECTION"}</h2><p className="mb-3 break-all text-[9px] opacity-75">{module.collection}</p><a href={`https://onchainhoodies.xyz/hoodos/netmint?collection=${encodeURIComponent(module.collection)}`} className="inline-block border border-current px-5 py-3 text-xs font-bold hover:opacity-70">OPEN MINT ↗</a></section>;
         if (module.type === "assets") {
           const tokens = (module.showTokens === false ? [] : (live.assets || []).filter(a => !module.tokenSymbols?.length || module.tokenSymbols.some(s => s.toLowerCase() === (a.contract || a.symbol).toLowerCase() || s.toLowerCase() === a.symbol.toLowerCase()))).slice(0,module.limit || 12);
           const nfts = (module.showNfts === false ? [] : (live.nfts || []).filter(n => isNftSelected(module.nftKeys,n.contract,n.tokenId))).slice(0,module.limit || 12);

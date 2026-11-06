@@ -4,10 +4,12 @@ export type HomepageModule = ModuleAppearance & (
   | { id: string; type: "identity"; avatarSize?: number; showSubtitle?: boolean }
   | { id: string; type: "talk" }
   | { id: string; type: "text"; title: string; text: string }
-  | { id: string; type: "links"; items: { label: string; url: string }[] }
+  | { id: string; type: "links"; items: { label: string; url: string; gif?: string }[] }
   | { id: string; type: "divider"; style: "stars" | "line"; asset?: string }
   | { id: string; type: "marquee"; text: string }
   | { id: string; type: "assets"; showTokens?: boolean; showNfts?: boolean; tokenSymbols?: string[]; nftKeys?: string[]; limit?: number }
+  | { id: string; type: "memory"; limit?: number; category?: string }
+  | { id: string; type: "netmint"; collection: string; title?: string }
   | { id: string; type: "journey"; completedOnly?: boolean; limit?: number }
   | { id: string; type: "decor"; asset: string; width?: number }
   | { id: string; type: "midi"; asset: string; label?: string; loop?: boolean }
@@ -39,16 +41,17 @@ export type BackgroundMode = "tile" | "cover" | "contain" | "stretch";
 export type HomepageConfig = {
   version: 2;
   theme: "robin" | "green";
-  background?: { asset: string; mode: BackgroundMode; scale: number };
+  background?: { asset?: string; nft?: { contract: string; tokenId: string }; mode: BackgroundMode; scale: number };
   title?: string;
   showOuterFrame?: boolean;
   modules: HomepageModule[];
 };
-export type HomepageDirectoryEntry = { tokenId: number; updatedAt: string; title: string; preview?: { theme: "robin" | "green"; background?: { asset: string; mode: BackgroundMode; scale: number }; avatarSize?: number; marquee?: string; about?: string; decorations?: Array<{kind: "gifs" | "decorations"; file: string}> } };
+export type HomepageDirectoryEntry = { tokenId: number; updatedAt: string; title: string; preview?: { theme: "robin" | "green"; background?: { asset?: string; nft?: { contract: string; tokenId: string }; mode: BackgroundMode; scale: number }; avatarSize?: number; marquee?: string; about?: string; decorations?: Array<{kind: "gifs" | "decorations"; file: string}> } };
 export type HomepageNft = { contract: string; tokenId: string; name: string; collectionName: string; image?: string; balance?: string; spam?: boolean };
 export type HomepageAsset = { symbol: string; name: string; balanceFormatted: string; contract?: string };
 export type HomepageJourney = { name: string; completed: boolean; description?: string; href?: string };
-export type HomepageLiveData = { quote?: string; wallet?: string; assets?: HomepageAsset[]; nfts?: HomepageNft[]; milestones?: HomepageJourney[] };
+export type HomepageMemoryEvent = { type: string; title?: string; detail?: string; source?: string; timestamp?: number; transactionHash?: string };
+export type HomepageLiveData = { memory?: HomepageMemoryEvent[]; quote?: string; wallet?: string; assets?: HomepageAsset[]; nfts?: HomepageNft[]; milestones?: HomepageJourney[] };
 
 export function defaultHomepage(id: number): HomepageConfig {
   return {
@@ -78,12 +81,14 @@ export async function fetchHomepage(id: number): Promise<HomepageConfig | null> 
   } catch { return null; }
 }
 export async function fetchHomepageLive(id: number, config: HomepageConfig, siteOrigin?: string): Promise<HomepageLiveData> {
-  const needsJourney = config.modules.some(m => m.type === "journey" || m.type === "assets");
-  const needsAssets = config.modules.some(m => m.type === "assets");
+  const needsJourney = config.modules.some(m => m.type === "journey" || m.type === "assets") || Boolean(config.background?.nft);
+  const needsAssets = config.modules.some(m => m.type === "assets") || Boolean(config.background?.nft);
+  const needsMemory = config.modules.some(m => m.type === "memory");
   const live: HomepageLiveData = {};
-  const [talk, journey] = await Promise.allSettled([
+  const [talk, journey, memory] = await Promise.allSettled([
     fetch(homepageApi(`/v1/token/${id}/hood-talk/history`), { cache: "no-store" }).then(r => r.ok ? r.json() : null),
     needsJourney ? fetch(homepageApi(`/v1/token/${id}/journey`), { cache: "no-store" }).then(r => r.ok ? r.json() : null) : Promise.resolve(null),
+    needsMemory ? fetch(homepageApi(`/v1/token/${id}/memory?limit=100`), {cache: "no-store"}).then(r => r.ok ? r.json() : null) : Promise.resolve(null),
   ]);
   if (talk.status === "fulfilled" && talk.value) {
     const talks = (talk.value as {talks?: Array<{ quote?: string; count?: number; sequence?: number }>}).talks || [];
@@ -93,6 +98,10 @@ export async function fetchHomepageLive(id: number, config: HomepageConfig, site
     const value = journey.value as { hoodWallet?: {address?: string | null}; milestones?: Array<HomepageJourney> };
     live.wallet = value.hoodWallet?.address || "";
     live.milestones = (value.milestones || []).map(m => ({ name: m.name, completed: Boolean(m.completed), description: m.description, href: m.href }));
+  }
+  if (memory.status === "fulfilled" && memory.value) {
+    const timeline = (memory.value as {timeline?: {events?: HomepageMemoryEvent[]}}).timeline;
+    live.memory = Array.isArray(timeline?.events) ? timeline.events.slice(0, 100) : [];
   }
   // Use the existing Next.js server endpoint. On client it is same-origin; on server pass the origin explicitly.
   if (needsAssets && live.wallet) {
