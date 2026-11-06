@@ -355,7 +355,7 @@ export default function HomepageEditor() {
           <section className="min-w-0 lg:sticky lg:top-24 lg:self-start">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl">LIVE PREVIEW</h2><div className="flex gap-2"><button className={`${button} ${device === "mobile" ? "bg-black text-[#ccff00]" : ""}`} onClick={() => setDevice("mobile")}>Mobile</button><button className={`${button} ${device === "desktop" ? "bg-black text-[#ccff00]" : ""}`} onClick={() => setDevice("desktop")}>Desktop</button></div></div>
             <div className="flex min-h-[570px] justify-center overflow-hidden border border-black bg-[#1a1a1a] p-2 sm:p-5">
-              <div className={`w-full transition-[max-width] duration-200 ${device === "mobile" ? "max-w-[390px]" : "max-w-full"}`}><HoodieHomepageView id={id} config={config} live={live}/></div>
+              <div className={`w-full transition-[max-width] duration-200 ${device === "mobile" ? "max-w-[390px]" : "max-w-full"}`}><HoodieHomepageView id={id} config={config} live={live} showFollowing={false}/></div>
             </div>
             <p className="mt-3 text-xs opacity-65">Preview updates as you edit. Publish with your wallet to make changes public.</p>
           </section>

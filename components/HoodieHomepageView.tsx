@@ -1,3 +1,4 @@
+import HoodieFollowing from "./HoodieFollowing";
 /* eslint-disable @next/next/no-img-element -- External R2 GIFs and on-chain SVGs intentionally use raw img elements. */
 import MidiPlayer from "./HoodpageMidiPlayer";
 import HoodpageNetMintCard from "./HoodpageNetMintCard";
@@ -27,7 +28,7 @@ function TextWithGifs({ text }: { text: string }) {
 }
 const isNftSelected = (keys: string[] | undefined, contract: string, tokenId: string) => !keys?.length || keys.includes(`${contract.toLowerCase()}:${tokenId}`);
 
-export default function HoodieHomepageView({ id, config, live = {} }: { id: number; config: HomepageConfig; live?: HomepageLiveData }) {
+export default function HoodieHomepageView({ id, config, live = {}, showFollowing = true }: { id: number; config: HomepageConfig; live?: HomepageLiveData; showFollowing?: boolean }) {
   const greenBackground = config.theme === "green";
   const nftRef = config.background?.nft;
   const selectedNft = nftRef && (live.nfts || []).find(n => n.contract.toLowerCase() === nftRef.contract.toLowerCase() && n.tokenId === nftRef.tokenId && !n.spam);
@@ -90,6 +91,7 @@ export default function HoodieHomepageView({ id, config, live = {} }: { id: numb
         }
         return null;
       })}
+      {showFollowing && <HoodieFollowing tokenId={id} />}
       <p className="mt-5 text-[9px] tracking-wider opacity-75">MADE IN THE HOOD · HOOD IT.</p>
     </div>
     <style>{`.hoodpage .homepage-invert{color:var(--hood-bg);background:var(--hood-fg)}@keyframes hoodpageMarquee{from{transform:translateX(100%)}to{transform:translateX(-100%)}}`}</style>
