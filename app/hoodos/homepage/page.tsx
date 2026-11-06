@@ -138,6 +138,8 @@ export default function HomepageEditor() {
       type === "divider" ? { id, type, style: "stars" } :
       type === "assets" ? { id, type, framed: true, showTokens: true, showNfts: true, limit: 12 } :
       type === "journey" ? { id, type, framed: true, completedOnly: true, limit: 12 } :
+      type === "memory" ? { id, type, framed: true, limit: 5 } :
+      type === "netmint" ? { id, type, framed: true, collection: "", title: "MY COLLECTION" } :
       type === "decor" ? {id, type, asset:media.gifs[0]?.file || "star.gif", width:160} :
       type === "midi" ? {id, type, asset:media.midi[0]?.file || "", label:"", loop:false, framed:true, textFill:"black"} :
       { id, type: "marquee", text: "★ HELLO FROM THE HOOD ★" };

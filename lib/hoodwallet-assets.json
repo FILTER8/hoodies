@@ -215,6 +215,18 @@
       "contract": "0x2eE6305804dD94F7ff695C5Ab1f3AE805f317653",
       "name": "8x8Portrait"
     },
+     {
+      "contract": "0x0e2f6f18e7dcd0f608e4f338c8c36f04f4db1ea3",
+      "name": "Arcade Machine"
+    },
+       {
+      "contract": "0xd3aa6c13bd3a53e1dd562bbb0f819c496761fe9f",
+      "name": "Gotchi Shadows"
+    },
+          {
+      "contract": "0x9ab9228a661deab52f628cdd5ad793482fcc6b61",
+      "name": "HoodiePunks X BankrBot"
+    }, 
         {
       "contract": "0xc8e36ae47246e5943da2b228fbaff1fb27a473b0",
       "name": "64 FACES"
