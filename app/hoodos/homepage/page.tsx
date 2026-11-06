@@ -135,11 +135,11 @@ export default function HomepageEditor() {
       type === "talk" ? { id, type, textFill: "black" } :
       type === "text" ? { id, type, title: "MY MESSAGE", text: "Type something here..." } :
       type === "links" ? { id, type, items: [{ label: "ONCHAINHOODIES", url: "https://onchainhoodies.xyz" }] } :
-      type === "divider" ? { id, type, style: "stars" } :
+      type === "divider" ? { id, type, style: "line", asset: media.decorations[0]?.file } :
       type === "assets" ? { id, type, framed: true, showTokens: true, showNfts: true, limit: 12 } :
-      type === "journey" ? { id, type, framed: true, completedOnly: true, limit: 12 } :
-      type === "memory" ? { id, type, framed: true, limit: 5 } :
-      type === "netmint" ? { id, type, framed: true, collection: "", title: "MY COLLECTION" } :
+      type === "journey" ? { id, type, framed: true, completedOnly: true, limit: 12, showStats: false } :
+      type === "memory" ? { id, type, framed: true, limit: 5, showStats: false } :
+      type === "netmint" ? { id, type, framed: true, collection: "" } :
       type === "decor" ? {id, type, asset:media.gifs[0]?.file || "star.gif", width:160} :
       type === "midi" ? {id, type, asset:media.midi[0]?.file || "", label:"", loop:false, framed:true, textFill:"black"} :
       { id, type: "marquee", text: "★ HELLO FROM THE HOOD ★" };
@@ -203,13 +203,14 @@ export default function HomepageEditor() {
                 {mediaError && <p role="alert" className="text-xs">{mediaError}. Check the HOODPAGE_ASSETS binding and upload paths.</p>}
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                   <button type="button" className={`aspect-square border-2 text-[10px] ${!config.background ? "border-black font-bold" : "border-transparent"}`} onClick={() => setConfig(prev => ({ ...prev, background: undefined }))}>
-                    <span className="flex h-full items-center justify-center bg-black text-[#ccff00]">SOLID</span>
+                    <span className="flex h-full items-center justify-center bg-black text-[#ccff00]">COLOR</span>
                   </button>
                   {media.backgrounds.map(bg => <button type="button" key={bg.file} title={bg.label} className={`min-w-0 overflow-hidden border-2 ${config.background?.asset === bg.file ? "border-black" : "border-transparent"}`} onClick={() => setConfig(prev => ({ ...prev, background: { asset: bg.file, mode: "tile", scale: 100 } }))}>
                     <img src={bg.url} loading="lazy" alt={bg.label} className="aspect-square w-full bg-black object-cover [image-rendering:pixelated]" />
                     <span className="block truncate py-1 text-[9px]">{bg.label}</span>
                   </button>)}
                 </div>
+                <label className="mt-3 flex items-center gap-3 text-xs uppercase">Custom background color <input aria-label="Custom background color" type="color" className="h-10 w-16 cursor-pointer border border-black bg-transparent p-0" value={config.backgroundColor || (config.theme === "green" ? "#ccff00" : "#000000")} onChange={e => setConfig(prev => ({ ...prev, backgroundColor: e.target.value, background: undefined }))}/><span>{config.backgroundColor || (config.theme === "green" ? "#CCFF00" : "#000000")}</span></label>
                 <div className="mt-3 border-t border-black pt-3 text-xs">
                   <p className="mb-2 font-bold uppercase">Or tile an NFT from this HoodWallet</p>
                   <div className="grid max-h-48 grid-cols-3 gap-2 overflow-auto sm:grid-cols-4">
@@ -259,25 +260,7 @@ export default function HomepageEditor() {
               <p className="mt-2 text-[10px] opacity-70">Choose a Text or Marquee section below, then tap GIFs to insert them.</p>
               </div>
             </details>
-            <details className="border border-black p-3 sm:p-4">
-              <summary className="cursor-pointer select-none py-2 text-lg uppercase tracking-widest">DIVIDER LIBRARY</summary>
-              <div className="mt-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                
-                <span className="text-[10px]">{media.decorations.length} FILES</span>
-              </div>
-              <p className="mb-2 text-[10px] opacity-70">Tap a decorative line to add it to your page.</p>
-              <div className="max-h-48 overflow-y-auto overscroll-contain border border-black p-2 sm:max-h-56" role="region" aria-label="Scrollable divider library" tabIndex={0}>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {media.decorations.map(item => <button type="button" key={item.file} title={`Add ${item.label}`} aria-label={`Add divider ${item.label}`} className="min-w-0 border border-black/40 p-1 transition-colors hover:bg-black hover:text-[#ccff00]" onClick={() => insertDivider(item.file)}>
-                    <img src={item.url} loading="lazy" alt="" className="mx-auto h-10 w-full bg-black object-contain [image-rendering:pixelated]" />
-                    <span className="mt-1 block truncate text-[9px]">{item.label}</span>
-                  </button>)}
-                </div>
-                {!media.decorations.length && !mediaError && <p className="p-2 text-xs">No files found in hoodpage/decorations/.</p>}
-              </div>
-              </div>
-            </details>
+
             <details className="border border-black p-3 sm:p-4">
               <summary className="cursor-pointer select-none py-2 text-lg uppercase tracking-widest">MIDI LIBRARY</summary>
               <div className="mt-3">
@@ -345,16 +328,18 @@ export default function HomepageEditor() {
                     <label className="block">Player title<input className={field} maxLength={70} value={module.label || ""} placeholder="My homepage soundtrack" onChange={e => editModule(module.id, m => m.type === "midi" ? {...m,label:e.target.value} : m)}/></label>
                     <label className="flex items-center gap-2"><input type="checkbox" checked={module.loop === true} onChange={e => editModule(module.id,m => m.type === "midi" ? {...m,loop:e.target.checked} : m)}/> Loop track</label>
                   </div>}
-                  {module.type === "memory" && <div className="space-y-3 text-xs"><p>Verified timeline from the Hoodie Memory endpoint, including signed homepage updates.</p><label className="flex items-center gap-2">Show last <input className="w-20 border border-black bg-transparent p-2" type="number" min={1} max={20} value={module.limit || 5} onChange={e=>editModule(module.id,m=>m.type==="memory"?{...m,limit:Math.min(20,Math.max(1,Number(e.target.value)||1))}:m)}/></label><label className="block">Filter source or event type (optional)<input className={field} maxLength={50} value={module.category || ""} onChange={e=>editModule(module.id,m=>m.type==="memory"?{...m,category:e.target.value}:m)} placeholder="HOODPAGE, HOODOS, ..."/></label></div>}
-                  {module.type === "netmint" && <div className="space-y-3 text-xs"><label className="block">Collection address<input className={field} maxLength={42} value={module.collection} onChange={e=>editModule(module.id,m=>m.type==="netmint"?{...m,collection:e.target.value}:m)} placeholder="0x..."/></label><label className="block">Display title<input className={field} maxLength={70} value={module.title || ""} onChange={e=>editModule(module.id,m=>m.type==="netmint"?{...m,title:e.target.value}:m)}/></label><p>Visitors open NET Mint with this collection preselected. The contract is checked in NET Mint before any transaction.</p></div>}
-                  {module.type === "journey" && <div className="space-y-3 text-xs"><label className="flex items-center gap-2"><input type="checkbox" checked={module.completedOnly === true} onChange={e=>editModule(module.id,m=>m.type === "journey" ? {...m,completedOnly:e.target.checked}:m)}/> Completed milestones only</label><label className="flex items-center gap-3">Maximum displayed <input type="number" min="1" max="24" value={module.limit || 12} className="w-20 border border-black bg-transparent p-2" onChange={e=>editModule(module.id,m=>m.type === "journey" ? {...m,limit:Math.min(24,Math.max(1,Number(e.target.value)||1))}:m)}/></label></div>}
+                  {module.type === "memory" && <div className="space-y-3 text-xs"><label className="flex items-center gap-2"><input type="checkbox" checked={module.showStats === true} onChange={e=>editModule(module.id,m=>m.type==="memory"?{...m,showStats:e.target.checked}:m)}/> Show total Memories and HOOD ITs counters</label><p>Verified timeline from the Hoodie Memory endpoint, including signed homepage updates.</p><label className="flex items-center gap-2">Show last <input className="w-20 border border-black bg-transparent p-2" type="number" min={1} max={20} value={module.limit || 5} onChange={e=>editModule(module.id,m=>m.type==="memory"?{...m,limit:Math.min(20,Math.max(1,Number(e.target.value)||1))}:m)}/></label><label className="block">Filter source or event type (optional)<input className={field} maxLength={50} value={module.category || ""} onChange={e=>editModule(module.id,m=>m.type==="memory"?{...m,category:e.target.value}:m)} placeholder="HOODPAGE, HOODOS, ..."/></label></div>}
+                  {module.type === "netmint" && <div className="space-y-3 text-xs"><label className="block">Collection address<input className={field} maxLength={42} value={module.collection} onChange={e=>editModule(module.id,m=>m.type==="netmint"?{...m,collection:e.target.value}:m)} placeholder="0x..."/></label><p>The collection name is read automatically from the contract. Token #1 artwork is loaded from its tokenURI (when available).</p><p>Visitors open NET Mint with this collection preselected. The contract is checked in NET Mint before any transaction.</p></div>}
+                  {module.type === "journey" && <div className="space-y-3 text-xs"><label className="flex items-center gap-2"><input type="checkbox" checked={module.showStats === true} onChange={e=>editModule(module.id,m=>m.type==="journey"?{...m,showStats:e.target.checked}:m)}/> Show HOOD ITs and Memories counters</label><label className="flex items-center gap-2"><input type="checkbox" checked={module.completedOnly === true} onChange={e=>editModule(module.id,m=>m.type === "journey" ? {...m,completedOnly:e.target.checked}:m)}/> Completed milestones only</label><label className="flex items-center gap-3">Maximum displayed <input type="number" min="1" max="24" value={module.limit || 12} className="w-20 border border-black bg-transparent p-2" onChange={e=>editModule(module.id,m=>m.type === "journey" ? {...m,limit:Math.min(24,Math.max(1,Number(e.target.value)||1))}:m)}/></label></div>}
                   {module.type === "text" && <div className="space-y-2"><label className="flex items-center gap-2 text-xs"><input type="radio" name="gif-text-target" checked={(textTarget || config.modules.find(m => m.type === "text" || m.type === "marquee")?.id) === module.id} onChange={() => setTextTarget(module.id)} /> Insert GIFs into this text section</label><input aria-label="Section title" className={field} maxLength={70} value={module.title} onChange={e => editModule(module.id, m => m.type === "text" ? { ...m, title: e.target.value } : m)}/><textarea aria-label="Section text" rows={4} className={field} maxLength={2000} value={module.text} onChange={e => editModule(module.id, m => m.type === "text" ? { ...m, text: e.target.value } : m)}/></div>}
                   {module.type === "marquee" && <label className="block text-xs"><span className="mb-2 flex items-center gap-2"><input type="radio" name="gif-text-target" checked={(textTarget || config.modules.find(m => m.type === "text" || m.type === "marquee")?.id) === module.id} onChange={() => setTextTarget(module.id)} /> Insert GIFs here</span><input aria-label="Scrolling text" className={field} maxLength={500} value={module.text} onChange={e => editModule(module.id, m => m.type === "marquee" ? { ...m, text: e.target.value } : m)}/></label>}
-                  {module.type === "divider" && <div className="space-y-2">
-                    <select className={field} value={module.asset ? "image" : module.style} onChange={e => editModule(module.id, m => m.type === "divider" ? e.target.value === "image" ? { ...m, asset: media.decorations[0]?.file, style: "line" } : { ...m, asset: undefined, style: e.target.value as "line" | "stars" } : m)}>
-                      <option value="stars">Stars</option><option value="line">Line</option>{media.decorations.length > 0 && <option value="image">R2 decoration</option>}
-                    </select>
-                    {module.asset && <div className="grid max-h-36 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">{media.decorations.map(item => <button type="button" key={item.file} title={item.label} className={`min-w-0 border p-1 ${module.asset === item.file ? "border-black" : "border-black/30"}`} onClick={() => editModule(module.id,m=>m.type==="divider"?{...m,asset:item.file}:m)}><img src={item.url} alt={item.label} loading="lazy" className="h-10 w-full bg-black object-contain [image-rendering:pixelated]" /></button>)}</div>}
+                  {module.type === "divider" && <div className="space-y-2 text-xs">
+                    <p className="font-bold uppercase">Divider gallery · tap to select</p>
+                    <div className="grid max-h-40 grid-cols-3 gap-2 overflow-y-auto border border-black p-2 sm:grid-cols-4" role="region" aria-label="Divider gallery" tabIndex={0}>
+                      {media.decorations.map(item => <button type="button" key={item.file} title={item.label} aria-label={`Select divider ${item.label}`} className={`min-w-0 border-2 p-1 ${module.asset === item.file ? "border-black" : "border-black/20"}`} onClick={() => editModule(module.id,m=>m.type==="divider"?{...m,asset:item.file,style:"line"}:m)}><img src={item.url} alt={item.label} loading="lazy" className="h-9 w-full bg-black object-contain [image-rendering:pixelated]" /></button>)}
+                      <button type="button" className={`border-2 p-2 ${!module.asset && module.style === "line" ? "border-black" : "border-black/20"}`} onClick={() => editModule(module.id,m=>m.type==="divider"?{...m,asset:undefined,style:"line"}:m)}>────</button>
+                      <button type="button" className={`border-2 p-2 ${!module.asset && module.style === "stars" ? "border-black" : "border-black/20"}`} onClick={() => editModule(module.id,m=>m.type==="divider"?{...m,asset:undefined,style:"stars"}:m)}>✦ ★ ✦</button>
+                    </div>
                   </div>}
                   {module.type === "links" && <div className="space-y-3">{module.items.map((link, i) => <div key={i} className="grid grid-cols-[1fr_auto] gap-2"><input aria-label={`Link ${i+1} label`} className={field} maxLength={45} placeholder="Label" value={link.label} onChange={e => editModule(module.id, m => m.type === "links" ? { ...m, items: m.items.map((x,j) => j===i ? { ...x, label: e.target.value } : x) } : m)}/><button className={button} aria-label="Remove link" onClick={() => editModule(module.id, m => m.type === "links" ? { ...m, items: m.items.filter((_,j) => j!==i) } : m)}>×</button><label className="col-span-2 text-[10px]">LINK ICON · GIF LIBRARY<select aria-label={`Link ${i+1} GIF`} className={field} value={link.gif || ""} onChange={e=>editModule(module.id,m=>m.type==="links"?{...m,items:m.items.map((x,j)=>j===i?{...x,gif:e.target.value||undefined}:x)}:m)}><option value="">Text only</option>{media.gifs.map(g=><option key={g.file} value={g.file}>{g.label}</option>)}</select></label><input aria-label={`Link ${i+1} URL`} className={`${field} col-span-2`} maxLength={250} placeholder="https://..." value={link.url} onChange={e => editModule(module.id, m => m.type === "links" ? { ...m, items: m.items.map((x,j) => j===i ? { ...x, url: e.target.value } : x) } : m)}/></div>)}<button className={button} disabled={module.items.length >= 12} onClick={() => editModule(module.id, m => m.type === "links" ? { ...m, items: [...m.items, { label: "NEW LINK", url: "https://onchainhoodies.xyz" }] } : m)}>+ Add link</button></div>}
                   {module.type === "talk" && <p className="text-xs opacity-60">Latest Hood Talk, loaded from the chain</p>}

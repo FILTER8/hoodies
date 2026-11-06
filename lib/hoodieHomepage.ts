@@ -8,9 +8,9 @@ export type HomepageModule = ModuleAppearance & (
   | { id: string; type: "divider"; style: "stars" | "line"; asset?: string }
   | { id: string; type: "marquee"; text: string }
   | { id: string; type: "assets"; showTokens?: boolean; showNfts?: boolean; tokenSymbols?: string[]; nftKeys?: string[]; limit?: number }
-  | { id: string; type: "memory"; limit?: number; category?: string }
+  | { id: string; type: "memory"; limit?: number; category?: string; showStats?: boolean }
   | { id: string; type: "netmint"; collection: string; title?: string }
-  | { id: string; type: "journey"; completedOnly?: boolean; limit?: number }
+  | { id: string; type: "journey"; completedOnly?: boolean; limit?: number; showStats?: boolean }
   | { id: string; type: "decor"; asset: string; width?: number }
   | { id: string; type: "midi"; asset: string; label?: string; loop?: boolean }
 );
@@ -41,6 +41,7 @@ export type BackgroundMode = "tile" | "cover" | "contain" | "stretch";
 export type HomepageConfig = {
   version: 2;
   theme: "robin" | "green";
+  backgroundColor?: string;
   background?: { asset?: string; nft?: { contract: string; tokenId: string }; mode: BackgroundMode; scale: number };
   title?: string;
   showOuterFrame?: boolean;
@@ -51,7 +52,7 @@ export type HomepageNft = { contract: string; tokenId: string; name: string; col
 export type HomepageAsset = { symbol: string; name: string; balanceFormatted: string; contract?: string };
 export type HomepageJourney = { name: string; completed: boolean; description?: string; href?: string };
 export type HomepageMemoryEvent = { type: string; title?: string; detail?: string; source?: string; timestamp?: number; transactionHash?: string };
-export type HomepageLiveData = { memory?: HomepageMemoryEvent[]; quote?: string; wallet?: string; assets?: HomepageAsset[]; nfts?: HomepageNft[]; milestones?: HomepageJourney[] };
+export type HomepageLiveData = { memoryStats?: { totalMemories: number; hoodIts: number }; memory?: HomepageMemoryEvent[]; quote?: string; wallet?: string; assets?: HomepageAsset[]; nfts?: HomepageNft[]; milestones?: HomepageJourney[] };
 
 export function defaultHomepage(id: number): HomepageConfig {
   return {
@@ -83,7 +84,7 @@ export async function fetchHomepage(id: number): Promise<HomepageConfig | null> 
 export async function fetchHomepageLive(id: number, config: HomepageConfig, siteOrigin?: string): Promise<HomepageLiveData> {
   const needsJourney = config.modules.some(m => m.type === "journey" || m.type === "assets") || Boolean(config.background?.nft);
   const needsAssets = config.modules.some(m => m.type === "assets") || Boolean(config.background?.nft);
-  const needsMemory = config.modules.some(m => m.type === "memory");
+  const needsMemory = config.modules.some(m => m.type === "memory" || m.type === "journey");
   const live: HomepageLiveData = {};
   const [talk, journey, memory] = await Promise.allSettled([
     fetch(homepageApi(`/v1/token/${id}/hood-talk/history`), { cache: "no-store" }).then(r => r.ok ? r.json() : null),
@@ -100,7 +101,9 @@ export async function fetchHomepageLive(id: number, config: HomepageConfig, site
     live.milestones = (value.milestones || []).map(m => ({ name: m.name, completed: Boolean(m.completed), description: m.description, href: m.href }));
   }
   if (memory.status === "fulfilled" && memory.value) {
-    const timeline = (memory.value as {timeline?: {events?: HomepageMemoryEvent[]}}).timeline;
+    const payload = memory.value as {summary?: {totalMemories?: number; hoodIts?: number}; timeline?: {events?: HomepageMemoryEvent[]}};
+    const timeline = payload.timeline;
+    if (payload.summary) live.memoryStats = { totalMemories: Number(payload.summary.totalMemories) || 0, hoodIts: Number(payload.summary.hoodIts) || 0 };
     live.memory = Array.isArray(timeline?.events) ? timeline.events.slice(0, 100) : [];
   }
   // Use the existing Next.js server endpoint. On client it is same-origin; on server pass the origin explicitly.

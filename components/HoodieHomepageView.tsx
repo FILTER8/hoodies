@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element -- External R2 GIFs and on-chain SVGs intentionally use raw img elements. */
 import MidiPlayer from "./HoodpageMidiPlayer";
+import HoodpageNetMintCard from "./HoodpageNetMintCard";
 import type { CSSProperties } from "react";
 import { mediaUrl, type HomepageConfig, type HomepageLiveData, type HomepageModule, type TextSize } from "../lib/hoodieHomepage";
 
@@ -34,7 +35,7 @@ export default function HoodieHomepageView({ id, config, live = {} }: { id: numb
   const mode = config.background?.mode || "tile";
   const scale = Math.min(300,Math.max(25,config.background?.scale ?? 100));
   const theme: CSSProperties = {
-    backgroundColor: greenBackground ? "#ccff00" : "#000000",
+    backgroundColor: config.backgroundColor || (greenBackground ? "#ccff00" : "#000000"),
     color: greenBackground ? "#000000" : "#ccff00",
     borderColor: greenBackground ? "#000000" : "#ccff00",
     ...(background ? {
@@ -70,9 +71,9 @@ export default function HoodieHomepageView({ id, config, live = {} }: { id: numb
         if (module.type === "midi") return <section key={module.id} className={panel(module)}><MidiPlayer key={module.asset} file={module.asset} title={module.label || module.asset.replace(/\.(mid|midi)$/i, "").replace(/[-_]/g, " ")} loop={module.loop === true}/></section>;
         if (module.type === "memory") {
           const events = (live.memory || []).filter(e => !module.category || e.type === module.category || e.source === module.category).slice(0,module.limit || 5);
-          return <section key={module.id} className={panel(module,true)}><h2 className="mb-4 text-sm tracking-widest">HOODIE MEMORY</h2><div className="space-y-2 text-left">{events.length ? events.map((event,index)=><div key={`${event.type}-${event.timestamp}-${index}`} className="border-b border-current p-2"><p className="text-xs font-bold">{event.title || event.type.replaceAll("_"," ")}</p>{event.detail && <p className="mt-1 break-words text-[10px] opacity-80">{event.detail}</p>}<p className="mt-1 text-[9px] opacity-70">{event.source || event.type}{event.timestamp ? ` · ${new Date(event.timestamp * 1000).toLocaleDateString("en-GB", {timeZone:"UTC"})}` : ""}</p></div>) : <p className="text-xs opacity-70">No memory events available.</p>}</div><a className="mt-4 inline-block text-[10px] underline" href={`https://api.onchainhoodies.xyz/v1/token/${id}/memory`} target="_blank" rel="noopener noreferrer">VIEW FULL HISTORY ↗</a></section>;
+          return <section key={module.id} className={panel(module,true)}><h2 className="mb-4 text-sm tracking-widest">HOODIE MEMORY</h2>{module.showStats && live.memoryStats && <div className="mb-4 flex flex-wrap justify-center gap-3 text-[10px] uppercase"><span className="border border-current px-3 py-2">{live.memoryStats.totalMemories} MEMORIES</span><span className="border border-current px-3 py-2">{live.memoryStats.hoodIts} HOOD ITS</span></div>}<div className="space-y-2 text-left">{events.length ? events.map((event,index)=><div key={`${event.type}-${event.timestamp}-${index}`} className="border-b border-current p-2"><p className="text-xs font-bold">{event.title || event.type.replaceAll("_"," ")}</p>{event.detail && <p className="mt-1 break-words text-[10px] opacity-80">{event.detail}</p>}<p className="mt-1 text-[9px] opacity-70">{event.source || event.type}{event.timestamp ? ` · ${new Date(event.timestamp * 1000).toLocaleDateString("en-GB", {timeZone:"UTC"})}` : ""}</p></div>) : <p className="text-xs opacity-70">No memory events available.</p>}</div><a className="mt-4 inline-block text-[10px] underline" href={`https://api.onchainhoodies.xyz/v1/token/${id}/memory`} target="_blank" rel="noopener noreferrer">VIEW FULL HISTORY ↗</a></section>;
         }
-        if (module.type === "netmint") return <section key={module.id} className={panel(module,true)}><p className="mb-2 text-[10px] tracking-widest">FROM THE HOOD · NET MINT</p><h2 className={`mb-3 break-words ${sizeClass(module.size)}`}>{module.title || "MY ON-CHAIN COLLECTION"}</h2><p className="mb-3 break-all text-[9px] opacity-75">{module.collection}</p><a href={`https://onchainhoodies.xyz/hoodos/netmint?collection=${encodeURIComponent(module.collection)}`} className="inline-block border border-current px-5 py-3 text-xs font-bold hover:opacity-70">OPEN MINT ↗</a></section>;
+        if (module.type === "netmint") return <section key={module.id} className={panel(module,true)}><HoodpageNetMintCard collection={module.collection}/></section>;
         if (module.type === "assets") {
           const tokens = (module.showTokens === false ? [] : (live.assets || []).filter(a => !module.tokenSymbols?.length || module.tokenSymbols.some(s => s.toLowerCase() === (a.contract || a.symbol).toLowerCase() || s.toLowerCase() === a.symbol.toLowerCase()))).slice(0,module.limit || 12);
           const nfts = (module.showNfts === false ? [] : (live.nfts || []).filter(n => isNftSelected(module.nftKeys,n.contract,n.tokenId))).slice(0,module.limit || 12);
@@ -85,7 +86,7 @@ export default function HoodieHomepageView({ id, config, live = {} }: { id: numb
         }
         if (module.type === "journey") {
           const milestones = (live.milestones || []).filter(m => !module.completedOnly || m.completed).slice(0,module.limit || 12);
-          return <section key={module.id} className={panel(module, true)}><h2 className={`mb-4 ${sizeClass(module.size)}`}>HOOD JOURNEY</h2>{milestones.length ? <div className="grid gap-2 sm:grid-cols-2">{milestones.map((m,i) => <div key={i} className="flex items-center justify-between gap-3 border border-current p-3 text-left"><span className={`break-words ${sizeClass(module.size)}`}>{m.name}</span><span className="shrink-0 text-[10px]">{m.completed ? "✓ DONE" : "○ OPEN"}</span></div>)}</div> : <p className="text-xs opacity-70">No Journey milestones to display.</p>}</section>;
+          return <section key={module.id} className={panel(module, true)}><h2 className={`mb-4 ${sizeClass(module.size)}`}>HOOD JOURNEY</h2>{module.showStats && live.memoryStats && <div className="mb-4 flex flex-wrap justify-center gap-3 text-[10px] uppercase"><span className="border border-current px-3 py-2">{live.memoryStats.totalMemories} MEMORIES</span><span className="border border-current px-3 py-2">{live.memoryStats.hoodIts} HOOD ITS</span></div>}{milestones.length ? <div className="grid gap-2 sm:grid-cols-2">{milestones.map((m,i) => <div key={i} className="flex items-center justify-between gap-3 border border-current p-3 text-left"><span className={`break-words ${sizeClass(module.size)}`}>{m.name}</span><span className="shrink-0 text-[10px]">{m.completed ? "✓ DONE" : "○ OPEN"}</span></div>)}</div> : <p className="text-xs opacity-70">No Journey milestones to display.</p>}</section>;
         }
         return null;
       })}
