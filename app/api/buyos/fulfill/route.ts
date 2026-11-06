@@ -5,9 +5,13 @@ import {
 
 import {
   Interface,
+  Contract,
+  JsonRpcProvider,
   getAddress,
   isAddress,
 } from "ethers";
+
+import { robinhoodMainnet } from "../../../../lib/network";
 
 /*//////////////////////////////////////////////////////////////
                             CONSTANTS
@@ -21,6 +25,11 @@ const ROBINHOOD_CHAIN =
 
 const ROBINHOOD_CHAIN_ID =
   4663;
+const USDG_ADDRESS = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
+const ZERO_KEY = `0x${"0".repeat(64)}`;
+const MARKET_ABI = ["function information() view returns (string version,bytes32 domainSeparator,address conduitController)"];
+const CONDUIT_CONTROLLER_ABI = ["function getConduit(bytes32 conduitKey) view returns (address conduit,bool exists)"];
+
 
 /*//////////////////////////////////////////////////////////////
                               TYPES
@@ -941,6 +950,63 @@ function encodeOpenSeaTransaction(
   );
 }
 
+/** Validate the exact Seaport calldata instead of trusting display prices.
+ * Only a full ERC-721 purchase paid entirely in canonical USDG is supported.
+ * A nonzero fulfiller conduit key requires on-chain resolution of the spender.
+ */
+async function validatedUsdGPayment(target: string, data: string, value: string, nftContract: string, nftId: string, recipient: string) {
+  if (BigInt(value) !== BigInt(0)) throw new Error("USDG purchase unexpectedly requires native ETH.");
+  const parsed = SEAPORT_INTERFACE.parseTransaction({ data, value: BigInt(0) });
+  if (!parsed) throw new Error("USDG fulfillment is not a supported Seaport call.");
+  let conduitKey = ZERO_KEY;
+  let total = BigInt(0);
+  if (parsed.name === "fulfillAdvancedOrder") {
+    const advanced = parsed.args[0];
+    if (BigInt(advanced.numerator) !== BigInt(advanced.denominator) || BigInt(advanced.denominator) === BigInt(0)) throw new Error("Partial USDG fulfillment is not supported.");
+    const offer = advanced.parameters.offer;
+    if (offer.length !== 1 || Number(offer[0].itemType) !== 2 ||
+        getAddress(String(offer[0].token)) !== getAddress(nftContract) ||
+        BigInt(offer[0].identifierOrCriteria).toString() !== nftId) throw new Error("USDG order NFT mismatch.");
+    if (getAddress(String(parsed.args[3])) !== getAddress(recipient)) throw new Error("USDG purchase must deliver NFT to the selected HoodWallet.");
+    const items = advanced.parameters.consideration;
+    if (!items.length) throw new Error("Missing USDG consideration.");
+    for (const item of items) {
+      if (Number(item.itemType) !== 1 || getAddress(String(item.token)) !== getAddress(USDG_ADDRESS) || BigInt(item.identifierOrCriteria) !== BigInt(0)) throw new Error("Mixed/non-USDG consideration is not supported.");
+      const start = BigInt(item.startAmount), end = BigInt(item.endAmount);
+      total += start > end ? start : end;
+    }
+    conduitKey = String(parsed.args[2]);
+  } else if (parsed.name === "fulfillBasicOrder_efficient_6GL6yc") {
+    const order = parsed.args[0];
+    if (getAddress(String(order.considerationToken)) !== getAddress(USDG_ADDRESS) ||
+        getAddress(String(order.offerToken)) !== getAddress(nftContract) ||
+        BigInt(order.offerIdentifier).toString() !== nftId ||
+        Number(order.basicOrderType) < 8 || Number(order.basicOrderType) > 11) throw new Error("USDG basic order does not match this ERC-721 listing.");
+    total = BigInt(order.considerationAmount);
+    for (const extra of order.additionalRecipients) total += BigInt(extra.amount);
+    conduitKey = String(order.fulfillerConduitKey);
+  } else throw new Error("Unsupported Seaport payment method for USDG.");
+  if (total <= BigInt(0)) throw new Error("USDG consideration is zero.");
+  let spender = getAddress(target);
+  if (conduitKey.toLowerCase() !== ZERO_KEY) {
+    // Reuse the application's existing Robinhood mainnet RPC configuration.
+    // No separate server environment variable is required.
+    const provider = new JsonRpcProvider(
+      robinhoodMainnet.rpcUrls.default.http[0],
+      ROBINHOOD_CHAIN_ID,
+      { staticNetwork: true },
+    );
+    const market = new Contract(target, MARKET_ABI, provider);
+    const information = await market.information();
+    const controller = new Contract(String(information.conduitController ?? information[2]), CONDUIT_CONTROLLER_ABI, provider);
+    const result = await controller.getConduit(conduitKey);
+    if (!Boolean(result.exists ?? result[1])) throw new Error("Seaport conduit does not exist.");
+    spender = getAddress(String(result.conduit ?? result[0]));
+    if (await provider.getCode(spender) === "0x") throw new Error("Seaport conduit has no deployed code.");
+  }
+  return { paymentToken: getAddress(USDG_ADDRESS), paymentAmount: total.toString(), approvalTarget: spender };
+}
+
 /*//////////////////////////////////////////////////////////////
                        OPENSEA GET
 //////////////////////////////////////////////////////////////*/
@@ -1581,6 +1647,31 @@ export async function POST(
       );
     }
 
+    // Determine the payment token from the refreshed signed order, not from the client.
+    // ETH orders remain unchanged; verified USDG orders supply exact approval metadata.
+    const considerationItems = Array.isArray(orderParameters.consideration) ? orderParameters.consideration : [];
+    const usdItems = considerationItems.filter(item => {
+      const row = asRecord(item);
+      return Number(row.itemType) === 1 && asString(row.token).toLowerCase() === USDG_ADDRESS.toLowerCase();
+    });
+    const erc20Items = considerationItems.filter(item => Number(asRecord(item).itemType) === 1);
+    let usdPayment: { paymentToken: string; paymentAmount: string; approvalTarget: string } | null = null;
+    if (usdItems.length) {
+      if (usdItems.length !== considerationItems.length || usdItems.length !== erc20Items.length) {
+        return NextResponse.json({ error: "Mixed-currency USDG orders are not supported." }, { status: 400 });
+      }
+      usdPayment = await validatedUsdGPayment(execution.target, execution.data, execution.value, normalizedContract, tokenId, normalizedWallet);
+    } else if (erc20Items.length) {
+      return NextResponse.json({ error: "This ERC-20 currency is not supported by BuyOS." }, { status: 400 });
+    } else if (execution.data.startsWith("0x")) {
+      // Basic-order endpoints may omit signed consideration arrays.
+      const parsed = SEAPORT_INTERFACE.parseTransaction({ data: execution.data });
+      if (parsed?.name === "fulfillBasicOrder_efficient_6GL6yc" &&
+          String(parsed.args[0].considerationToken).toLowerCase() === USDG_ADDRESS.toLowerCase()) {
+        usdPayment = await validatedUsdGPayment(execution.target, execution.data, execution.value, normalizedContract, tokenId, normalizedWallet);
+      }
+    }
+
     /*////////////////////////////////////////////////////////////
                              SUCCESS
     ////////////////////////////////////////////////////////////*/
@@ -1620,6 +1711,7 @@ export async function POST(
 
           data:
             execution.data,
+          ...(usdPayment || {}),
         },
       },
       {

@@ -17,6 +17,8 @@ const OPENSEA_API =
 const ROBINHOOD_CHAIN =
   "robinhood";
 
+const USDG_ADDRESS = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
+
 const PAGE_SIZE =
   10;
 
@@ -709,21 +711,16 @@ export async function GET(
           "ETH",
         ).toUpperCase();
 
-      /*
-       * BuyOS V1:
-       *
-       * native ETH only.
-       */
-      if (
-        currency !== "ETH"
-      ) {
-        continue;
-      }
+      // Permit native ETH and verified Robinhood USDG only.
+      // OpenSea can return either its symbol or the token address.
+      const normalizedCurrency = currency === "USDG" || currency === USDG_ADDRESS.toUpperCase()
+        ? "USDG" : currency;
+      if (normalizedCurrency !== "ETH" && normalizedCurrency !== "USDG") continue;
 
       const decimals =
         asNumber(
           price.decimals,
-          18,
+          normalizedCurrency === "USDG" ? 6 : 18,
         );
 
       const priceWei =
@@ -775,7 +772,7 @@ export async function GET(
           ),
 
         currency:
-          "ETH",
+          normalizedCurrency,
 
         decimals,
 
@@ -799,7 +796,7 @@ export async function GET(
       return NextResponse.json(
         {
           error:
-            "No active Robinhood Chain ETH listings found.",
+            "No active Robinhood Chain ETH or USDG listings found.",
         },
         {
           status:

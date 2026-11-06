@@ -8,6 +8,7 @@ import type { Address, Hex } from "viem";
 import SiteHeader from "../../../components/SiteHeader";
 import SiteFooter from "../../../components/SiteFooter";
 import HoodieSelector from "../../../components/HoodieSelector";
+import HoodWalletFunds from "../../../components/HoodWalletFunds";
 import { useWallet } from "../../../components/WalletProvider";
 import { siteConfig } from "../../../lib/config";
 
@@ -37,6 +38,8 @@ const HOOD_WALLET_ABI = parseAbi([HOOD_WALLET_SIGNATURE]);
 const mintInterface = new Interface(["function mint(uint256 amount) payable"]);
 const freeMintInterface = new Interface(["function freeMint(uint256 hoodieId)"]);
 const FREE_MINT_ABI = parseAbi(["function freeMint(uint256 hoodieId)"]);
+const ERC721_TRANSFER_ABI = parseAbi(["function safeTransferFrom(address from,address to,uint256 tokenId)"]);
+const erc721TransferInterface = new Interface(["function safeTransferFrom(address from,address to,uint256 tokenId)"]);
 const MINTBAY_HOLDER_ABI = parseAbi(["function holderClaim(address sourceContract,uint256 sourceTokenId) payable"]);
 const mintbayHolderInterface = new Interface(["function holderClaim(address sourceContract,uint256 sourceTokenId) payable"]);
 const MINTBAY_ELIGIBILITY_ABI = [
@@ -231,6 +234,53 @@ type DiscoveryResponse = {
   hasMore: boolean;
 };
 const NETMINT_DIRECTORY = "https://api.onchainhoodies.xyz/v1/netmint/collections";
+const tokenOneArtCache = new Map<string, string | null>();
+
+/** Only fetch token #1 for collection cards near the viewport. */
+function LazyCollectionArtwork({ address, provider }: { address: string; provider: JsonRpcProvider }) {
+  const node = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
+  const [artwork, setArtwork] = useState<string | null>(tokenOneArtCache.get(address.toLowerCase()) ?? null);
+  useEffect(() => {
+    const element = node.current;
+    if (!element) return;
+    if (typeof IntersectionObserver === "undefined") {
+      const job = window.setTimeout(() => setVisible(true), 0);
+      return () => window.clearTimeout(job);
+    }
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) { setVisible(true); observer.disconnect(); }
+    }, { rootMargin: "120px" });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!visible) return;
+    const key = address.toLowerCase();
+    if (tokenOneArtCache.has(key)) {
+      const job = window.setTimeout(() => setArtwork(tokenOneArtCache.get(key) ?? null), 0);
+      return () => window.clearTimeout(job);
+    }
+    let cancelled = false;
+    const job = window.setTimeout(async () => {
+      try {
+        const contract = new Contract(address, ["function tokenURI(uint256) view returns (string)"], provider);
+        const metadata = await loadTokenMetadata(String(await contract.tokenURI(BigInt(1))));
+        tokenOneArtCache.set(key, metadata.image);
+        if (!cancelled) setArtwork(metadata.image);
+      } catch {
+        tokenOneArtCache.set(key, null);
+      }
+    }, 0);
+    return () => { cancelled = true; window.clearTimeout(job); };
+  }, [visible, address, provider]);
+  return <div ref={node} className="mt-2 flex h-[76px] w-[76px] items-center justify-center overflow-hidden border border-[#ccff00] bg-black">
+    {artwork ? (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={artwork} alt="Collection token #1" className="h-full w-full object-contain" loading="lazy" referrerPolicy="no-referrer" />
+    ) : <span className="px-1 text-center text-[8px]">NFT #1</span>}
+  </div>;
+}
 function safeBigInt(value: string): bigint | null {
   try { return BigInt(value); } catch { return null; }
 }
@@ -268,6 +318,7 @@ export default function NetMintPage() {
   const { address, connect, ensureRequiredNetwork, getWalletClient } = useWallet();
   const provider = useMemo(() => new JsonRpcProvider(siteConfig.rpcUrl, Number(siteConfig.chainId), { staticNetwork: true }), []);
   const [hoodies, setHoodies] = useState<Hoodie[]>([]);
+  const [fundsOpen, setFundsOpen] = useState(false);
   const [tokenId, setTokenId] = useState("");
   const [hood, setHood] = useState<HoodInfo | null>(null);
   const [ownershipLoading, setOwnershipLoading] = useState(false);
@@ -290,6 +341,12 @@ export default function NetMintPage() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState("");
   const [mintedHoodieId, setMintedHoodieId] = useState("");
+  const [mintedCollectionAddress, setMintedCollectionAddress] = useState("");
+  const [mintedToEoa, setMintedToEoa] = useState(false);
+  const [transferredTokens, setTransferredTokens] = useState<Record<string, boolean>>({});
+  const [transferringId, setTransferringId] = useState<string | null>(null);
+  const [transferMessage, setTransferMessage] = useState("");
+  const [transferError, setTransferError] = useState("");
   const [revealLoading, setRevealLoading] = useState(false);
   const [revealMessage, setRevealMessage] = useState("");
   const [holderClaimState, setHolderClaimState] = useState<"checking" | "available" | "unavailable">("unavailable");
@@ -316,7 +373,7 @@ export default function NetMintPage() {
       setDiscoverError("");
       try {
         const url = new URL(NETMINT_DIRECTORY);
-        url.searchParams.set("limit", "24");
+        url.searchParams.set("limit", "12");
         url.searchParams.set("page", String(discoverPage));
         if (discoverQuery.trim()) url.searchParams.set("q", discoverQuery.trim());
         const response = await fetch(url.toString(), { signal: controller.signal, cache: "no-store" });
@@ -524,11 +581,73 @@ export default function NetMintPage() {
     return () => { cancelled = true; };
   }, [collection?.address, collection?.mintbayHolderEnabled, address, tokenId, provider]);
 
+  // The claim transaction mints into the EOA because the collection uses msg.sender.
+  // The NFT can be sent to the ERC-6551 account afterwards, with EOA paying gas.
+  async function transferClaimedNftToHoodWallet(claimedTokenId: string) {
+    if (!address || !mintedCollectionAddress || !mintedHoodieId || !mintedToEoa || pending || transferringId !== null || transferredTokens[claimedTokenId]) return;
+    setTransferringId(claimedTokenId);
+    setTransferError("");
+    setTransferMessage("Verifying NFT ownership and HoodWallet destination…");
+    try {
+      await ensureRequiredNetwork();
+      const os = new Contract(siteConfig.hoodOSAddress, HOOD_OS_ABI, provider);
+      const hoodieInfo = await os.hoodInfo(BigInt(mintedHoodieId));
+      if (String(hoodieInfo.owner).toLowerCase() !== address.toLowerCase()) {
+        throw new Error(`The connected wallet no longer owns Hoodie #${mintedHoodieId}.`);
+      }
+      if (!Boolean(hoodieInfo.walletDeployed) || !Boolean(hoodieInfo.active)) {
+        throw new Error(`Activate and deploy HoodWallet #${mintedHoodieId} before moving the NFT.`);
+      }
+      const destination = getAddress(String(hoodieInfo.wallet));
+      if (destination.toLowerCase() === address.toLowerCase()) throw new Error("The destination is the connected wallet.");
+      if (await provider.getCode(destination) === "0x") throw new Error("HoodWallet contract is not deployed.");
+      const nft = new Contract(mintedCollectionAddress, ["function ownerOf(uint256) view returns (address)"], provider);
+      const nftOwner = String(await nft.ownerOf(BigInt(claimedTokenId)));
+      if (nftOwner.toLowerCase() !== address.toLowerCase()) {
+        if (nftOwner.toLowerCase() === destination.toLowerCase()) {
+          setTransferredTokens(previous => ({ ...previous, [claimedTokenId]: true }));
+          setTransferMessage(`Token #${claimedTokenId} is already in HoodWallet #${mintedHoodieId}.`);
+          return;
+        }
+        throw new Error(`Token #${claimedTokenId} is no longer owned by your connected wallet.`);
+      }
+      const client = await getWalletClient();
+      if (!client.account || client.account.address.toLowerCase() !== address.toLowerCase()) {
+        throw new Error("Connected wallet changed. Reconnect before transferring.");
+      }
+      const data = erc721TransferInterface.encodeFunctionData("safeTransferFrom", [address, destination, BigInt(claimedTokenId)]);
+      setTransferMessage("Simulating safe NFT transfer…");
+      await provider.call({ from: address, to: mintedCollectionAddress, data });
+      setTransferMessage(`Approve sending NFT #${claimedTokenId} to HoodWallet #${mintedHoodieId} (EOA pays gas)…`);
+      const hash = await client.writeContract({
+        chain: null,
+        account: client.account,
+        address: mintedCollectionAddress as Address,
+        abi: ERC721_TRANSFER_ABI,
+        functionName: "safeTransferFrom",
+        args: [address as Address, destination as Address, BigInt(claimedTokenId)],
+      });
+      setTransferMessage(`Transfer submitted: ${short(hash)}. Waiting for confirmation…`);
+      const receipt = await provider.waitForTransaction(hash, 1);
+      if (!receipt || receipt.status !== 1) throw new Error("NFT transfer did not confirm successfully.");
+      const finalOwner = String(await nft.ownerOf(BigInt(claimedTokenId)));
+      if (finalOwner.toLowerCase() !== destination.toLowerCase()) throw new Error("Transfer confirmed but the NFT owner does not match the HoodWallet. Verify on explorer.");
+      setTransferredTokens(previous => ({ ...previous, [claimedTokenId]: true }));
+      setTransferMessage(`NFT #${claimedTokenId} is now held by HoodWallet #${mintedHoodieId}.`);
+    } catch (e) {
+      setTransferError(errText(e));
+      setTransferMessage("");
+    } finally {
+      setTransferringId(null);
+    }
+  }
+
   async function claimMintbayHolder() {
     if (!collection?.mintbayHolderEnabled || !address || !tokenId || holderClaimState !== "available" || holderClaimPrice === null || pending || !owned) return;
     const mintAddress = collection.address;
     const claimingId = tokenId;
     setPending(true); setError(""); setMessage("Rechecking Mintbay holder whitelist and price…"); setTxHash("");
+    setMintedTokens([]); setMintedCollectionAddress(""); setMintedHoodieId(""); setMintedToEoa(false); setTransferredTokens({}); setTransferMessage(""); setTransferError("");
     try {
       const contract = new Contract(mintAddress, MINTBAY_ELIGIBILITY_ABI, provider);
       const source = new Contract(HOODIE_NFT_ADDRESS, ["function ownerOf(uint256) view returns (address)"], provider);
@@ -556,7 +675,7 @@ export default function NetMintPage() {
       if (!receipt || receipt.status !== 1) throw new Error("Holder claim transaction failed.");
       setHolderClaimState("unavailable"); setHolderClaimPrice(null);
       setMessage(`Mintbay holder claim confirmed with Hoodie #${claimingId}.`);
-      setMintedHoodieId(claimingId); setRevealLoading(true);
+      setMintedHoodieId(claimingId); setMintedCollectionAddress(mintAddress); setMintedToEoa(true); setRevealLoading(true);
       try {
         const tokens = await revealMintedTokens(provider, mintAddress, address, receipt.logs);
         setMintedTokens(tokens); setRevealMessage(tokens.length ? "Your claimed NFTs" : "Claim confirmed. No ERC-721 mint event could be decoded.");
@@ -581,7 +700,7 @@ export default function NetMintPage() {
     const claimingId = tokenId;
     const nftAddress = collection.address;
     setPending(true); setError(""); setMessage("Checking your free Hoodie claim…");
-    setTxHash(""); setMintedTokens([]); setMintedHoodieId(""); setRevealMessage("");
+    setTxHash(""); setMintedTokens([]); setMintedHoodieId(""); setMintedCollectionAddress(""); setMintedToEoa(false); setTransferredTokens({}); setTransferMessage(""); setTransferError(""); setRevealMessage("");
     try {
       const nft = new Contract(nftAddress, NET_COLLECTION_ABI, provider);
       const hoodiesContract = new Contract(HOODIE_NFT_ADDRESS, ["function ownerOf(uint256 tokenId) view returns (address)"], provider);
@@ -614,7 +733,7 @@ export default function NetMintPage() {
       const receipt = await provider.waitForTransaction(hash, 1);
       if (!receipt || receipt.status !== 1) throw new Error("Free claim was not confirmed successfully.");
       setFreeClaimed(true);
-      setMintedHoodieId(claimingId);
+      setMintedHoodieId(claimingId); setMintedCollectionAddress(nftAddress); setMintedToEoa(true);
       setMessage(`Free portrait claimed using Hoodie #${claimingId}! The NFT was minted to your connected wallet.`);
       setRevealLoading(true);
       try {
@@ -632,7 +751,7 @@ export default function NetMintPage() {
     if (pending || !canMint || !collection || !hood || !address || !validQuantity) return;
     const currentPrice = collection.price * amount;
     const outerValue = paySource === "eoa" ? currentPrice : BigInt(0);
-    setPending(true); setError(""); setMessage("Checking mint and wallet permissions…"); setTxHash(""); setMintedTokens([]); setMintedHoodieId(""); setRevealMessage("");
+    setPending(true); setError(""); setMessage("Checking mint and wallet permissions…"); setTxHash(""); setMintedTokens([]); setMintedHoodieId(""); setMintedCollectionAddress(""); setMintedToEoa(false); setTransferredTokens({}); setTransferMessage(""); setTransferError(""); setRevealMessage("");
     try {
       // Re-read price and account ownership so a stale UI cannot build an incorrect transaction.
       const nft = new Contract(collection.address, NET_COLLECTION_ABI, provider);
@@ -670,7 +789,7 @@ export default function NetMintPage() {
       const receipt = await provider.waitForTransaction(hash, 1);
       if (!receipt || receipt.status !== 1) throw new Error("Mint transaction was not confirmed successfully.");
       setMessage(`Mint confirmed! ${quantity} NFT${amount === BigInt(1) ? "" : "s"} minted to HoodWallet #${hood.tokenId}.`);
-      setMintedHoodieId(hood.tokenId);
+      setMintedHoodieId(hood.tokenId); setMintedCollectionAddress(collection.address); setMintedToEoa(false);
       setRevealLoading(true);
       try {
         const revealed = await revealMintedTokens(provider, collection.address, hood.wallet, receipt.logs);
@@ -712,15 +831,15 @@ export default function NetMintPage() {
           <span>HoodOS / NET Mint</span>
           <Link href="/hoodos" className="underline underline-offset-4">Back to HoodOS →</Link>
         </div>
-        <header className="border-b border-[#ccff00] py-6">
-          <p className="text-[9px] uppercase tracking-[0.2em] ">ROBINHOOD CHAIN / MINT AS YOUR HOODIE</p>
-          <h1 className="mt-3 text-[clamp(2.6rem,5vw,5rem)] leading-[0.95] tracking-[-0.06em]">NET MINT.</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-relaxed md:text-base">Mint on-chain collectibles into your Hoodie’s wallet, or claim eligible free NFTs directly to your connected wallet. No Bankr required.</p>
+        <header className="border-b border-[#ccff00] py-5">
+
+          <h1 className="mt-2 text-[clamp(2.3rem,5vw,4rem)] leading-[0.95] tracking-[-0.06em]">NET MINT.</h1>
+          <p className="mt-2 text-sm">Choose a collection and mint straight into your HoodWallet.</p>
         </header>
         {address && (
           <div className="mt-6 space-y-3">
             <HoodieSelector hoodies={hoodies} selectedId={tokenId} onSelect={(id) => { setTokenId(id); setHood(null); }} imageForId={art} loading={ownershipLoading} disabled={pending} selectedActive={Boolean(hood?.active && hood?.tokenId === tokenId)} />
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border border-[#ccff00] p-3 text-[10px]">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md bg-[#ccff00]/5 px-3 py-2.5 text-[10px]">
               <span>HOODIE #{tokenId || "—"}</span>
               <span className={`inline-flex items-center gap-2 border border-[#ccff00] px-2 py-1 font-bold ${hood?.active ? "bg-[#ccff00] text-black" : "bg-black text-[#ccff00]"}`}>
                 <span aria-hidden="true">{hood?.active ? "●" : "○"}</span>
@@ -729,64 +848,10 @@ export default function NetMintPage() {
               <span>WALLET ETH: {hood ? fmt(hood.nativeBalance) : "—"}</span>
               <span>CONNECTED ETH: {eoaBalance !== null ? fmt(eoaBalance) : "—"}</span>
               {hood && !hood.active && <Link href={`/hoodwallet?hoodie=${encodeURIComponent(hood.tokenId)}`} className="underline">ACTIVATE HOODWALLET →</Link>}
+              {hood?.walletDeployed && <button type="button" disabled={pending} onClick={() => setFundsOpen(true)} className="ml-auto border border-[#ccff00] bg-[#ccff00] px-3 py-2 text-[10px] font-bold text-black disabled:opacity-40">+ ADD / WITHDRAW FUNDS ↗</button>}
             </div>
           </div>
         )}
-        <section className="mt-8 border border-[#ccff00]" aria-label="Discover NET collections">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#ccff00] p-4">
-            <div>
-              <p className="text-[9px] uppercase tracking-[0.17em] ">ON-CHAIN DISCOVERY</p>
-              <h2 className="mt-2 text-2xl tracking-[-0.04em]">DISCOVER NET COLLECTIONS.</h2>
-            </div>
-            <span className="text-[9px] uppercase">{discoverTotal} INDEXED</span>
-          </div>
-          <div className="p-4">
-            <label htmlFor="netmint-discover-search" className="text-[9px] uppercase tracking-[0.14em]">SEARCH BY NAME, SYMBOL OR CONTRACT</label>
-            <input id="netmint-discover-search" value={discoverQuery} onChange={event => {
-              setDiscoverQuery(event.target.value); setDiscoverPage(1); setDiscovered([]);
-            }} className="mt-2 w-full border border-[#ccff00] bg-black p-3 text-sm outline-none placeholder:text-[#ccff00]" placeholder="64 Faces, symbol, or 0x…" />
-            <p className="mt-3 text-[9px] leading-relaxed ">Indexing NET mint activity on Robinhood Chain. Collection compatibility is not a trust endorsement. Supply figures are cached; eligibility is checked when you mint.</p>
-            {discoverError && <div className="mt-4 border border-[#ccff00] p-3 text-xs" role="alert">DIRECTORY UNAVAILABLE: {discoverError}. YOU CAN STILL ENTER A CONTRACT ADDRESS BELOW.</div>}
-            {discoverLoading && discovered.length === 0 && !discoverError && <p className="mt-5 text-sm" role="status">READING COLLECTION DIRECTORY…</p>}
-            {!discoverLoading && !discoverError && discovered.length === 0 && <p className="mt-5 text-sm">NO COLLECTIONS FOUND YET. THE INDEXER MAY STILL BE CATCHING UP.</p>}
-            {discovered.length > 0 && <div className="mt-5 max-h-[350px] overflow-y-auto overscroll-contain border border-[#ccff00] p-3" role="region" aria-label="Scrollable NET collection directory" tabIndex={0}>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {orderedDiscovered.map(item => {
-                const status = supplyStatus(item);
-                const minted = safeBigInt(item.circulatingSupply);
-                const max = safeBigInt(item.maxSupply);
-                const price = safeBigInt(item.priceWei);
-                return <article key={item.address} className="flex min-w-0 flex-col border border-[#ccff00] p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="min-w-0 break-words text-lg tracking-[-0.04em]">{item.name}</h3>
-                    <span className={`shrink-0 border border-[#ccff00] px-2 py-1 text-[8px] uppercase ${status.atCapacity ? "bg-black text-[#ccff00]" : ""}`}>{status.label}</span>
-                  </div>
-                  <p className="mt-1 text-[9px] ">{item.symbol || "NFT"} / ROBINHOOD</p>
-                  <p className="mt-3 break-all text-[9px] ">{item.address}</p>
-                  <div className="mt-4 grid grid-cols-2 gap-3 border-y border-[#ccff00] py-3">
-                    <div><p className="text-[8px] ">PRICE</p><p className="mt-1 text-base">{price === null ? "—" : price === BigInt(0) ? "FREE" : `${fmt(price)} ETH`}</p></div>
-                    <div><p className="text-[8px] ">CIRCULATING / CAP</p><p className="mt-1 text-base">{minted?.toString() ?? "—"} / {max === BigInt(0) ? "∞" : max?.toString() ?? "—"}</p></div>
-                  </div>
-                  {status.percent !== null && <div className="mt-3 h-2 border border-[#ccff00]" aria-label={`${status.percent}% of maximum supply circulating`}><div className="h-full bg-black" style={{ width: `${status.percent}%` }}/></div>}
-                  <div className="mt-auto pt-4">
-                    <button type="button" disabled={collectionLoading || !item.interfaceCompatible || status.atCapacity} className="w-full bg-[#ccff00] border border-[#ccff00] px-3 py-3 text-[9px] font-bold uppercase tracking-[0.12em] text-black disabled:cursor-not-allowed disabled:opacity-50" onClick={() => {
-                      void loadCollection(item.address);
-                      document.getElementById("netmint-mint-flow")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    }}>{status.atCapacity ? "MINTED OUT" : "SELECT COLLECTION →"}</button>
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-[9px] uppercase">
-                      <a href={item.openSeaUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">OPENSEA ↗</a>
-                      <a href={item.xSearchUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">SEARCH X ↗</a>
-                      <a href={item.blockExplorerUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">CONTRACT ↗</a>
-                    </div>
-                  </div>
-                </article>;
-              })}
-              </div>
-            </div>}
-            {discovered.length > 0 && <p className="mt-2 text-[9px] uppercase ">SCROLL TO EXPLORE MORE COLLECTIONS · MINTED-OUT COLLECTIONS LISTED LAST</p>}
-            {discoverMore && <button type="button" className="mt-5 w-full border border-[#ccff00] px-4 py-3 text-[10px] uppercase disabled:cursor-not-allowed" disabled={discoverLoading} onClick={() => setDiscoverPage(page => page + 1)}>{discoverLoading ? "LOADING…" : "LOAD MORE COLLECTIONS ↓"}</button>}
-          </div>
-        </section>
         <div id="netmint-mint-flow" className="scroll-mt-20" />
         {!address ? (
           <div className="mt-6 border border-[#ccff00] p-10 text-center">
@@ -797,70 +862,134 @@ export default function NetMintPage() {
         ) : (
           <div className="mt-6 space-y-5">
             <div className="min-w-0 space-y-5">
-              <section className="border border-[#ccff00]">
-                <h2 className="border-b border-[#ccff00] p-4 text-[9px] uppercase">02 / NET Collection</h2>
+              <section className="rounded-md ring-1 ring-[#ccff00]/40">
+                <h2 className="px-4 pt-4 text-sm font-bold uppercase">CHOOSE A COLLECTION</h2>
                 <div className="p-4">
                   <label className="text-[9px] uppercase" htmlFor="netmint-contract">Collection contract address</label>
-                  <input id="netmint-contract" spellCheck={false} placeholder="0x…" className={inputClass} value={contractInput} onChange={e => { setContractInput(e.target.value); setCollection(null); setError(""); }} />
-                  <button className={`${solidButton} mt-3`} disabled={collectionLoading || !isAddress(contractInput)} onClick={() => void loadCollection()}>{collectionLoading ? "Reading contract…" : "Read collection"}</button>
-                  <p className="mt-3 text-[9px] leading-relaxed ">Only Robinhood Chain. Supports NET minting and Mintbay holder whitelists. Eligibility and claim price are checked on-chain before signing.</p>
-                </div>
-              </section>
-              {collection && <section className="border border-[#ccff00]">
-                <h2 className="border-b border-[#ccff00] p-4 text-[9px] uppercase">03 / Collection details</h2>
-                <div className="grid gap-4 p-4 sm:grid-cols-2">
-                  <div><span className="text-[9px] ">COLLECTION</span><p className="mt-2 text-xl">{collection.name} ({collection.symbol})</p></div>
-                  <div><span className="text-[9px] ">PRICE EACH</span><p className="mt-2 text-xl">{fmt(collection.price)} ETH</p></div>
-                  <div><span className="text-[9px] ">CIRCULATING SUPPLY</span><p className="mt-2 text-xl">{collection.totalSupply.toString()} / {collection.maxSupply === BigInt(0) ? "∞" : collection.maxSupply.toString()}</p></div>
-                  <div><span className="text-[9px] ">PUBLIC MINT LIMIT PER WALLET</span><p className="mt-2 text-xl">{collection.maxMintsPerWallet === BigInt(0) ? "UNLIMITED" : collection.maxMintsPerWallet.toString()}</p></div>
-                </div>
-                  <div className="mx-4 mb-4 flex flex-wrap items-center gap-3 border-t border-[#ccff00] pt-4">
-                    <button type="button" onClick={() => void copyCollectionLink()} className="border border-[#ccff00] px-4 py-3 text-[10px] font-bold uppercase hover:bg-[#ccff00] hover:text-black">COPY COLLECTION LINK ↗</button>
-                    {shareFeedback && <span className="break-all text-[10px]" role="status">{shareFeedback}</span>}
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                    <input id="netmint-contract" spellCheck={false} placeholder="Paste collection contract (0x…)" className="min-w-0 flex-1 border border-[#ccff00] bg-black px-3 py-3 text-xs outline-none" value={contractInput} onChange={e => { setContractInput(e.target.value); setCollection(null); setError(""); }} />
+                    <button type="button" className="shrink-0 bg-[#ccff00] px-5 py-3 text-xs font-bold uppercase text-black disabled:opacity-40" disabled={collectionLoading || !isAddress(contractInput)} onClick={() => void loadCollection()}>{collectionLoading ? "Loading…" : "LOAD ↗"}</button>
                   </div>
-                <p className="px-4 pb-4 text-[9px] ">Circulating supply can differ from total ever minted if tokens were burned. Mint availability is verified by transaction simulation.</p>
+
+                </div>
+                        <details id="netmint-discover" className="mx-4 mb-4 mt-2" aria-label="Discover NET collections">
+          <summary className="cursor-pointer py-3 text-[11px] font-bold uppercase tracking-[0.08em]">OR BROWSE COLLECTIONS · {discoverTotal} INDEXED <span className="ml-2 text-[10px]">▾</span></summary>
+
+          <div className="pt-2 pb-1">
+            <label htmlFor="netmint-discover-search" className="text-[9px] uppercase tracking-[0.14em]">SEARCH BY NAME, SYMBOL OR CONTRACT</label>
+            <input id="netmint-discover-search" value={discoverQuery} onChange={event => {
+              setDiscoverQuery(event.target.value); setDiscoverPage(1); setDiscovered([]);
+            }} className="mt-2 w-full border border-[#ccff00] bg-black p-3 text-sm outline-none placeholder:text-[#ccff00]" placeholder="64 Faces, symbol, or 0x…" />
+
+            {discoverError && <div className="mt-4 border border-[#ccff00] p-3 text-xs" role="alert">DIRECTORY UNAVAILABLE: {discoverError}. YOU CAN STILL ENTER A CONTRACT ADDRESS BELOW.</div>}
+            {discoverLoading && discovered.length === 0 && !discoverError && <p className="mt-5 text-sm" role="status">READING COLLECTION DIRECTORY…</p>}
+            {!discoverLoading && !discoverError && discovered.length === 0 && <p className="mt-5 text-sm">NO COLLECTIONS FOUND YET. THE INDEXER MAY STILL BE CATCHING UP.</p>}
+            {discovered.length > 0 && <div className="mt-4 max-h-[660px] overflow-y-auto overscroll-contain pr-2" role="region" aria-label="Scrollable NET collection directory" tabIndex={0}>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
+              {orderedDiscovered.map(item => {
+                const status = supplyStatus(item);
+                const minted = safeBigInt(item.circulatingSupply);
+                const max = safeBigInt(item.maxSupply);
+                const price = safeBigInt(item.priceWei);
+                const selected = collection?.address.toLowerCase() === item.address.toLowerCase();
+                const disabled = collectionLoading || !item.interfaceCompatible || status.atCapacity;
+                return <article key={item.address} className={`flex min-w-0 flex-col rounded-md border p-2.5 transition-colors ${selected ? "border-[#ccff00] bg-[#ccff00]/10" : "border-[#ccff00]/35 hover:border-[#ccff00]"}`}>
+                  <button type="button" aria-pressed={selected} disabled={disabled} onClick={() => {
+                    void loadCollection(item.address);
+                    const directory = document.getElementById("netmint-discover");
+                    if (directory instanceof HTMLDetailsElement) directory.open = false;
+                  }} className="flex min-w-0 flex-1 flex-col items-start text-left disabled:cursor-not-allowed disabled:opacity-50" title={`Select ${item.name}`}>
+                    <div className="flex w-full items-start justify-between gap-1.5">
+                      <h3 className="min-w-0 break-words text-[11px] font-bold leading-tight">{item.name}</h3>
+                      {selected && <span className="shrink-0 text-[10px]">✓</span>}
+                    </div>
+                    <LazyCollectionArtwork address={item.address} provider={provider} />
+                    <div className="mt-auto flex w-full flex-wrap items-baseline justify-between gap-x-2 gap-y-1 pt-2 text-[9px]">
+                      <span>{price === null ? "—" : price === BigInt(0) ? "FREE" : `${fmt(price)} ETH`}</span>
+                      <span className="opacity-80">{minted?.toString() ?? "—"} / {max === BigInt(0) ? "∞" : max?.toString() ?? "—"}</span>
+                    </div>
+                    {status.atCapacity && <span className="mt-1 text-[9px]">MINTED OUT</span>}
+                  </button>
+                  <div className="mt-2 flex flex-wrap gap-x-2.5 gap-y-1 border-t border-[#ccff00]/25 pt-2 text-[8px] uppercase">
+                    <a href={item.openSeaUrl} target="_blank" rel="noreferrer" className="hover:underline">OPENSEA ↗</a>
+                    <a href={item.xSearchUrl} target="_blank" rel="noreferrer" className="hover:underline">X ↗</a>
+                    <a href={item.blockExplorerUrl} target="_blank" rel="noreferrer" className="hover:underline">CONTRACT ↗</a>
+                  </div>
+                </article>;
+              })}
+              </div>
+            </div>}
+
+            {discoverMore && <button type="button" className="mt-5 w-full border border-[#ccff00] px-4 py-3 text-[10px] uppercase disabled:cursor-not-allowed" disabled={discoverLoading} onClick={() => setDiscoverPage(page => page + 1)}>{discoverLoading ? "LOADING…" : "LOAD MORE COLLECTIONS ↓"}</button>}
+          </div>
+        </details>
+              </section>
+              {collection && <section className="rounded-md bg-[#ccff00]/5 ring-1 ring-[#ccff00]/40">
+                <div className="flex flex-wrap items-start justify-between gap-3 p-4">
+                  <div className="min-w-0"><p className="text-[9px] uppercase">SELECTED COLLECTION</p>
+                    <h2 className="mt-1 break-words text-xl">{collection.name}</h2>
+                    <p className="mt-1 text-xs">{collection.symbol} · {fmt(collection.price)} ETH each · {collection.totalSupply.toString()} / {collection.maxSupply === BigInt(0) ? "∞" : collection.maxSupply.toString()} minted</p>
+                  </div>
+                  <button type="button" onClick={() => void copyCollectionLink()} className="border border-[#ccff00] px-3 py-2 text-[9px] uppercase">SHARE ↗</button>
+                </div>
+                {shareFeedback && <p className="px-4 pb-3 text-[10px]" role="status">{shareFeedback}</p>}
+                <details className="border-t border-[#ccff00]/25 px-4 py-3 text-[10px]">
+                  <summary className="cursor-pointer uppercase">COLLECTION DETAILS / LIMITS ▾</summary>
+                  <p className="mt-3 break-all">CONTRACT: {collection.address}</p>
+                  <p className="mt-2">MAX MINTS PER WALLET: {collection.maxMintsPerWallet === BigInt(0) ? "UNLIMITED" : collection.maxMintsPerWallet.toString()}</p>
+                  <p className="mt-2">Mint availability and eligibility are checked again before signing.</p>
+                </details>
               </section>}
-              {collection?.hoodieFreeMint && <section className="border border-[#ccff00]">
-                <h2 className="border-b border-[#ccff00] p-4 text-[9px] uppercase">Free portrait / Hoodie claim</h2>
+              {collection?.hoodieFreeMint && <section className="rounded-md bg-[#ccff00]/5 ring-1 ring-[#ccff00]/35">
+                <h2 className="px-4 pt-4 text-sm font-bold uppercase">FREE HOODIE CLAIM</h2>
                 <div className="space-y-3 p-4">
-                  <p className="text-sm">One free NFT per OnChainHoodie ID, while supply lasts. No mint price; your connected wallet pays network gas.</p>
+                  <p className="text-xs">Claim once per Hoodie. Free mint; EOA pays gas.</p>
                   <p className="text-[10px]">Selected: Hoodie #{tokenId || "—"} / {freeClaimLoading ? "CHECKING CLAIM…" : freeClaimed === true ? "ALREADY CLAIMED" : freeClaimed === false ? "AVAILABLE" : "STATUS UNKNOWN"}</p>
-                  <p className="text-[10px] font-bold">The contract sends the free NFT to your connected wallet, not your HoodWallet. You can transfer it to your HoodWallet separately afterwards.</p>
+                  <p className="text-[10px]">After claiming, you can move the NFT into HoodWallet in one extra step.</p>
                   <button type="button" className={solidButton} disabled={!canFreeMint} onClick={() => void claimFreeMint()}>{pending ? "PLEASE WAIT…" : freeClaimed ? "FREE MINT ALREADY CLAIMED" : `CLAIM FREE NFT WITH HOODIE #${tokenId || "—"} →`}</button>
                   {!owned && <p className="text-[10px]">Connect the direct owner of the selected Hoodie to claim.</p>}
                 </div>
               </section>}
               {collection?.mintbayHolderEnabled && address && tokenId && !collection.hoodieFreeMint && (
-                <section className="border border-[#ccff00]">
-                  <h2 className="border-b border-[#ccff00] p-4 text-[10px] uppercase">MINTBAY / HOODIE HOLDER CLAIM</h2>
+                <section className="rounded-md bg-[#ccff00]/5 ring-1 ring-[#ccff00]/35">
+                  <h2 className="px-4 pt-4 text-sm font-bold uppercase">HOODIE HOLDER CLAIM</h2>
                   <div className="space-y-3 p-4">
-                    <p className="text-sm">Check Hoodie #{tokenId} against the Mintbay source whitelist. Free and paid claims mint to your connected owner wallet.</p>
+                    <p className="text-sm">Check Hoodie #{tokenId} against the Mintbay source whitelist. Claims mint to your connected wallet; afterwards you can move each NFT to your HoodWallet below.</p>
                     <p className="text-xs" role="status">{holderClaimState === "checking" ? "CHECKING CLAIM…" : holderClaimState === "available" ? `ELIGIBLE · ${fmt(holderClaimPrice ?? BigInt(0))} ETH · ${holderClaimRemaining.toString()} LEFT` : "CLAIM NOT AVAILABLE"}</p>
                     {holderClaimInfo && <p className="text-xs">{holderClaimInfo}</p>}
                     <button type="button" disabled={!owned || holderClaimState !== "available" || pending} onClick={() => void claimMintbayHolder()} className="border border-[#ccff00] bg-[#ccff00] px-5 py-3 text-xs font-bold uppercase text-black disabled:cursor-not-allowed disabled:opacity-50">CLAIM WITH HOODIE #{tokenId} →</button>
                   </div>
                 </section>
               )}
-              {collection?.isNet && <section className="border border-[#ccff00]">
-                <h2 className="border-b border-[#ccff00] p-4 text-[9px] uppercase">04 / Mint as Hoodie</h2>
-                <div className="space-y-5 p-4">
+              {collection?.isNet && <section className="rounded-md bg-[#ccff00]/5 ring-1 ring-[#ccff00]/35">
+                <h2 className="px-4 pt-4 text-sm font-bold uppercase">MINT WITH YOUR HOODWALLET</h2>
+                <div className="space-y-4 p-4">
                   <div><label className="text-[9px] uppercase" htmlFor="netmint-quantity">Quantity (1–100 per transaction)</label>
                     <input id="netmint-quantity" type="number" min={1} max={100} step={1} className={inputClass} value={quantity} onChange={e => setQuantity(e.target.value)} /></div>
-                  <fieldset className="space-y-3 border border-[#ccff00] p-4">
-                    <legend className="px-2 text-[9px] uppercase">Payment source</legend>
-                    <label className="flex cursor-pointer items-start gap-3 text-sm"><input type="radio" checked={paySource === "eoa"} onChange={() => setPaySource("eoa")} name="netmint-payment" /><span><b>Connected wallet (recommended)</b><small className="mt-1 block ">EOA pays mint price and gas. NFT goes to HoodWallet.</small></span></label>
-                    <label className="flex cursor-pointer items-start gap-3 text-sm"><input type="radio" checked={paySource === "hoodwallet"} onChange={() => setPaySource("hoodwallet")} name="netmint-payment" /><span><b>HoodWallet balance</b><small className="mt-1 block ">HoodWallet pays mint price; owner pays gas.</small></span></label>
-                  </fieldset>
-                  <div className="flex justify-between border-y border-[#ccff00] py-4 text-lg"><span>Total mint price</span><strong>{fmt(mintPrice)} ETH</strong></div>
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold uppercase">PAY MINT PRICE WITH</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <label className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-3 text-xs ${paySource === "eoa" ? "border-[#ccff00] bg-[#ccff00]/10" : "border-[#ccff00]/30"}`}>
+                        <input type="radio" checked={paySource === "eoa"} onChange={() => setPaySource("eoa")} name="netmint-payment" />
+                        <span><strong>Connected wallet</strong><span className="mt-1 block text-[10px]">Pays ETH + gas</span></span>
+                      </label>
+                      <label className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-3 text-xs ${paySource === "hoodwallet" ? "border-[#ccff00] bg-[#ccff00]/10" : "border-[#ccff00]/30"}`}>
+                        <input type="radio" checked={paySource === "hoodwallet"} onChange={() => setPaySource("hoodwallet")} name="netmint-payment" />
+                        <span><strong>HoodWallet</strong><span className="mt-1 block text-[10px]">Uses its ETH balance · EOA pays gas</span></span>
+                      </label>
+                    </div>
+                    <p className="text-[10px] font-bold">✓ NFT MINTS DIRECTLY INTO HOODWALLET #{tokenId || "—"}</p>
+                  </div>
+                  <div className="flex justify-between border-t border-[#ccff00]/25 py-3 text-base"><span>Total mint price</span><strong>{fmt(mintPrice)} ETH</strong></div>
                   {!enoughEth && validQuantity && <p className="text-[10px]">Insufficient ETH in the selected payment source.</p>}
                   <button className={solidButton} disabled={!canMint} onClick={() => void mint()}>{pending ? "Minting…" : `Mint as Hoodie #${hood?.tokenId || "—"} →`}</button>
-                  <p className="text-[9px] leading-relaxed ">The connected owner always signs and pays network gas. For EOA payment the mint ETH passes through your HoodWallet in the same transaction. Simulations may fail for contracts with custom mint restrictions.</p>
+                  
                 </div>
               </section>}
               {!!message && <div className="border border-[#ccff00] p-4 text-sm" role="status">{message}{txHash && <a href={`${EXPLORER_URL}/tx/${txHash}`} target="_blank" rel="noreferrer" className="mt-3 block underline">View transaction ↗</a>}</div>}
               {(revealLoading || revealMessage || mintedTokens.length > 0) && (
-                <section className="border border-[#ccff00]" aria-label="Newly minted collectibles">
-                  <h2 className="border-b border-[#ccff00] p-4 text-[9px] uppercase tracking-[0.16em]">05 / Your new collectibles</h2>
+                <section className="rounded-md ring-1 ring-[#ccff00]/35" aria-label="Newly minted collectibles">
+                  <h2 className="px-4 pt-4 text-sm font-bold uppercase">YOUR NEW COLLECTIBLES</h2>
                   <div className="p-4">
                     {revealLoading ? <p className="text-sm" role="status">Reading your new NFT artwork from the blockchain…</p> : null}
                     {revealMessage && !revealLoading ? <p className="mb-4 text-sm" role="status">{revealMessage}</p> : null}
@@ -880,14 +1009,23 @@ export default function NetMintPage() {
                               <p className="text-[9px] ">TOKEN #{token.id}</p>
                               {token.metadataError && <p className="break-words text-[8px] ">{token.metadataError}</p>}
                               <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-                                <a className="inline-block text-[9px] underline underline-offset-2" href={openSeaTokenUrl(collection!.address, token.id)} target="_blank" rel="noreferrer">VIEW ON OPENSEA ↗</a>
+                                <a className="inline-block text-[9px] underline underline-offset-2" href={openSeaTokenUrl(mintedCollectionAddress || collection!.address, token.id)} target="_blank" rel="noreferrer">VIEW ON OPENSEA ↗</a>
                                 <button type="button" className="text-[9px] underline underline-offset-2 disabled:cursor-not-allowed" disabled={!token.image || downloadingId !== null} onClick={() => void downloadTokenPng(token)}>{downloadingId === token.id ? "EXPORTING PNG…" : "DOWNLOAD PNG 800×800 ↓"}</button>
+                                {mintedToEoa && <button type="button"
+                                  className="w-full border border-[#ccff00] bg-[#ccff00] px-3 py-3 text-[9px] font-bold uppercase text-black disabled:cursor-not-allowed disabled:opacity-50"
+                                  disabled={!address || pending || transferringId !== null || transferredTokens[token.id] || !mintedHoodieId}
+                                  onClick={() => void transferClaimedNftToHoodWallet(token.id)}>
+                                  {transferredTokens[token.id] ? `✓ IN HOODWALLET #${mintedHoodieId}` : transferringId === token.id ? "TRANSFERRING…" : `MOVE TO HOODWALLET #${mintedHoodieId} →`}
+                                </button>}
                               </div>
                             </div>
                           </div>
                         ))}
                       </div>
                     )}
+                    {mintedToEoa && mintedTokens.length > 0 && <p className="mt-3 text-[10px]">Your claim minted to the connected wallet. Moving it to HoodWallet requires a second wallet confirmation and EOA gas. You can keep it in your EOA instead.</p>}
+                    {transferMessage && <p className="mt-3 border border-[#ccff00] p-3 text-xs" role="status">{transferMessage}</p>}
+                    {transferError && <p className="mt-3 border border-[#ccff00] p-3 text-xs" role="alert">TRANSFER: {transferError}</p>}
                     {downloadError && <p className="mt-3 border border-[#ccff00] p-3 text-xs" role="alert">{downloadError}</p>}
                     {mintedTokens.length > 0 && <Link className="mt-5 inline-block text-[10px] underline underline-offset-4" href={`/hoodwallet?hoodie=${mintedHoodieId || hood?.tokenId || tokenId}`} >OPEN HOODWALLET →</Link>}
                   </div>
@@ -897,7 +1035,20 @@ export default function NetMintPage() {
             </div>
           </div>
         )}
+
       </section>
+      {fundsOpen && address && hood?.walletDeployed && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-3 sm:p-6" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setFundsOpen(false); }}>
+          <div role="dialog" aria-modal="true" aria-label="Manage HoodWallet funds" className="max-h-[92dvh] w-full max-w-xl overflow-y-auto border-2 border-[#ccff00] bg-black text-[#ccff00] shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#ccff00] bg-black px-4 py-3">
+              <p className="text-xs font-bold uppercase">HOODIE #{hood.tokenId} · FUNDS</p>
+              <button type="button" onClick={() => setFundsOpen(false)} className="border border-[#ccff00] px-3 py-2 text-xs font-bold" aria-label="Close funds popup">✕ CLOSE</button>
+            </div>
+            <div className="p-3"><HoodWalletFunds key={`${hood.tokenId}:${hood.wallet}`} tokenId={hood.tokenId} hoodWallet={hood.wallet} active={hood.active}
+              onBalancesChanged={async () => { await fetchHood(hood.tokenId); setEoaBalance(await provider.getBalance(address)); }} /></div>
+          </div>
+        </div>
+      )}
       <SiteFooter />
     </main>
   );
