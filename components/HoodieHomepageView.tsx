@@ -51,6 +51,7 @@ export default function HoodieHomepageView({ id, config, live = {}, showFollowin
   const image = `https://api.onchainhoodies.xyz/images/${id}.svg`;
   return <div style={theme} className={`hoodpage min-h-[calc(100dvh-64px)] w-full overflow-hidden text-center [font-family:DepartureMono,monospace] ${config.showOuterFrame ? "border-2" : ""}`}>
     <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-5 px-3 py-7 sm:gap-7 sm:px-7 sm:py-10">
+      {showFollowing && <HoodieFollowing tokenId={id} mode="button" />}
       {config.title !== "" && <h2 className="break-words px-2 text-[11px] uppercase tracking-[.16em] opacity-80 sm:text-sm">★ {config.title || "THE WORLD WIDE HOOD"} ★</h2>}
       {config.modules.map(module => {
         if (module.type === "identity") return <section key={module.id} className={`${panel(module)} flex flex-col items-center gap-3`}>
@@ -74,6 +75,7 @@ export default function HoodieHomepageView({ id, config, live = {}, showFollowin
           const events = (live.memory || []).filter(e => !module.category || e.type === module.category || e.source === module.category).slice(0,module.limit || 5);
           return <section key={module.id} className={panel(module,true)}><h2 className="mb-4 text-sm tracking-widest">HOODIE MEMORY</h2>{module.showStats && live.memoryStats && <div className="mb-4 flex flex-wrap justify-center gap-3 text-[10px] uppercase"><span className="border border-current px-3 py-2">{live.memoryStats.totalMemories} MEMORIES</span><span className="border border-current px-3 py-2">{live.memoryStats.hoodIts} HOOD ITS</span></div>}<div className="space-y-2 text-left">{events.length ? events.map((event,index)=><div key={`${event.type}-${event.timestamp}-${index}`} className="border-b border-current p-2"><p className="text-xs font-bold">{event.title || event.type.replaceAll("_"," ")}</p>{event.detail && <p className="mt-1 break-words text-[10px] opacity-80">{event.detail}</p>}<p className="mt-1 text-[9px] opacity-70">{event.source || event.type}{event.timestamp ? ` · ${new Date(event.timestamp * 1000).toLocaleDateString("en-GB", {timeZone:"UTC"})}` : ""}</p></div>) : <p className="text-xs opacity-70">No memory events available.</p>}</div><a className="mt-4 inline-block text-[10px] underline" href={`https://api.onchainhoodies.xyz/v1/token/${id}/memory`} target="_blank" rel="noopener noreferrer">VIEW FULL HISTORY ↗</a></section>;
         }
+        if (module.type === "following") return <section key={module.id} className={panel(module)}><HoodieFollowing tokenId={id} mode="stats" showFollowers={module.showFollowers !== false} showFollowing={module.showFollowing !== false} showLists={module.showLists !== false} /></section>;
         if (module.type === "netmint") return <section key={module.id} className={panel(module,true)}><HoodpageNetMintCard collection={module.collection}/></section>;
         if (module.type === "assets") {
           const tokens = (module.showTokens === false ? [] : (live.assets || []).filter(a => !module.tokenSymbols?.length || module.tokenSymbols.some(s => s.toLowerCase() === (a.contract || a.symbol).toLowerCase() || s.toLowerCase() === a.symbol.toLowerCase()))).slice(0,module.limit || 12);
@@ -91,7 +93,6 @@ export default function HoodieHomepageView({ id, config, live = {}, showFollowin
         }
         return null;
       })}
-      {showFollowing && <HoodieFollowing tokenId={id} />}
       <p className="mt-5 text-[9px] tracking-wider opacity-75">MADE IN THE HOOD · HOOD IT.</p>
     </div>
     <style>{`.hoodpage .homepage-invert{color:var(--hood-bg);background:var(--hood-fg)}@keyframes hoodpageMarquee{from{transform:translateX(100%)}to{transform:translateX(-100%)}}`}</style>

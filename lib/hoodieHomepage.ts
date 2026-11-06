@@ -8,6 +8,7 @@ export type HomepageModule = ModuleAppearance & (
   | { id: string; type: "divider"; style: "stars" | "line"; asset?: string }
   | { id: string; type: "marquee"; text: string }
   | { id: string; type: "assets"; showTokens?: boolean; showNfts?: boolean; tokenSymbols?: string[]; nftKeys?: string[]; limit?: number }
+  | { id: string; type: "following"; showFollowers?: boolean; showFollowing?: boolean; showLists?: boolean }
   | { id: string; type: "memory"; limit?: number; category?: string; showStats?: boolean }
   | { id: string; type: "netmint"; collection: string; title?: string }
   | { id: string; type: "journey"; completedOnly?: boolean; limit?: number; showStats?: boolean }
