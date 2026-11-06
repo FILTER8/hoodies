@@ -47,7 +47,7 @@ export type HomepageConfig = {
   showOuterFrame?: boolean;
   modules: HomepageModule[];
 };
-export type HomepageDirectoryEntry = { tokenId: number; updatedAt: string; title: string; preview?: { theme: "robin" | "green"; background?: { asset?: string; nft?: { contract: string; tokenId: string }; mode: BackgroundMode; scale: number }; avatarSize?: number; marquee?: string; about?: string; decorations?: Array<{kind: "gifs" | "decorations"; file: string}> } };
+export type HomepageDirectoryEntry = { tokenId: number; updatedAt: string; title: string; preview?: { theme: "robin" | "green"; backgroundColor?: string; background?: { asset?: string; nft?: { contract: string; tokenId: string }; mode: BackgroundMode; scale: number }; avatarSize?: number; marquee?: string; about?: string; decorations?: Array<{kind: "gifs" | "decorations"; file: string}> } };
 export type HomepageNft = { contract: string; tokenId: string; name: string; collectionName: string; image?: string; balance?: string; spam?: boolean };
 export type HomepageAsset = { symbol: string; name: string; balanceFormatted: string; contract?: string };
 export type HomepageJourney = { name: string; completed: boolean; description?: string; href?: string };

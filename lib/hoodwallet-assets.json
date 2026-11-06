@@ -227,6 +227,10 @@
       "contract": "0x9ab9228a661deab52f628cdd5ad793482fcc6b61",
       "name": "HoodiePunks X BankrBot"
     }, 
+              {
+      "contract": "0xcA28587B61EaC19a87DFcFd9420870867A916675",
+      "name": "Hood Turtles"
+    }, 
         {
       "contract": "0xc8e36ae47246e5943da2b228fbaff1fb27a473b0",
       "name": "64 FACES"
