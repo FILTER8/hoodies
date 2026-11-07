@@ -71,6 +71,16 @@ export async function POST(req:NextRequest){let stage='validation';let tokenId='
   if(!cookies.includes('access_token='))throw new Error('OpenSea authenticated but no access_token cookie was available to server');
   stage='create-token';
   const created=await post('/api/v2/auth/tokens',{label:`ProfileOS Hoodie ${hoodieId}`,scopes:['write:profile'],expiresInDays:1},{cookie:cookies});
+  // OpenSea may accept SIWE and ERC-1271 yet deny write:profile at PAT creation.
+  // This is an account entitlement decision, not a signature failure. No fallback
+  // to weaker scopes: profile PATCH requires write:profile.
+  if(!created.response.ok){
+   const detail=safeDetail(created.data);
+   if(created.response.status===400 && /scope|entitlement|permission/i.test(detail)){
+    const trace=pick(obj(created.data.meta),'x-trace-id','traceId')||created.response.headers.get('x-trace-id')||created.response.headers.get('x-request-id')||'';
+    throw new StageError('scope-entitlement',400,detail,trace);
+   }
+  }
   check(created.response,created.data,stage);
   const root=created.data;const nested=obj(root.data);const nestedToken=obj(root.token);
   const pat=pick(root,'token','personalAccessToken','accessToken','secret','value')||pick(nested,'token','personalAccessToken','accessToken','secret','value')||pick(nestedToken,'token','secret','value');
@@ -126,7 +136,7 @@ export async function POST(req:NextRequest){let stage='validation';let tokenId='
   const profile=await readJson(account);
   const publicName=pick(profile,'display_name','displayName')||pick(obj(profile.account),'display_name','displayName');
   return NextResponse.json({ok:true,status:updated.status,stage:'completed',verified:true,profileUpdated:true,displayName:pick(updatedBody,'displayName')||displayName,readBack:account.ok?publicName:null,readBackMatches:account.ok&&publicName===displayName,readBackStatus:account.status,bio:pick(profile,'bio')||pick(obj(profile.account),'bio'),externalUrl:pick(profile,'website','external_url','externalUrl')||pick(obj(profile.account),'website','external_url','externalUrl'),profileImageUrl:pick(profile,'profile_image_url','profileImageUrl')||null,details:account.ok&&publicName===displayName?'OpenSea profile name saved and confirmed by public account lookup.':'OpenSea accepted the name update. Public account lookup may still be indexing.'},{headers:{'cache-control':'no-store'}});
- }catch(e){const details=e instanceof Error?e.message:'Unexpected error';return NextResponse.json({ok:false,stage,status:e instanceof StageError?e.http:undefined,verified,patCreated,error:details,traceId:e instanceof StageError?e.traceId:undefined},{status:200,headers:{'cache-control':'no-store'}})}
+ }catch(e){const details=e instanceof Error?e.message:'Unexpected error';return NextResponse.json({ok:false,stage,status:e instanceof StageError?e.http:undefined,verified,patCreated,error:details,traceId:e instanceof StageError?e.traceId:undefined,...(stage==='scope-entitlement'?{requestedScopes:['write:profile'],diagnosis:'OpenSea accepted the signed wallet session but did not entitle this account to create a PAT with write:profile. Changing the signature or requesting weaker scopes will not enable profile writes.',nextAction:'Check the account permissions with OpenSea support/developer portal; include the trace ID. No profile update was attempted.'}:{})},{status:200,headers:{'cache-control':'no-store'}})}
  finally{
   if(tokenId&&cookies){try{const r=await fetch(BASE+'/api/v2/auth/tokens/'+encodeURIComponent(tokenId),{method:'DELETE',headers:{'cookie':cookies},cache:'no-store'});patRevoked=r.ok}catch{/* a PAT expires after one day; no secrets are persisted */}}
   void patRevoked;
