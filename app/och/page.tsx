@@ -895,10 +895,10 @@ export default function OCHPage() {
                   <div>
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-[8px] uppercase tracking-[0.16em] opacity-55">{pillar.number}</p>
-                      {pillar.number === "01" && <Wallet size={96} className="h-20 w-20 shrink-0 md:h-24 md:w-24" aria-hidden="true" />}
-                      {pillar.number === "02" && <Zap size={96} className="h-20 w-20 shrink-0 md:h-24 md:w-24" aria-hidden="true" />}
-                      {pillar.number === "03" && <Message size={96} className="h-20 w-20 shrink-0 md:h-24 md:w-24" aria-hidden="true" />}
-                      {pillar.number === "04" && <Robot size={96} className="h-20 w-20 shrink-0 md:h-24 md:w-24" aria-hidden="true" />}
+                      {pillar.number === "01" && <Wallet className="h-20 w-20 shrink-0 md:h-24 md:w-24" aria-hidden="true" />}
+                      {pillar.number === "02" && <Zap className="h-20 w-20 shrink-0 md:h-24 md:w-24" aria-hidden="true" />}
+                      {pillar.number === "03" && <Message className="h-20 w-20 shrink-0 md:h-24 md:w-24" aria-hidden="true" />}
+                      {pillar.number === "04" && <Robot className="h-20 w-20 shrink-0 md:h-24 md:w-24" aria-hidden="true" />}
                     </div>
                     <h3 className="mt-2 text-3xl tracking-[-0.045em] md:text-4xl">{pillar.title}</h3>
                   </div>
