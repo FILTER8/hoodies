@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Wallet, Zap, Message, Robot } from "pixelarticons/react";
 import {
   Contract,
   JsonRpcProvider,
@@ -110,30 +111,30 @@ const tokenDetails = [
   ["Transfer Tax", "0%"],
 ];
 
-const seasonTwoPillars = [
+const seasonThreePillars = [
   {
     number: "01",
     title: "Own",
     description:
-      "Every Hoodie participates in the Season 02 Hoodie allocation automatically. No task is required for this path.",
+      "The fixed 10% Season 03 Hoodie allocation is planned for distribution at the end of 2026.",
   },
   {
     number: "02",
-    title: "Use",
+    title: "Act",
     description:
-      "Use HoodWallet and real ecosystem products on-chain. Completed actions can become part of your Hoodie Journey.",
+      "Hoodies can use their own HoodWallet and HoodOS apps. Agent-assisted activity is the focus of this phase.",
   },
   {
     number: "03",
-    title: "Build",
+    title: "Connect",
     description:
-      "Create apps, games, tools and protocols that give Hoodies meaningful things to do with HoodWallet and $OCH.",
+      "The planned SDK will make it easier for agents and developers to build useful Hoodie interactions.",
   },
   {
     number: "04",
-    title: "Share",
+    title: "Expand",
     description:
-      "Community contribution and X participation form the third Season 02 path in cooperation with HoodX.",
+      "Physical experiences are part of the next step. Builder and community incentives remain on hold until the tools are ready.",
   },
 ];
 
@@ -635,7 +636,7 @@ export default function OCHPage() {
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row">
             <p>03 / Community Fund</p>
-            <p>35% Across Three Seasons</p>
+            <p>Season Roadmap</p>
           </div>
 
           <div className="mt-12 grid border-l-2 border-t-2 border-[#ccff00] lg:grid-cols-3">
@@ -648,25 +649,26 @@ export default function OCHPage() {
               </p>
             </article>
 
-            <article className="border-b-2 border-r-2 border-[#ccff00] bg-[#ccff00] p-6 text-black md:p-8">
-              <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Season 02 · Live</p>
+            <article className="border-b-2 border-r-2 border-[#ccff00] p-6 md:p-8">
+              <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Season 02 · Previous phase</p>
               <p className="mt-6 text-6xl tracking-[-0.06em]">25M</p>
               <h3 className="mt-6 text-2xl">PLAY THROUGH THE HOOD</h3>
               <p className="mt-4 text-sm leading-relaxed opacity-70">
                 10M OCH for Hoodies, 10M for ecosystem growth through builder actions, and 5M for community & X in cooperation with HoodX.
               </p>
-              <a href="#season-02" className="mt-6 inline-block text-[8px] uppercase !text-black underline underline-offset-4">
-                See Season 02
-              </a>
+              <p className="mt-6 text-[8px] uppercase tracking-[0.12em] opacity-65">Past season framework</p>
             </article>
 
-            <article className="border-b-2 border-r-2 border-[#ccff00] p-6 md:p-8">
-              <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Season 03 · Future</p>
+            <article className="border-b-2 border-r-2 border-[#ccff00] bg-[#ccff00] p-6 text-black md:p-8">
+              <p className="text-[9px] uppercase tracking-[0.16em] opacity-55">Season 03 · Agentic phase</p>
               <p className="mt-6 text-6xl tracking-[-0.06em]">10%</p>
-              <h3 className="mt-6 text-2xl">NEXT CHAPTER</h3>
+              <h3 className="mt-6 text-2xl">MORE LIFE ON-CHAIN</h3>
               <p className="mt-4 text-sm leading-relaxed opacity-70">
-                Reserved for the next chapter after Season 02.
+                Fixed 10M OCH Hoodie airdrop planned for the end of 2026. Season 03 focuses on agentic use, not another engagement campaign.
               </p>
+              <a href="#season-03" className="mt-6 inline-block text-[8px] uppercase !text-black underline underline-offset-4">
+                See Season 03
+              </a>
             </article>
           </div>
         </div>
@@ -841,58 +843,66 @@ export default function OCHPage() {
         </div>
       </section>
 
-      {/* 08 SEASON 02 */}
-      <section id="season-02" className="px-6 py-24">
+      {/* 08 SEASON 03 */}
+      <section id="season-03" className="px-6 py-16 md:py-20">
         <div className="mx-auto max-w-[1440px]">
           <div className="section-heading-row border-black">
-            <p>08 / Season 02</p>
-            <p>25,000,000 OCH</p>
+            <p>08 / Season 03</p>
+            <p>Agentic Hood · 2026</p>
           </div>
 
-          <div className="mt-12 grid gap-12 lg:grid-cols-[0.75fr_1.25fr]">
+          <div className="mt-9 grid items-start gap-9 lg:grid-cols-[0.75fr_1.25fr]">
             <div>
-              <p className="text-[10px] uppercase tracking-[0.2em] opacity-55">Play through the Hood</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] opacity-55">More life on-chain</p>
               <h2 className="section-title mt-4">
-                OWN. USE.
+                THE AGENTIC
                 <br />
-                BUILD. SHARE.
+                HOOD.
               </h2>
-
               <p className="mt-8 max-w-lg text-lg leading-relaxed opacity-75 md:text-xl">
-                Season 02 is not only for developers. Builders create new things to do, and Hoodies participate by owning, using, recording and sharing across the ecosystem.
+                Season 03 focuses on what Hoodies can do. HoodWallet, HoodOS and agent-powered experiences lead the next chapter.
               </p>
 
-              <div className="mt-8 grid border-l-2 border-t-2 border-black sm:grid-cols-3">
-                {[
-                  ["Hoodies", "10M OCH", "Automatic allocation across the Hoodie supply."],
-                  ["Ecosystem Growth", "10M OCH", "Builder apps, games, tools and on-chain usage through the Hood."],
-                  ["Community & X", "5M OCH", "Community contribution in cooperation with HoodX."],
-                ].map(([label, value, copy]) => (
-                  <div key={label} className="border-b-2 border-r-2 border-black p-4">
-                    <p className="text-[7px] uppercase tracking-[0.14em] opacity-50">{label}</p>
-                    <p className="mt-3 text-2xl tracking-[-0.04em]">{value}</p>
-                    <p className="mt-3 text-xs leading-relaxed opacity-65">{copy}</p>
-                  </div>
-                ))}
+              <div className="mt-8 grid border-l-2 border-t-2 border-black sm:grid-cols-2">
+                <div className="border-b-2 border-r-2 border-black p-5">
+                  <p className="text-[8px] uppercase tracking-[0.14em] opacity-55">Hoodie airdrop</p>
+                  <p className="mt-4 text-3xl tracking-[-0.04em]">10M OCH</p>
+                  <p className="mt-3 text-sm leading-relaxed opacity-70">Fixed 10% allocation planned for the end of 2026.</p>
+                </div>
+                <div className="border-b-2 border-r-2 border-black p-5">
+                  <p className="text-[8px] uppercase tracking-[0.14em] opacity-55">Community & builder rewards</p>
+                  <p className="mt-4 text-3xl tracking-[-0.04em]">ON HOLD</p>
+                  <p className="mt-3 text-sm leading-relaxed opacity-70">No new engagement-based rewards campaign before the SDK and physical experience are ready.</p>
+                </div>
               </div>
 
+              <p className="mt-5 max-w-lg text-xs leading-relaxed opacity-65">
+                Pausing a campaign does not change the token supply or announce a redistribution. Any future incentive program will have its own published terms.
+              </p>
+
               <div className="mt-8 flex flex-wrap gap-3">
-                <Link href="/journey" className="pixel-cta">Start your Journey →</Link>
-                <Link href="/builders" className="pixel-cta pixel-cta-dark">Explore Builders →</Link>
+                <Link href="/hoodos" className="pixel-cta pixel-cta-dark">Explore HoodOS →</Link>
+                <Link href="/journey" className="pixel-cta">Hoodie Journey →</Link>
               </div>
             </div>
 
-            <div className="grid border-l-2 border-t-2 border-black sm:grid-cols-2">
-              {seasonTwoPillars.map((pillar) => (
+            <div className="grid self-start border-l-2 border-t-2 border-black sm:grid-cols-2 lg:self-center">
+              {seasonThreePillars.map((pillar) => (
                 <article
                   key={pillar.number}
-                  className="flex min-h-[260px] flex-col justify-between border-b-2 border-r-2 border-black p-6 md:p-8"
+                  className="flex flex-col border-b-2 border-r-2 border-black p-5 md:p-6"
                 >
                   <div>
-                    <p className="text-[8px] uppercase tracking-[0.16em] opacity-55">{pillar.number}</p>
-                    <h3 className="mt-5 text-3xl tracking-[-0.045em] md:text-4xl">{pillar.title}</h3>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-[8px] uppercase tracking-[0.16em] opacity-55">{pillar.number}</p>
+                      {pillar.number === "01" && <Wallet size={96} className="h-20 w-20 shrink-0 md:h-24 md:w-24" aria-hidden="true" />}
+                      {pillar.number === "02" && <Zap size={96} className="h-20 w-20 shrink-0 md:h-24 md:w-24" aria-hidden="true" />}
+                      {pillar.number === "03" && <Message size={96} className="h-20 w-20 shrink-0 md:h-24 md:w-24" aria-hidden="true" />}
+                      {pillar.number === "04" && <Robot size={96} className="h-20 w-20 shrink-0 md:h-24 md:w-24" aria-hidden="true" />}
+                    </div>
+                    <h3 className="mt-2 text-3xl tracking-[-0.045em] md:text-4xl">{pillar.title}</h3>
                   </div>
-                  <p className="mt-8 text-sm leading-relaxed opacity-70">{pillar.description}</p>
+                  <p className="mt-5 text-sm leading-relaxed opacity-70">{pillar.description}</p>
                 </article>
               ))}
             </div>

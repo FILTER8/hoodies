@@ -13,8 +13,9 @@ export default function SiteFooter() {
         </div>
 
         <div className="flex flex-wrap gap-x-6 gap-y-3 text-[11px] uppercase tracking-[0.16em]">
+          <Link href="/contracts" className="font-bold underline underline-offset-4">Contracts</Link>
           <Link href="/api">API</Link>
-                   <a href={siteConfig.discordUrl} target="_blank" rel="noreferrer">
+          <a href={siteConfig.discordUrl} target="_blank" rel="noreferrer">
             Discord
           </a>
           <a href={siteConfig.openSeaUrl} target="_blank" rel="noreferrer">
